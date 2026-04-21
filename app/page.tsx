@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase-browser'
 
 const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 const WEEK_ENDING_STORAGE_KEY = 'one-stop-week-ending'
+const FILL_IN_BLANK_OPTION = '➕ Fill In Blank'
 
 const PROPERTY_OPTIONS = [
   '125 Governor St, Providence',
@@ -24,7 +25,6 @@ const PROPERTY_OPTIONS = [
   'Tanglewood Village Apartments',
   'Valley Apartments',
   'Waterview Apartments',
-  'OTHER',
 ] as const
 
 type WorkerDay = {
@@ -32,6 +32,7 @@ type WorkerDay = {
   location: string
   job: string
   pay: string
+  advance: string
 }
 
 type Worker = {
@@ -78,7 +79,23 @@ function getLocationSelectValue(location: string) {
   if (!location) return ''
   return PROPERTY_OPTIONS.includes(location as (typeof PROPERTY_OPTIONS)[number])
     ? location
-    : 'OTHER'
+    : FILL_IN_BLANK_OPTION
+}
+
+function normalizeDays(days: any[]): WorkerDay[] {
+  return DAYS.map((dayName) => {
+    const existing = Array.isArray(days)
+      ? days.find((d) => d?.day === dayName)
+      : undefined
+
+    return {
+      day: dayName,
+      location: existing?.location || '',
+      job: existing?.job || '',
+      pay: existing?.pay || '',
+      advance: existing?.advance || '',
+    }
+  })
 }
 
 export default function HomePage() {
@@ -114,7 +131,7 @@ export default function HomePage() {
         data.map((w) => ({
           id: w.id,
           name: w.name,
-          days: Array.isArray(w.days) ? w.days : [],
+          days: normalizeDays(Array.isArray(w.days) ? w.days : []),
         }))
       )
     }
@@ -132,6 +149,7 @@ export default function HomePage() {
         location: '',
         job: '',
         pay: '',
+        advance: '',
       })),
     }
 
@@ -147,7 +165,7 @@ export default function HomePage() {
         {
           id: data.id,
           name: data.name,
-          days: Array.isArray(data.days) ? data.days : [],
+          days: normalizeDays(Array.isArray(data.days) ? data.days : []),
         },
       ])
       setWorkerName('')
@@ -157,7 +175,7 @@ export default function HomePage() {
   async function updateDay(
     workerId: string,
     day: string,
-    field: 'location' | 'job' | 'pay',
+    field: 'location' | 'job' | 'pay' | 'advance',
     value: string
   ) {
     const updatedWorkers = workers.map((worker) =>
@@ -198,11 +216,38 @@ export default function HomePage() {
   }
 
   function total(worker: Worker) {
-    return worker.days.reduce((sum, d) => sum + Number(d.pay || 0), 0)
+    return worker.days.reduce((sum, d) => {
+      const pay = Number(d.pay || 0)
+      const advance = Number(d.advance || 0)
+      return sum + (pay - advance)
+    }, 0)
   }
 
   const grandTotal = useMemo(() => {
     return workers.reduce((sum, worker) => sum + total(worker), 0)
+  }, [workers])
+
+  const orderedPropertyOptions = useMemo(() => {
+    const counts = new Map<string, number>()
+
+    for (const worker of workers) {
+      for (const day of worker.days) {
+        if (
+          day.location &&
+          PROPERTY_OPTIONS.includes(day.location as (typeof PROPERTY_OPTIONS)[number])
+        ) {
+          counts.set(day.location, (counts.get(day.location) || 0) + 1)
+        }
+      }
+    }
+
+    return [...PROPERTY_OPTIONS].sort((a, b) => {
+      const countA = counts.get(a) || 0
+      const countB = counts.get(b) || 0
+
+      if (countA !== countB) return countB - countA
+      return PROPERTY_OPTIONS.indexOf(a) - PROPERTY_OPTIONS.indexOf(b)
+    })
   }, [workers])
 
   function toggleWorker(workerId: string) {
@@ -328,7 +373,8 @@ export default function HomePage() {
                     {worker.days.map((d) => {
                       const dayOpen = isDayOpen(worker.id, d.day)
                       const selectedLocation = getLocationSelectValue(d.location)
-                      const showOtherLocation = selectedLocation === 'OTHER'
+                      const showCustomLocationInput =
+                        selectedLocation === FILL_IN_BLANK_OPTION
 
                       return (
                         <div key={d.day} className="rounded-2xl border p-4">
@@ -354,20 +400,23 @@ export default function HomePage() {
                                     worker.id,
                                     d.day,
                                     'location',
-                                    e.target.value === 'OTHER' ? '' : e.target.value
+                                    e.target.value === FILL_IN_BLANK_OPTION ? '' : e.target.value
                                   )
                                 }
                                 className="mt-3 w-full rounded-xl border bg-white px-3 py-2 text-black"
                               >
                                 <option value="">Select property</option>
-                                {PROPERTY_OPTIONS.map((property) => (
+                                {orderedPropertyOptions.map((property) => (
                                   <option key={property} value={property}>
                                     {property}
                                   </option>
                                 ))}
+                                <option value={FILL_IN_BLANK_OPTION}>
+                                  {FILL_IN_BLANK_OPTION}
+                                </option>
                               </select>
 
-                              {showOtherLocation && (
+                              {showCustomLocationInput && (
                                 <input
                                   value={
                                     PROPERTY_OPTIONS.includes(
@@ -384,7 +433,7 @@ export default function HomePage() {
                                       e.target.value
                                     )
                                   }
-                                  placeholder="Enter other property"
+                                  placeholder="Type property name here"
                                   className="mt-3 w-full rounded-xl border bg-white px-3 py-2 text-black placeholder:text-gray-400"
                                 />
                               )}
@@ -416,6 +465,22 @@ export default function HomePage() {
                                   )
                                 }
                                 placeholder="Pay"
+                                className="mt-3 w-full rounded-xl border bg-white px-3 py-2 text-black placeholder:text-gray-400"
+                              />
+
+                              <input
+                                type="number"
+                                step="0.01"
+                                value={d.advance}
+                                onChange={(e) =>
+                                  updateDay(
+                                    worker.id,
+                                    d.day,
+                                    'advance',
+                                    e.target.value
+                                  )
+                                }
+                                placeholder="Advance / Deduction"
                                 className="mt-3 w-full rounded-xl border bg-white px-3 py-2 text-black placeholder:text-gray-400"
                               />
                             </div>
