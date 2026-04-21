@@ -42,10 +42,17 @@ type Worker = {
   phone: string
   notes: string
   paid: boolean
+  weekEnding: string
   days: WorkerDay[]
 }
 
 type WorkerTab = 'payroll' | 'notes' | 'admin'
+
+type PayrollWeek = {
+  id: string
+  week_ending: string
+  is_locked: boolean
+}
 
 function getDefaultWeekEnding() {
   const today = new Date()
@@ -96,6 +103,7 @@ export default function HomePage() {
   const supabase = createClient()
 
   const [workers, setWorkers] = useState<Worker[]>([])
+  const [weeks, setWeeks] = useState<PayrollWeek[]>([])
   const [workerName, setWorkerName] = useState('')
   const [weekEnding, setWeekEnding] = useState('')
   const [loading, setLoading] = useState(true)
@@ -108,20 +116,52 @@ export default function HomePage() {
 
   useEffect(() => {
     const saved = localStorage.getItem(WEEK_ENDING_STORAGE_KEY)
-    setWeekEnding(saved || getDefaultWeekEnding())
-    loadWorkers()
+    const initialWeek = saved || getDefaultWeekEnding()
+    setWeekEnding(initialWeek)
   }, [])
 
   useEffect(() => {
-    if (weekEnding) {
-      localStorage.setItem(WEEK_ENDING_STORAGE_KEY, weekEnding)
-    }
+    if (!weekEnding) return
+    localStorage.setItem(WEEK_ENDING_STORAGE_KEY, weekEnding)
+    ensureWeekExists(weekEnding).then(() => {
+      loadWeeks()
+      loadWorkers(weekEnding)
+    })
   }, [weekEnding])
 
-  async function loadWorkers() {
+  async function ensureWeekExists(targetWeekEnding: string) {
+    const { data } = await supabase
+      .from('payroll_weeks')
+      .select('*')
+      .eq('week_ending', targetWeekEnding)
+      .maybeSingle()
+
+    if (!data) {
+      await supabase.from('payroll_weeks').insert({
+        week_ending: targetWeekEnding,
+        is_locked: false,
+      })
+    }
+  }
+
+  async function loadWeeks() {
+    const { data } = await supabase
+      .from('payroll_weeks')
+      .select('*')
+      .order('week_ending', { ascending: false })
+
+    if (data) {
+      setWeeks(data)
+    }
+  }
+
+  async function loadWorkers(targetWeekEnding: string) {
+    setLoading(true)
+
     const { data, error } = await supabase
       .from('payroll_workers')
       .select('*')
+      .eq('weekEnding', targetWeekEnding)
       .order('created_at', { ascending: true })
 
     if (!error && data) {
@@ -131,6 +171,7 @@ export default function HomePage() {
         phone: w.phone || '',
         notes: w.notes || '',
         paid: !!w.paid,
+        weekEnding: w.weekEnding || targetWeekEnding,
         days: normalizeDays(w.days),
       }))
 
@@ -151,19 +192,28 @@ export default function HomePage() {
 
       setWorkerTabs(tabs)
       setCustomLocationMode(customModes)
+    } else {
+      setWorkers([])
     }
 
     setLoading(false)
   }
 
+  const currentWeek = useMemo(() => {
+    return weeks.find((w) => w.week_ending === weekEnding) || null
+  }, [weeks, weekEnding])
+
+  const isLocked = !!currentWeek?.is_locked
+
   async function addWorker() {
-    if (!workerName.trim()) return
+    if (!workerName.trim() || isLocked) return
 
     const newWorker = {
       name: workerName.trim(),
       phone: '',
       notes: '',
       paid: false,
+      weekEnding,
       days: DAYS.map((d) => ({
         day: d,
         location: '',
@@ -187,6 +237,7 @@ export default function HomePage() {
         phone: data.phone || '',
         notes: data.notes || '',
         paid: !!data.paid,
+        weekEnding: data.weekEnding || weekEnding,
         days: normalizeDays(data.days),
       }
 
@@ -197,6 +248,8 @@ export default function HomePage() {
   }
 
   async function updateWorker(workerId: string, nextWorker: Worker) {
+    if (isLocked) return
+
     setWorkers((prev) =>
       prev.map((w) => (w.id === workerId ? nextWorker : w))
     )
@@ -208,6 +261,7 @@ export default function HomePage() {
         phone: nextWorker.phone,
         notes: nextWorker.notes,
         paid: nextWorker.paid,
+        weekEnding: nextWorker.weekEnding,
         days: nextWorker.days,
       })
       .eq('id', workerId)
@@ -219,7 +273,7 @@ export default function HomePage() {
     value: string
   ) {
     const worker = workers.find((w) => w.id === workerId)
-    if (!worker) return
+    if (!worker || isLocked) return
 
     const nextWorker = {
       ...worker,
@@ -236,7 +290,7 @@ export default function HomePage() {
     value: string
   ) {
     const worker = workers.find((w) => w.id === workerId)
-    if (!worker) return
+    if (!worker || isLocked) return
 
     const nextWorker: Worker = {
       ...worker,
@@ -249,17 +303,37 @@ export default function HomePage() {
   }
 
   async function togglePaid(worker: Worker) {
+    if (isLocked) return
     const nextWorker = { ...worker, paid: !worker.paid }
     await updateWorker(worker.id, nextWorker)
   }
 
   async function deleteWorker(workerId: string) {
+    if (isLocked) return
+
     const ok = window.confirm('Delete this worker?')
     if (!ok) return
 
     await supabase.from('payroll_workers').delete().eq('id', workerId)
     setWorkers((prev) => prev.filter((w) => w.id !== workerId))
     if (openWorkerId === workerId) setOpenWorkerId(null)
+  }
+
+  async function toggleWeekLock() {
+    if (!currentWeek) return
+
+    const nextLocked = !currentWeek.is_locked
+
+    await supabase
+      .from('payroll_weeks')
+      .update({ is_locked: nextLocked })
+      .eq('id', currentWeek.id)
+
+    setWeeks((prev) =>
+      prev.map((w) =>
+        w.id === currentWeek.id ? { ...w, is_locked: nextLocked } : w
+      )
+    )
   }
 
   function workerGross(worker: Worker) {
@@ -315,6 +389,81 @@ export default function HomePage() {
     }))
   }
 
+  function printWorkerSlip(worker: Worker) {
+    const rows = worker.days
+      .map((d) => {
+        const pay = Number(d.pay || 0)
+        const advance = Number(d.advance || 0)
+        const net = pay - advance
+
+        return `
+          <tr>
+            <td style="padding:8px;border:1px solid #ccc;">${d.day}</td>
+            <td style="padding:8px;border:1px solid #ccc;">${getDayDateFromWeekEnding(weekEnding, d.day)}</td>
+            <td style="padding:8px;border:1px solid #ccc;">${d.location || ''}</td>
+            <td style="padding:8px;border:1px solid #ccc;">${d.job || ''}</td>
+            <td style="padding:8px;border:1px solid #ccc;">$${pay.toFixed(2)}</td>
+            <td style="padding:8px;border:1px solid #ccc;">$${advance.toFixed(2)}</td>
+            <td style="padding:8px;border:1px solid #ccc;">${d.advanceNote || ''}</td>
+            <td style="padding:8px;border:1px solid #ccc;">$${net.toFixed(2)}</td>
+          </tr>
+        `
+      })
+      .join('')
+
+    const html = `
+      <html>
+        <head>
+          <title>${worker.name} Payroll Slip</title>
+        </head>
+        <body style="font-family:Arial,sans-serif;padding:24px;">
+          <h1>1 Stop Turnover Specialist LLC Pro</h1>
+          <h2>Payroll Slip</h2>
+          <p><strong>Worker:</strong> ${worker.name}</p>
+          <p><strong>Phone:</strong> ${worker.phone || ''}</p>
+          <p><strong>Week Ending:</strong> ${weekEnding}</p>
+          <p><strong>Status:</strong> ${worker.paid ? 'PAID' : 'UNPAID'}</p>
+
+          <table style="border-collapse:collapse;width:100%;margin-top:16px;">
+            <thead>
+              <tr>
+                <th style="padding:8px;border:1px solid #ccc;">Day</th>
+                <th style="padding:8px;border:1px solid #ccc;">Date</th>
+                <th style="padding:8px;border:1px solid #ccc;">Property</th>
+                <th style="padding:8px;border:1px solid #ccc;">Job</th>
+                <th style="padding:8px;border:1px solid #ccc;">Pay</th>
+                <th style="padding:8px;border:1px solid #ccc;">Advance</th>
+                <th style="padding:8px;border:1px solid #ccc;">Reason</th>
+                <th style="padding:8px;border:1px solid #ccc;">Net</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rows}
+            </tbody>
+          </table>
+
+          <div style="margin-top:24px;">
+            <p><strong>Gross Pay:</strong> $${workerGross(worker).toFixed(2)}</p>
+            <p><strong>Total Advances:</strong> $${workerAdvanceTotal(worker).toFixed(2)}</p>
+            <p><strong>Net Payout:</strong> $${workerNet(worker).toFixed(2)}</p>
+          </div>
+
+          <script>
+            window.onload = function() {
+              window.print();
+            }
+          </script>
+        </body>
+      </html>
+    `
+
+    const printWindow = window.open('', '_blank')
+    if (!printWindow) return
+    printWindow.document.open()
+    printWindow.document.write(html)
+    printWindow.document.close()
+  }
+
   return (
     <main className="min-h-screen bg-slate-100 p-4 md:p-6">
       <div className="mx-auto max-w-6xl space-y-6">
@@ -348,6 +497,20 @@ export default function HomePage() {
                 onChange={(e) => setWeekEnding(e.target.value)}
                 className="mt-2 w-full rounded-xl bg-white px-4 py-3 text-black"
               />
+
+              {weeks.length > 0 && (
+                <select
+                  value={weekEnding}
+                  onChange={(e) => setWeekEnding(e.target.value)}
+                  className="mt-3 w-full rounded-xl bg-white px-4 py-3 text-black"
+                >
+                  {weeks.map((w) => (
+                    <option key={w.id} value={w.week_ending}>
+                      {w.week_ending} {w.is_locked ? '🔒' : ''}
+                    </option>
+                  ))}
+                </select>
+              )}
             </div>
 
             <div className="rounded-2xl bg-slate-800 p-4">
@@ -358,6 +521,17 @@ export default function HomePage() {
               <div className="mt-2 text-4xl font-bold">
                 ${grandTotal.toFixed(2)}
               </div>
+
+              <div className="mt-3 text-sm font-semibold">
+                {isLocked ? '🔒 Week Locked' : '🔓 Week Open'}
+              </div>
+
+              <button
+                onClick={toggleWeekLock}
+                className="mt-3 rounded-xl bg-slate-950 px-4 py-2 text-white"
+              >
+                {isLocked ? 'Unlock Week' : 'Lock Week'}
+              </button>
             </div>
 
             <div className="rounded-2xl bg-slate-800 p-4">
@@ -369,12 +543,14 @@ export default function HomePage() {
                 value={workerName}
                 onChange={(e) => setWorkerName(e.target.value)}
                 placeholder="Worker name"
-                className="mt-3 w-full rounded-xl bg-white px-4 py-3 text-black"
+                disabled={isLocked}
+                className="mt-3 w-full rounded-xl bg-white px-4 py-3 text-black disabled:bg-slate-200"
               />
 
               <button
                 onClick={addWorker}
-                className="mt-3 w-full rounded-xl bg-slate-950 px-4 py-3"
+                disabled={isLocked}
+                className="mt-3 w-full rounded-xl bg-slate-950 px-4 py-3 disabled:opacity-50"
               >
                 Add Worker
               </button>
@@ -438,7 +614,7 @@ export default function HomePage() {
 
                 {open && (
                   <div className="mt-5">
-                    <div className="mb-5 grid gap-3 md:grid-cols-3">
+                    <div className="mb-5 grid gap-3 md:grid-cols-4">
                       <div className="rounded-2xl bg-slate-100 p-4">
                         <div className="text-sm text-slate-500">
                           Gross Pay
@@ -464,6 +640,18 @@ export default function HomePage() {
                         <div className="mt-1 text-2xl font-bold text-black">
                           ${workerNet(worker).toFixed(2)}
                         </div>
+                      </div>
+
+                      <div className="rounded-2xl bg-slate-100 p-4">
+                        <div className="text-sm text-slate-500">
+                          Payroll Slip
+                        </div>
+                        <button
+                          onClick={() => printWorkerSlip(worker)}
+                          className="mt-2 rounded-xl bg-slate-900 px-4 py-2 text-white"
+                        >
+                          Print Worker Slip
+                        </button>
                       </div>
                     </div>
 
@@ -534,6 +722,7 @@ export default function HomePage() {
                                         ? FILL_IN_BLANK_OPTION
                                         : d.location
                                     }
+                                    disabled={isLocked}
                                     onChange={(e) => {
                                       if (e.target.value === FILL_IN_BLANK_OPTION) {
                                         setCustomLocationMode((prev) => ({
@@ -549,7 +738,7 @@ export default function HomePage() {
                                         updateDay(worker.id, d.day, 'location', e.target.value)
                                       }
                                     }}
-                                    className="w-full rounded-xl border bg-white px-3 py-2 text-black"
+                                    className="w-full rounded-xl border bg-white px-3 py-2 text-black disabled:bg-slate-200"
                                   >
                                     <option value="">Select property</option>
 
@@ -567,48 +756,53 @@ export default function HomePage() {
                                   {customLocationMode[key] && (
                                     <input
                                       value={d.location}
+                                      disabled={isLocked}
                                       onChange={(e) =>
                                         updateDay(worker.id, d.day, 'location', e.target.value)
                                       }
                                       placeholder="Type property"
-                                      className="w-full rounded-xl border bg-white px-3 py-2 text-black"
+                                      className="w-full rounded-xl border bg-white px-3 py-2 text-black disabled:bg-slate-200"
                                     />
                                   )}
 
                                   <textarea
                                     value={d.job}
+                                    disabled={isLocked}
                                     onChange={(e) =>
                                       updateDay(worker.id, d.day, 'job', e.target.value)
                                     }
                                     placeholder="Job being done"
-                                    className="min-h-24 w-full rounded-xl border bg-white px-3 py-2 text-black"
+                                    className="min-h-24 w-full rounded-xl border bg-white px-3 py-2 text-black disabled:bg-slate-200"
                                   />
 
                                   <input
                                     value={d.pay}
+                                    disabled={isLocked}
                                     onChange={(e) =>
                                       updateDay(worker.id, d.day, 'pay', e.target.value)
                                     }
                                     placeholder="Pay"
-                                    className="w-full rounded-xl border bg-white px-3 py-2 text-black"
+                                    className="w-full rounded-xl border bg-white px-3 py-2 text-black disabled:bg-slate-200"
                                   />
 
                                   <input
                                     value={d.advance}
+                                    disabled={isLocked}
                                     onChange={(e) =>
                                       updateDay(worker.id, d.day, 'advance', e.target.value)
                                     }
                                     placeholder="Advance"
-                                    className="w-full rounded-xl border bg-white px-3 py-2 text-black"
+                                    className="w-full rounded-xl border bg-white px-3 py-2 text-black disabled:bg-slate-200"
                                   />
 
                                   <textarea
                                     value={d.advanceNote}
+                                    disabled={isLocked}
                                     onChange={(e) =>
                                       updateDay(worker.id, d.day, 'advanceNote', e.target.value)
                                     }
                                     placeholder="Reason for advance"
-                                    className="min-h-20 w-full rounded-xl border bg-white px-3 py-2 text-black"
+                                    className="min-h-20 w-full rounded-xl border bg-white px-3 py-2 text-black disabled:bg-slate-200"
                                   />
                                 </div>
                               )}
@@ -636,11 +830,12 @@ export default function HomePage() {
                           </label>
                           <input
                             value={worker.phone}
+                            disabled={isLocked}
                             onChange={(e) =>
                               updateWorkerField(worker.id, 'phone', e.target.value)
                             }
                             placeholder="Worker phone number"
-                            className="mt-2 w-full rounded-xl border bg-white px-3 py-2 text-black"
+                            className="mt-2 w-full rounded-xl border bg-white px-3 py-2 text-black disabled:bg-slate-200"
                           />
                         </div>
 
@@ -650,11 +845,12 @@ export default function HomePage() {
                           </label>
                           <textarea
                             value={worker.notes}
+                            disabled={isLocked}
                             onChange={(e) =>
                               updateWorkerField(worker.id, 'notes', e.target.value)
                             }
                             placeholder="Add notes about this worker"
-                            className="mt-2 min-h-32 w-full rounded-xl border bg-white px-3 py-2 text-black"
+                            className="mt-2 min-h-32 w-full rounded-xl border bg-white px-3 py-2 text-black disabled:bg-slate-200"
                           />
                         </div>
                       </div>
@@ -679,7 +875,8 @@ export default function HomePage() {
 
                           <button
                             onClick={() => togglePaid(worker)}
-                            className="mt-4 rounded-xl bg-slate-900 px-4 py-2 text-white"
+                            disabled={isLocked}
+                            className="mt-4 rounded-xl bg-slate-900 px-4 py-2 text-white disabled:opacity-50"
                           >
                             {worker.paid ? 'Mark Unpaid' : 'Mark Paid'}
                           </button>
@@ -696,7 +893,8 @@ export default function HomePage() {
 
                           <button
                             onClick={() => deleteWorker(worker.id)}
-                            className="mt-4 rounded-xl bg-red-600 px-4 py-2 text-white"
+                            disabled={isLocked}
+                            className="mt-4 rounded-xl bg-red-600 px-4 py-2 text-white disabled:opacity-50"
                           >
                             Delete Worker
                           </button>
