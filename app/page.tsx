@@ -27,6 +27,14 @@ const PROPERTY_OPTIONS = [
   'Waterview Apartments',
 ]
 
+const JOB_OPTIONS = [
+  'Full Unit Painting',
+  'Repair Damage Walls',
+  'Trash Removal',
+  'Repair Damage Walls Due To Water Leak',
+  'Occupied Unit',
+]
+
 type WorkerDay = {
   day: string
   location: string
@@ -97,6 +105,21 @@ function normalizeDays(days: any[]): WorkerDay[] {
       advanceNote: existing?.advanceNote || '',
     }
   })
+}
+
+function parseJobValue(job: string) {
+  const selectedJobs = job
+    ? job
+        .split(' | ')
+        .map((item) => item.trim())
+        .filter(Boolean)
+    : []
+
+  const presetJobs = selectedJobs.filter((item) => JOB_OPTIONS.includes(item))
+  const customJobs = selectedJobs.filter((item) => !JOB_OPTIONS.includes(item))
+  const customJobText = customJobs.join(' | ')
+
+  return { presetJobs, customJobText }
 }
 
 export default function HomePage() {
@@ -465,6 +488,36 @@ export default function HomePage() {
     printWindow.document.close()
   }
 
+  function toggleJobOption(worker: Worker, dayName: string, option: string) {
+    const day = worker.days.find((d) => d.day === dayName)
+    if (!day) return
+
+    const { presetJobs, customJobText } = parseJobValue(day.job)
+
+    const nextPresetJobs = presetJobs.includes(option)
+      ? presetJobs.filter((item) => item !== option)
+      : [...presetJobs, option]
+
+    const combined = [...nextPresetJobs, ...(customJobText ? [customJobText] : [])]
+      .filter(Boolean)
+      .join(' | ')
+
+    updateDay(worker.id, dayName, 'job', combined)
+  }
+
+  function updateCustomJob(worker: Worker, dayName: string, value: string) {
+    const day = worker.days.find((d) => d.day === dayName)
+    if (!day) return
+
+    const { presetJobs } = parseJobValue(day.job)
+
+    const combined = [...presetJobs, ...(value.trim() ? [value.trim()] : [])]
+      .filter(Boolean)
+      .join(' | ')
+
+    updateDay(worker.id, dayName, 'job', combined)
+  }
+
   return (
     <main className="min-h-screen bg-slate-100 p-4 md:p-6">
       <div className="mx-auto max-w-6xl space-y-6">
@@ -696,6 +749,7 @@ export default function HomePage() {
                         {worker.days.map((d) => {
                           const dayOpen = isDayOpen(worker.id, d.day)
                           const key = `${worker.id}-${d.day}`
+                          const { presetJobs, customJobText } = parseJobValue(d.job)
 
                           return (
                             <div
@@ -766,15 +820,40 @@ export default function HomePage() {
                                     />
                                   )}
 
-                                  <textarea
-                                    value={d.job}
-                                    disabled={isLocked}
-                                    onChange={(e) =>
-                                      updateDay(worker.id, d.day, 'job', e.target.value)
-                                    }
-                                    placeholder="Job being done"
-                                    className="min-h-24 w-full rounded-xl border bg-white px-3 py-2 text-black disabled:bg-slate-200"
-                                  />
+                                  <div className="rounded-xl border bg-slate-50 p-3">
+                                    <div className="mb-2 text-sm font-semibold text-black">
+                                      Job Being Done
+                                    </div>
+
+                                    <div className="space-y-2">
+                                      {JOB_OPTIONS.map((option) => (
+                                        <label
+                                          key={option}
+                                          className="flex items-center gap-2 text-black"
+                                        >
+                                          <input
+                                            type="checkbox"
+                                            checked={presetJobs.includes(option)}
+                                            disabled={isLocked}
+                                            onChange={() =>
+                                              toggleJobOption(worker, d.day, option)
+                                            }
+                                          />
+                                          <span>{option}</span>
+                                        </label>
+                                      ))}
+                                    </div>
+
+                                    <input
+                                      value={customJobText}
+                                      disabled={isLocked}
+                                      onChange={(e) =>
+                                        updateCustomJob(worker, d.day, e.target.value)
+                                      }
+                                      placeholder="Fill in your own job"
+                                      className="mt-3 w-full rounded-xl border bg-white px-3 py-2 text-black disabled:bg-slate-200"
+                                    />
+                                  </div>
 
                                   <input
                                     value={d.pay}
