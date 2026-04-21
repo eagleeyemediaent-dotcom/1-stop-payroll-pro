@@ -71,6 +71,13 @@ function getDefaultWeekEnding() {
   return saturday.toISOString().slice(0, 10)
 }
 
+function getPreviousWeekEnding(currentWeekEnding: string) {
+  const current = new Date(`${currentWeekEnding}T12:00:00`)
+  const prev = new Date(current)
+  prev.setDate(current.getDate() - 7)
+  return prev.toISOString().slice(0, 10)
+}
+
 function getDayDateFromWeekEnding(weekEnding: string, dayName: string) {
   if (!weekEnding) return ''
 
@@ -109,10 +116,7 @@ function normalizeDays(days: any[]): WorkerDay[] {
 
 function parseJobValue(job: string) {
   const selectedJobs = job
-    ? job
-        .split(' | ')
-        .map((item) => item.trim())
-        .filter(Boolean)
+    ? job.split(' | ').map((item) => item.trim()).filter(Boolean)
     : []
 
   const presetJobs = selectedJobs.filter((item) => JOB_OPTIONS.includes(item))
@@ -120,6 +124,18 @@ function parseJobValue(job: string) {
   const customJobText = customJobs.join(' | ')
 
   return { presetJobs, customJobText }
+}
+
+function parseLocationValue(location: string) {
+  if (!location) {
+    return { presetLocation: '', customLocationText: '' }
+  }
+
+  if (PROPERTY_OPTIONS.includes(location)) {
+    return { presetLocation: location, customLocationText: '' }
+  }
+
+  return { presetLocation: '', customLocationText: location }
 }
 
 function Tag({ children }: { children: React.ReactNode }) {
@@ -145,6 +161,7 @@ export default function HomePage() {
   const [workerTabs, setWorkerTabs] = useState<Record<string, WorkerTab>>({})
   const [customLocationMode, setCustomLocationMode] = useState<Record<string, boolean>>({})
   const [openJobMenus, setOpenJobMenus] = useState<Record<string, boolean>>({})
+  const [openPropertyMenus, setOpenPropertyMenus] = useState<Record<string, boolean>>({})
 
   useEffect(() => {
     const saved = localStorage.getItem(WEEK_ENDING_STORAGE_KEY)
@@ -280,6 +297,62 @@ export default function HomePage() {
     }
   }
 
+  async function copyLastWeekForward() {
+    if (isLocked) return
+
+    const previousWeekEnding = getPreviousWeekEnding(weekEnding)
+
+    const { data: previousWorkers, error } = await supabase
+      .from('payroll_workers')
+      .select('*')
+      .eq('weekending', previousWeekEnding)
+      .order('created_at', { ascending: true })
+
+    if (error || !previousWorkers || previousWorkers.length === 0) {
+      window.alert('No workers found for the previous week.')
+      return
+    }
+
+    if (workers.length > 0) {
+      window.alert('This week already has workers. Copy skipped.')
+      return
+    }
+
+    const newRows = previousWorkers.map((w) => ({
+      name: w.name || '',
+      phone: w.phone || '',
+      notes: w.notes || '',
+      paid: false,
+      weekending: weekEnding,
+      days: DAYS.map((d) => ({
+        day: d,
+        location: '',
+        job: '',
+        pay: '',
+        advance: '',
+        advanceNote: '',
+      })),
+    }))
+
+    const { data } = await supabase
+      .from('payroll_workers')
+      .insert(newRows)
+      .select()
+
+    if (data) {
+      const list: Worker[] = data.map((w) => ({
+        id: w.id,
+        name: w.name || '',
+        phone: w.phone || '',
+        notes: w.notes || '',
+        paid: !!w.paid,
+        weekending: w.weekending || weekEnding,
+        days: normalizeDays(w.days),
+      }))
+      setWorkers(list)
+    }
+  }
+
   async function updateWorker(workerId: string, nextWorker: Worker) {
     if (isLocked) return
 
@@ -344,8 +417,10 @@ export default function HomePage() {
   async function deleteWorker(workerId: string) {
     if (isLocked) return
 
-    const ok = window.confirm('Delete this worker?')
-    if (!ok) return
+    const first = window.confirm('Are you sure you want to delete this worker?')
+    if (!first) return
+    const second = window.confirm('YES DELETE? This cannot be undone.')
+    if (!second) return
 
     await supabase.from('payroll_workers').delete().eq('id', workerId)
     setWorkers((prev) => prev.filter((w) => w.id !== workerId))
@@ -384,6 +459,39 @@ export default function HomePage() {
   const grandTotal = useMemo(() => {
     return workers.reduce((sum, w) => sum + workerNet(w), 0)
   }, [workers])
+
+  const paidTotal = useMemo(() => {
+    return workers.filter((w) => w.paid).reduce((sum, w) => sum + workerNet(w), 0)
+  }, [workers])
+
+  const unpaidTotal = useMemo(() => {
+    return workers.filter((w) => !w.paid).reduce((sum, w) => sum + workerNet(w), 0)
+  }, [workers])
+
+  const advancesTotal = useMemo(() => {
+    return workers.reduce((sum, w) => sum + workerAdvanceTotal(w), 0)
+  }, [workers])
+
+  const propertyUsage = useMemo(() => {
+    const counts: Record<string, number> = {}
+    workers.forEach((worker) => {
+      worker.days.forEach((day) => {
+        if (PROPERTY_OPTIONS.includes(day.location)) {
+          counts[day.location] = (counts[day.location] || 0) + 1
+        }
+      })
+    })
+    return counts
+  }, [workers])
+
+  const orderedPropertyOptions = useMemo(() => {
+    return [...PROPERTY_OPTIONS].sort((a, b) => {
+      const countA = propertyUsage[a] || 0
+      const countB = propertyUsage[b] || 0
+      if (countA !== countB) return countB - countA
+      return a.localeCompare(b)
+    })
+  }, [propertyUsage])
 
   const filteredWorkers = useMemo(() => {
     const term = search.trim().toLowerCase()
@@ -470,9 +578,7 @@ export default function HomePage() {
                 <th style="padding:8px;border:1px solid #ccc;">Net</th>
               </tr>
             </thead>
-            <tbody>
-              ${rows}
-            </tbody>
+            <tbody>${rows}</tbody>
           </table>
 
           <div style="margin-top:24px;">
@@ -481,11 +587,7 @@ export default function HomePage() {
             <p><strong>Net Payout:</strong> $${workerNet(worker).toFixed(2)}</p>
           </div>
 
-          <script>
-            window.onload = function() {
-              window.print();
-            }
-          </script>
+          <script>window.onload = function(){ window.print(); }</script>
         </body>
       </html>
     `
@@ -502,7 +604,6 @@ export default function HomePage() {
     if (!day || isLocked) return
 
     const { presetJobs, customJobText } = parseJobValue(day.job)
-
     const nextPresetJobs = presetJobs.includes(option)
       ? presetJobs.filter((item) => item !== option)
       : [...presetJobs, option]
@@ -541,6 +642,36 @@ export default function HomePage() {
     return !!openJobMenus[`${workerId}-${dayName}-jobs`]
   }
 
+  function togglePropertyMenu(workerId: string, dayName: string) {
+    const key = `${workerId}-${dayName}-property`
+    setOpenPropertyMenus((prev) => ({
+      ...prev,
+      [key]: !prev[key],
+    }))
+  }
+
+  function isPropertyMenuOpen(workerId: string, dayName: string) {
+    return !!openPropertyMenus[`${workerId}-${dayName}-property`]
+  }
+
+  function selectProperty(workerId: string, dayName: string, property: string) {
+    const key = `${workerId}-${dayName}`
+    setCustomLocationMode((prev) => ({
+      ...prev,
+      [key]: false,
+    }))
+    updateDay(workerId, dayName, 'location', property)
+  }
+
+  function enableCustomProperty(workerId: string, dayName: string) {
+    const key = `${workerId}-${dayName}`
+    setCustomLocationMode((prev) => ({
+      ...prev,
+      [key]: true,
+    }))
+    updateDay(workerId, dayName, 'location', '')
+  }
+
   return (
     <main className="min-h-screen bg-slate-100 p-4 md:p-6">
       <div className="mx-auto max-w-6xl space-y-6">
@@ -551,7 +682,6 @@ export default function HomePage() {
               alt="logo"
               className="h-16 w-16 rounded-xl bg-white object-contain p-1"
             />
-
             <div>
               <h1 className="text-3xl font-bold text-white">
                 1 Stop Turnover Specialist LLC Pro
@@ -562,7 +692,45 @@ export default function HomePage() {
             </div>
           </div>
 
-          <div className="mt-6 grid gap-4 md:grid-cols-2">
+          <div className="mt-6 grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+            <div className="rounded-2xl bg-slate-800 p-4">
+              <div className="text-xs font-semibold uppercase tracking-wide text-slate-300">
+                Total Payroll
+              </div>
+              <div className="mt-2 text-3xl font-bold text-white">
+                ${grandTotal.toFixed(2)}
+              </div>
+            </div>
+
+            <div className="rounded-2xl bg-slate-800 p-4">
+              <div className="text-xs font-semibold uppercase tracking-wide text-slate-300">
+                Paid Total
+              </div>
+              <div className="mt-2 text-3xl font-bold text-green-400">
+                ${paidTotal.toFixed(2)}
+              </div>
+            </div>
+
+            <div className="rounded-2xl bg-slate-800 p-4">
+              <div className="text-xs font-semibold uppercase tracking-wide text-slate-300">
+                Unpaid Total
+              </div>
+              <div className="mt-2 text-3xl font-bold text-amber-400">
+                ${unpaidTotal.toFixed(2)}
+              </div>
+            </div>
+
+            <div className="rounded-2xl bg-slate-800 p-4">
+              <div className="text-xs font-semibold uppercase tracking-wide text-slate-300">
+                Total Advances
+              </div>
+              <div className="mt-2 text-3xl font-bold text-red-400">
+                ${advancesTotal.toFixed(2)}
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-4 grid gap-4 md:grid-cols-2">
             <div className="rounded-2xl bg-slate-800 p-4">
               <div className="text-xs font-semibold uppercase tracking-wide text-slate-300">
                 Week Ending
@@ -588,27 +756,27 @@ export default function HomePage() {
                   ))}
                 </select>
               )}
-            </div>
-
-            <div className="rounded-2xl bg-slate-800 p-4">
-              <div className="text-xs font-semibold uppercase tracking-wide text-slate-300">
-                Total Payroll
-              </div>
-
-              <div className="mt-2 text-4xl font-bold text-white">
-                ${grandTotal.toFixed(2)}
-              </div>
 
               <div className="mt-3 text-sm font-semibold text-slate-100">
                 {isLocked ? '🔒 Week Locked' : '🔓 Week Open'}
               </div>
 
-              <button
-                onClick={toggleWeekLock}
-                className="mt-3 rounded-xl bg-black px-4 py-2 font-semibold text-white"
-              >
-                {isLocked ? 'Unlock Week' : 'Lock Week'}
-              </button>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <button
+                  onClick={toggleWeekLock}
+                  className="rounded-xl bg-black px-4 py-2 font-semibold text-white"
+                >
+                  {isLocked ? 'Unlock Week' : 'Lock Week'}
+                </button>
+
+                <button
+                  onClick={copyLastWeekForward}
+                  disabled={isLocked}
+                  className="rounded-xl bg-slate-700 px-4 py-2 font-semibold text-white disabled:opacity-50"
+                >
+                  Copy Last Week Forward
+                </button>
+              </div>
             </div>
 
             <div className="rounded-2xl bg-slate-800 p-4">
@@ -631,10 +799,8 @@ export default function HomePage() {
               >
                 Add Worker
               </button>
-            </div>
 
-            <div className="rounded-2xl bg-slate-800 p-4">
-              <div className="text-sm font-semibold text-white">
+              <div className="mt-4 text-sm font-semibold text-white">
                 Search Worker
               </div>
 
@@ -675,12 +841,18 @@ export default function HomePage() {
                       {worker.name}
                     </div>
 
-                    <div
-                      className={`text-sm font-bold ${
-                        worker.paid ? 'text-green-700' : 'text-amber-700'
-                      }`}
-                    >
-                      {worker.paid ? 'PAID' : 'UNPAID'}
+                    <div className="mt-1 flex flex-wrap items-center gap-2">
+                      <span
+                        className={`text-sm font-bold ${
+                          worker.paid ? 'text-green-700' : 'text-amber-700'
+                        }`}
+                      >
+                        {worker.paid ? 'PAID' : 'UNPAID'}
+                      </span>
+
+                      <span className="text-sm font-semibold text-slate-700">
+                        Net: ${workerNet(worker).toFixed(2)}
+                      </span>
                     </div>
                   </div>
 
@@ -774,6 +946,8 @@ export default function HomePage() {
                           const key = `${worker.id}-${d.day}`
                           const { presetJobs, customJobText } = parseJobValue(d.job)
                           const jobMenuOpen = isJobMenuOpen(worker.id, d.day)
+                          const propertyMenuOpen = isPropertyMenuOpen(worker.id, d.day)
+                          const { presetLocation, customLocationText } = parseLocationValue(d.location)
 
                           return (
                             <div
@@ -795,54 +969,66 @@ export default function HomePage() {
 
                               {dayOpen && (
                                 <div className="mt-4 space-y-3">
-                                  <select
-                                    value={
-                                      customLocationMode[key]
-                                        ? FILL_IN_BLANK_OPTION
-                                        : d.location
-                                    }
-                                    disabled={isLocked}
-                                    onChange={(e) => {
-                                      if (e.target.value === FILL_IN_BLANK_OPTION) {
-                                        setCustomLocationMode((prev) => ({
-                                          ...prev,
-                                          [key]: true,
-                                        }))
-                                        updateDay(worker.id, d.day, 'location', '')
-                                      } else {
-                                        setCustomLocationMode((prev) => ({
-                                          ...prev,
-                                          [key]: false,
-                                        }))
-                                        updateDay(worker.id, d.day, 'location', e.target.value)
-                                      }
-                                    }}
-                                    className="w-full rounded-xl border bg-white px-3 py-2 font-medium text-black disabled:bg-slate-200"
-                                  >
-                                    <option value="">Select property</option>
+                                  <div className="rounded-xl border bg-slate-50 p-3">
+                                    <div className="text-sm font-bold text-black">
+                                      Property
+                                    </div>
 
-                                    {PROPERTY_OPTIONS.map((p) => (
-                                      <option key={p} value={p}>
-                                        {p}
-                                      </option>
-                                    ))}
-
-                                    <option value={FILL_IN_BLANK_OPTION}>
-                                      {FILL_IN_BLANK_OPTION}
-                                    </option>
-                                  </select>
-
-                                  {customLocationMode[key] && (
-                                    <input
-                                      value={d.location}
+                                    <button
+                                      type="button"
                                       disabled={isLocked}
-                                      onChange={(e) =>
-                                        updateDay(worker.id, d.day, 'location', e.target.value)
-                                      }
-                                      placeholder="Type property"
-                                      className="w-full rounded-xl border bg-white px-3 py-2 font-medium text-black placeholder:text-slate-500 disabled:bg-slate-200"
-                                    />
-                                  )}
+                                      onClick={() => togglePropertyMenu(worker.id, d.day)}
+                                      className="mt-3 rounded-xl bg-slate-900 px-4 py-2 font-semibold text-white disabled:opacity-50"
+                                    >
+                                      {propertyMenuOpen ? 'Hide Property ▲' : 'Select Property ▼'}
+                                    </button>
+
+                                    {propertyMenuOpen && (
+                                      <div className="mt-3 rounded-xl bg-white p-3">
+                                        <div className="space-y-2 max-h-64 overflow-y-auto">
+                                          {orderedPropertyOptions.map((property) => (
+                                            <button
+                                              key={property}
+                                              type="button"
+                                              disabled={isLocked}
+                                              onClick={() => selectProperty(worker.id, d.day, property)}
+                                              className="block w-full rounded-lg bg-slate-100 px-3 py-2 text-left text-sm font-medium text-black hover:bg-slate-200 disabled:opacity-50"
+                                            >
+                                              {property}
+                                            </button>
+                                          ))}
+
+                                          <button
+                                            type="button"
+                                            disabled={isLocked}
+                                            onClick={() => enableCustomProperty(worker.id, d.day)}
+                                            className="block w-full rounded-lg bg-slate-900 px-3 py-2 text-left text-sm font-semibold text-white disabled:opacity-50"
+                                          >
+                                            {FILL_IN_BLANK_OPTION}
+                                          </button>
+                                        </div>
+
+                                        {customLocationMode[key] && (
+                                          <input
+                                            value={customLocationText}
+                                            disabled={isLocked}
+                                            onChange={(e) =>
+                                              updateDay(worker.id, d.day, 'location', e.target.value)
+                                            }
+                                            placeholder="Type property"
+                                            className="mt-3 w-full rounded-xl border bg-white px-3 py-2 font-medium text-black placeholder:text-slate-500 disabled:bg-slate-200"
+                                          />
+                                        )}
+                                      </div>
+                                    )}
+
+                                    {(presetLocation || customLocationText) && (
+                                      <div className="mt-3 flex flex-wrap gap-2">
+                                        {presetLocation && <Tag>{presetLocation}</Tag>}
+                                        {customLocationText && <Tag>Custom: {customLocationText}</Tag>}
+                                      </div>
+                                    )}
+                                  </div>
 
                                   <div className="rounded-xl border bg-slate-50 p-3">
                                     <div className="text-sm font-bold text-black">
