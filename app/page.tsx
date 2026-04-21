@@ -39,11 +39,13 @@ type WorkerDay = {
 type Worker = {
   id: string
   name: string
+  phone: string
+  notes: string
   paid: boolean
   days: WorkerDay[]
 }
 
-type WorkerTab = 'payroll' | 'admin'
+type WorkerTab = 'payroll' | 'notes' | 'admin'
 
 function getDefaultWeekEnding() {
   const today = new Date()
@@ -51,7 +53,6 @@ function getDefaultWeekEnding() {
   const daysUntilSaturday = (6 - day + 7) % 7
   const saturday = new Date(today)
   saturday.setDate(today.getDate() + daysUntilSaturday)
-
   return saturday.toISOString().slice(0, 10)
 }
 
@@ -59,7 +60,6 @@ function getDayDateFromWeekEnding(weekEnding: string, dayName: string) {
   if (!weekEnding) return ''
 
   const end = new Date(`${weekEnding}T12:00:00`)
-
   const offsets: Record<string, number> = {
     Monday: -5,
     Tuesday: -4,
@@ -99,6 +99,7 @@ export default function HomePage() {
   const [workerName, setWorkerName] = useState('')
   const [weekEnding, setWeekEnding] = useState('')
   const [loading, setLoading] = useState(true)
+  const [search, setSearch] = useState('')
 
   const [openWorkerId, setOpenWorkerId] = useState<string | null>(null)
   const [openDays, setOpenDays] = useState<Record<string, boolean>>({})
@@ -124,9 +125,11 @@ export default function HomePage() {
       .order('created_at', { ascending: true })
 
     if (!error && data) {
-      const list = data.map((w) => ({
+      const list: Worker[] = data.map((w) => ({
         id: w.id,
         name: w.name,
+        phone: w.phone || '',
+        notes: w.notes || '',
         paid: !!w.paid,
         days: normalizeDays(w.days),
       }))
@@ -134,8 +137,20 @@ export default function HomePage() {
       setWorkers(list)
 
       const tabs: Record<string, WorkerTab> = {}
-      list.forEach((w) => (tabs[w.id] = 'payroll'))
+      const customModes: Record<string, boolean> = {}
+
+      list.forEach((w) => {
+        tabs[w.id] = 'payroll'
+        w.days.forEach((d) => {
+          const key = `${w.id}-${d.day}`
+          customModes[key] =
+            !!d.location &&
+            !PROPERTY_OPTIONS.includes(d.location)
+        })
+      })
+
       setWorkerTabs(tabs)
+      setCustomLocationMode(customModes)
     }
 
     setLoading(false)
@@ -146,6 +161,8 @@ export default function HomePage() {
 
     const newWorker = {
       name: workerName.trim(),
+      phone: '',
+      notes: '',
       paid: false,
       days: DAYS.map((d) => ({
         day: d,
@@ -164,15 +181,17 @@ export default function HomePage() {
       .single()
 
     if (!error && data) {
-      setWorkers((prev) => [
-        ...prev,
-        {
-          id: data.id,
-          name: data.name,
-          paid: !!data.paid,
-          days: normalizeDays(data.days),
-        },
-      ])
+      const worker: Worker = {
+        id: data.id,
+        name: data.name,
+        phone: data.phone || '',
+        notes: data.notes || '',
+        paid: !!data.paid,
+        days: normalizeDays(data.days),
+      }
+
+      setWorkers((prev) => [...prev, worker])
+      setWorkerTabs((prev) => ({ ...prev, [worker.id]: 'payroll' }))
       setWorkerName('')
     }
   }
@@ -186,10 +205,28 @@ export default function HomePage() {
       .from('payroll_workers')
       .update({
         name: nextWorker.name,
+        phone: nextWorker.phone,
+        notes: nextWorker.notes,
         paid: nextWorker.paid,
         days: nextWorker.days,
       })
       .eq('id', workerId)
+  }
+
+  async function updateWorkerField(
+    workerId: string,
+    field: 'name' | 'phone' | 'notes',
+    value: string
+  ) {
+    const worker = workers.find((w) => w.id === workerId)
+    if (!worker) return
+
+    const nextWorker = {
+      ...worker,
+      [field]: value,
+    }
+
+    await updateWorker(workerId, nextWorker)
   }
 
   async function updateDay(
@@ -201,7 +238,7 @@ export default function HomePage() {
     const worker = workers.find((w) => w.id === workerId)
     if (!worker) return
 
-    const nextWorker = {
+    const nextWorker: Worker = {
       ...worker,
       days: worker.days.map((d) =>
         d.day === dayName ? { ...d, [field]: value } : d
@@ -225,17 +262,34 @@ export default function HomePage() {
     if (openWorkerId === workerId) setOpenWorkerId(null)
   }
 
-  function workerTotal(worker: Worker) {
-    return worker.days.reduce((sum, d) => {
-      const pay = Number(d.pay || 0)
-      const adv = Number(d.advance || 0)
-      return sum + (pay - adv)
-    }, 0)
+  function workerGross(worker: Worker) {
+    return worker.days.reduce((sum, d) => sum + Number(d.pay || 0), 0)
+  }
+
+  function workerAdvanceTotal(worker: Worker) {
+    return worker.days.reduce((sum, d) => sum + Number(d.advance || 0), 0)
+  }
+
+  function workerNet(worker: Worker) {
+    return workerGross(worker) - workerAdvanceTotal(worker)
   }
 
   const grandTotal = useMemo(() => {
-    return workers.reduce((sum, w) => sum + workerTotal(w), 0)
+    return workers.reduce((sum, w) => sum + workerNet(w), 0)
   }, [workers])
+
+  const filteredWorkers = useMemo(() => {
+    const term = search.trim().toLowerCase()
+    if (!term) return workers
+
+    return workers.filter((w) => {
+      return (
+        w.name.toLowerCase().includes(term) ||
+        w.phone.toLowerCase().includes(term) ||
+        w.notes.toLowerCase().includes(term)
+      )
+    })
+  }, [workers, search])
 
   function toggleWorker(id: string) {
     setOpenWorkerId((prev) => (prev === id ? null : id))
@@ -306,7 +360,7 @@ export default function HomePage() {
               </div>
             </div>
 
-            <div className="rounded-2xl bg-slate-800 p-4 md:col-span-2">
+            <div className="rounded-2xl bg-slate-800 p-4">
               <div className="text-sm font-semibold">
                 Add Worker
               </div>
@@ -325,6 +379,19 @@ export default function HomePage() {
                 Add Worker
               </button>
             </div>
+
+            <div className="rounded-2xl bg-slate-800 p-4">
+              <div className="text-sm font-semibold">
+                Search Worker
+              </div>
+
+              <input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search by name, phone, or notes"
+                className="mt-3 w-full rounded-xl bg-white px-4 py-3 text-black"
+              />
+            </div>
           </div>
         </div>
 
@@ -332,12 +399,12 @@ export default function HomePage() {
           <div className="rounded-2xl bg-white p-4">
             Loading...
           </div>
-        ) : workers.length === 0 ? (
+        ) : filteredWorkers.length === 0 ? (
           <div className="rounded-2xl bg-white p-4">
-            No workers yet.
+            No workers found.
           </div>
         ) : (
-          workers.map((worker) => {
+          filteredWorkers.map((worker) => {
             const open = openWorkerId === worker.id
             const tab = workerTabs[worker.id] || 'payroll'
 
@@ -357,9 +424,7 @@ export default function HomePage() {
 
                     <div
                       className={`text-sm font-semibold ${
-                        worker.paid
-                          ? 'text-green-600'
-                          : 'text-amber-600'
+                        worker.paid ? 'text-green-600' : 'text-amber-600'
                       }`}
                     >
                       {worker.paid ? 'PAID' : 'UNPAID'}
@@ -373,7 +438,36 @@ export default function HomePage() {
 
                 {open && (
                   <div className="mt-5">
-                    <div className="mb-5 flex gap-2">
+                    <div className="mb-5 grid gap-3 md:grid-cols-3">
+                      <div className="rounded-2xl bg-slate-100 p-4">
+                        <div className="text-sm text-slate-500">
+                          Gross Pay
+                        </div>
+                        <div className="mt-1 text-2xl font-bold text-black">
+                          ${workerGross(worker).toFixed(2)}
+                        </div>
+                      </div>
+
+                      <div className="rounded-2xl bg-slate-100 p-4">
+                        <div className="text-sm text-slate-500">
+                          Advance Summary
+                        </div>
+                        <div className="mt-1 text-2xl font-bold text-red-600">
+                          -${workerAdvanceTotal(worker).toFixed(2)}
+                        </div>
+                      </div>
+
+                      <div className="rounded-2xl bg-slate-100 p-4">
+                        <div className="text-sm text-slate-500">
+                          Net Payout
+                        </div>
+                        <div className="mt-1 text-2xl font-bold text-black">
+                          ${workerNet(worker).toFixed(2)}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="mb-5 flex flex-wrap gap-2">
                       <button
                         onClick={() => setTab(worker.id, 'payroll')}
                         className={`rounded-xl px-4 py-2 ${
@@ -383,6 +477,17 @@ export default function HomePage() {
                         }`}
                       >
                         Payroll
+                      </button>
+
+                      <button
+                        onClick={() => setTab(worker.id, 'notes')}
+                        className={`rounded-xl px-4 py-2 ${
+                          tab === 'notes'
+                            ? 'bg-slate-900 text-white'
+                            : 'bg-slate-200 text-black'
+                        }`}
+                      >
+                        Notes
                       </button>
 
                       <button
@@ -396,6 +501,7 @@ export default function HomePage() {
                         Admin
                       </button>
                     </div>
+
                     {tab === 'payroll' && (
                       <div className="space-y-4">
                         {worker.days.map((d) => {
@@ -408,9 +514,7 @@ export default function HomePage() {
                               className="rounded-2xl border p-4"
                             >
                               <button
-                                onClick={() =>
-                                  toggleDay(worker.id, d.day)
-                                }
+                                onClick={() => toggleDay(worker.id, d.day)}
                                 className="flex w-full items-center justify-between"
                               >
                                 <div className="font-bold text-black">
@@ -431,44 +535,26 @@ export default function HomePage() {
                                         : d.location
                                     }
                                     onChange={(e) => {
-                                      if (
-                                        e.target.value ===
-                                        FILL_IN_BLANK_OPTION
-                                      ) {
+                                      if (e.target.value === FILL_IN_BLANK_OPTION) {
                                         setCustomLocationMode((prev) => ({
                                           ...prev,
                                           [key]: true,
                                         }))
-                                        updateDay(
-                                          worker.id,
-                                          d.day,
-                                          'location',
-                                          ''
-                                        )
+                                        updateDay(worker.id, d.day, 'location', '')
                                       } else {
                                         setCustomLocationMode((prev) => ({
                                           ...prev,
                                           [key]: false,
                                         }))
-                                        updateDay(
-                                          worker.id,
-                                          d.day,
-                                          'location',
-                                          e.target.value
-                                        )
+                                        updateDay(worker.id, d.day, 'location', e.target.value)
                                       }
                                     }}
                                     className="w-full rounded-xl border bg-white px-3 py-2 text-black"
                                   >
-                                    <option value="">
-                                      Select property
-                                    </option>
+                                    <option value="">Select property</option>
 
                                     {PROPERTY_OPTIONS.map((p) => (
-                                      <option
-                                        key={p}
-                                        value={p}
-                                      >
+                                      <option key={p} value={p}>
                                         {p}
                                       </option>
                                     ))}
@@ -482,12 +568,7 @@ export default function HomePage() {
                                     <input
                                       value={d.location}
                                       onChange={(e) =>
-                                        updateDay(
-                                          worker.id,
-                                          d.day,
-                                          'location',
-                                          e.target.value
-                                        )
+                                        updateDay(worker.id, d.day, 'location', e.target.value)
                                       }
                                       placeholder="Type property"
                                       className="w-full rounded-xl border bg-white px-3 py-2 text-black"
@@ -497,12 +578,7 @@ export default function HomePage() {
                                   <textarea
                                     value={d.job}
                                     onChange={(e) =>
-                                      updateDay(
-                                        worker.id,
-                                        d.day,
-                                        'job',
-                                        e.target.value
-                                      )
+                                      updateDay(worker.id, d.day, 'job', e.target.value)
                                     }
                                     placeholder="Job being done"
                                     className="min-h-24 w-full rounded-xl border bg-white px-3 py-2 text-black"
@@ -511,12 +587,7 @@ export default function HomePage() {
                                   <input
                                     value={d.pay}
                                     onChange={(e) =>
-                                      updateDay(
-                                        worker.id,
-                                        d.day,
-                                        'pay',
-                                        e.target.value
-                                      )
+                                      updateDay(worker.id, d.day, 'pay', e.target.value)
                                     }
                                     placeholder="Pay"
                                     className="w-full rounded-xl border bg-white px-3 py-2 text-black"
@@ -525,12 +596,7 @@ export default function HomePage() {
                                   <input
                                     value={d.advance}
                                     onChange={(e) =>
-                                      updateDay(
-                                        worker.id,
-                                        d.day,
-                                        'advance',
-                                        e.target.value
-                                      )
+                                      updateDay(worker.id, d.day, 'advance', e.target.value)
                                     }
                                     placeholder="Advance"
                                     className="w-full rounded-xl border bg-white px-3 py-2 text-black"
@@ -539,12 +605,7 @@ export default function HomePage() {
                                   <textarea
                                     value={d.advanceNote}
                                     onChange={(e) =>
-                                      updateDay(
-                                        worker.id,
-                                        d.day,
-                                        'advanceNote',
-                                        e.target.value
-                                      )
+                                      updateDay(worker.id, d.day, 'advanceNote', e.target.value)
                                     }
                                     placeholder="Reason for advance"
                                     className="min-h-20 w-full rounded-xl border bg-white px-3 py-2 text-black"
@@ -561,8 +622,40 @@ export default function HomePage() {
                           </div>
 
                           <div className="text-3xl font-bold text-black">
-                            ${workerTotal(worker).toFixed(2)}
+                            ${workerNet(worker).toFixed(2)}
                           </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {tab === 'notes' && (
+                      <div className="space-y-4">
+                        <div className="rounded-2xl bg-slate-100 p-4">
+                          <label className="text-sm text-slate-500">
+                            Phone Number
+                          </label>
+                          <input
+                            value={worker.phone}
+                            onChange={(e) =>
+                              updateWorkerField(worker.id, 'phone', e.target.value)
+                            }
+                            placeholder="Worker phone number"
+                            className="mt-2 w-full rounded-xl border bg-white px-3 py-2 text-black"
+                          />
+                        </div>
+
+                        <div className="rounded-2xl bg-slate-100 p-4">
+                          <label className="text-sm text-slate-500">
+                            Worker Notes
+                          </label>
+                          <textarea
+                            value={worker.notes}
+                            onChange={(e) =>
+                              updateWorkerField(worker.id, 'notes', e.target.value)
+                            }
+                            placeholder="Add notes about this worker"
+                            className="mt-2 min-h-32 w-full rounded-xl border bg-white px-3 py-2 text-black"
+                          />
                         </div>
                       </div>
                     )}
@@ -588,9 +681,7 @@ export default function HomePage() {
                             onClick={() => togglePaid(worker)}
                             className="mt-4 rounded-xl bg-slate-900 px-4 py-2 text-white"
                           >
-                            {worker.paid
-                              ? 'Mark Unpaid'
-                              : 'Mark Paid'}
+                            {worker.paid ? 'Mark Unpaid' : 'Mark Paid'}
                           </button>
                         </div>
 
@@ -604,9 +695,7 @@ export default function HomePage() {
                           </p>
 
                           <button
-                            onClick={() =>
-                              deleteWorker(worker.id)
-                            }
+                            onClick={() => deleteWorker(worker.id)}
                             className="mt-4 rounded-xl bg-red-600 px-4 py-2 text-white"
                           >
                             Delete Worker
@@ -614,7 +703,6 @@ export default function HomePage() {
                         </div>
                       </div>
                     )}
-
                   </div>
                 )}
               </div>
