@@ -122,6 +122,14 @@ function parseJobValue(job: string) {
   return { presetJobs, customJobText }
 }
 
+function Tag({ children }: { children: React.ReactNode }) {
+  return (
+    <span className="rounded-full bg-slate-900 px-3 py-1 text-xs font-semibold text-white">
+      {children}
+    </span>
+  )
+}
+
 export default function HomePage() {
   const supabase = createClient()
 
@@ -136,6 +144,7 @@ export default function HomePage() {
   const [openDays, setOpenDays] = useState<Record<string, boolean>>({})
   const [workerTabs, setWorkerTabs] = useState<Record<string, WorkerTab>>({})
   const [customLocationMode, setCustomLocationMode] = useState<Record<string, boolean>>({})
+  const [openJobMenus, setOpenJobMenus] = useState<Record<string, boolean>>({})
 
   useEffect(() => {
     const saved = localStorage.getItem(WEEK_ENDING_STORAGE_KEY)
@@ -490,7 +499,7 @@ export default function HomePage() {
 
   function toggleJobOption(worker: Worker, dayName: string, option: string) {
     const day = worker.days.find((d) => d.day === dayName)
-    if (!day) return
+    if (!day || isLocked) return
 
     const { presetJobs, customJobText } = parseJobValue(day.job)
 
@@ -506,6 +515,8 @@ export default function HomePage() {
   }
 
   function updateCustomJob(worker: Worker, dayName: string, value: string) {
+    if (isLocked) return
+
     const day = worker.days.find((d) => d.day === dayName)
     if (!day) return
 
@@ -518,10 +529,22 @@ export default function HomePage() {
     updateDay(worker.id, dayName, 'job', combined)
   }
 
+  function toggleJobMenu(workerId: string, dayName: string) {
+    const key = `${workerId}-${dayName}-jobs`
+    setOpenJobMenus((prev) => ({
+      ...prev,
+      [key]: !prev[key],
+    }))
+  }
+
+  function isJobMenuOpen(workerId: string, dayName: string) {
+    return !!openJobMenus[`${workerId}-${dayName}-jobs`]
+  }
+
   return (
     <main className="min-h-screen bg-slate-100 p-4 md:p-6">
       <div className="mx-auto max-w-6xl space-y-6">
-        <div className="rounded-3xl bg-slate-900 p-6 text-white">
+        <div className="rounded-3xl bg-slate-950 p-6 text-white shadow-xl">
           <div className="flex items-center gap-4">
             <img
               src="/logo.png"
@@ -530,10 +553,10 @@ export default function HomePage() {
             />
 
             <div>
-              <h1 className="text-3xl font-bold">
+              <h1 className="text-3xl font-bold text-white">
                 1 Stop Turnover Specialist LLC Pro
               </h1>
-              <p className="text-sm text-slate-300">
+              <p className="text-sm font-medium text-slate-200">
                 Owner Control Center
               </p>
             </div>
@@ -541,7 +564,7 @@ export default function HomePage() {
 
           <div className="mt-6 grid gap-4 md:grid-cols-2">
             <div className="rounded-2xl bg-slate-800 p-4">
-              <div className="text-xs uppercase text-slate-400">
+              <div className="text-xs font-semibold uppercase tracking-wide text-slate-300">
                 Week Ending
               </div>
 
@@ -549,14 +572,14 @@ export default function HomePage() {
                 type="date"
                 value={weekEnding}
                 onChange={(e) => setWeekEnding(e.target.value)}
-                className="mt-2 w-full rounded-xl bg-white px-4 py-3 text-black"
+                className="mt-2 w-full rounded-xl bg-white px-4 py-3 font-medium text-black"
               />
 
               {weeks.length > 0 && (
                 <select
                   value={weekEnding}
                   onChange={(e) => setWeekEnding(e.target.value)}
-                  className="mt-3 w-full rounded-xl bg-white px-4 py-3 text-black"
+                  className="mt-3 w-full rounded-xl bg-white px-4 py-3 font-medium text-black"
                 >
                   {weeks.map((w) => (
                     <option key={w.id} value={w.week_ending}>
@@ -568,28 +591,28 @@ export default function HomePage() {
             </div>
 
             <div className="rounded-2xl bg-slate-800 p-4">
-              <div className="text-xs uppercase text-slate-400">
+              <div className="text-xs font-semibold uppercase tracking-wide text-slate-300">
                 Total Payroll
               </div>
 
-              <div className="mt-2 text-4xl font-bold">
+              <div className="mt-2 text-4xl font-bold text-white">
                 ${grandTotal.toFixed(2)}
               </div>
 
-              <div className="mt-3 text-sm font-semibold">
+              <div className="mt-3 text-sm font-semibold text-slate-100">
                 {isLocked ? '🔒 Week Locked' : '🔓 Week Open'}
               </div>
 
               <button
                 onClick={toggleWeekLock}
-                className="mt-3 rounded-xl bg-slate-950 px-4 py-2 text-white"
+                className="mt-3 rounded-xl bg-black px-4 py-2 font-semibold text-white"
               >
                 {isLocked ? 'Unlock Week' : 'Lock Week'}
               </button>
             </div>
 
             <div className="rounded-2xl bg-slate-800 p-4">
-              <div className="text-sm font-semibold">
+              <div className="text-sm font-semibold text-white">
                 Add Worker
               </div>
 
@@ -598,20 +621,20 @@ export default function HomePage() {
                 onChange={(e) => setWorkerName(e.target.value)}
                 placeholder="Worker name"
                 disabled={isLocked}
-                className="mt-3 w-full rounded-xl bg-white px-4 py-3 text-black disabled:bg-slate-200"
+                className="mt-3 w-full rounded-xl bg-white px-4 py-3 font-medium text-black placeholder:text-slate-500 disabled:bg-slate-200"
               />
 
               <button
                 onClick={addWorker}
                 disabled={isLocked}
-                className="mt-3 w-full rounded-xl bg-slate-950 px-4 py-3 text-white disabled:opacity-50"
+                className="mt-3 w-full rounded-xl bg-black px-4 py-3 font-semibold text-white disabled:opacity-50"
               >
                 Add Worker
               </button>
             </div>
 
             <div className="rounded-2xl bg-slate-800 p-4">
-              <div className="text-sm font-semibold">
+              <div className="text-sm font-semibold text-white">
                 Search Worker
               </div>
 
@@ -619,18 +642,18 @@ export default function HomePage() {
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Search by name, phone, or notes"
-                className="mt-3 w-full rounded-xl bg-white px-4 py-3 text-black"
+                className="mt-3 w-full rounded-xl bg-white px-4 py-3 font-medium text-black placeholder:text-slate-500"
               />
             </div>
           </div>
         </div>
 
         {loading ? (
-          <div className="rounded-2xl bg-white p-4">
+          <div className="rounded-2xl bg-white p-4 font-medium text-black shadow">
             Loading...
           </div>
         ) : filteredWorkers.length === 0 ? (
-          <div className="rounded-2xl bg-white p-4">
+          <div className="rounded-2xl bg-white p-4 font-medium text-black shadow">
             No workers found.
           </div>
         ) : (
@@ -641,7 +664,7 @@ export default function HomePage() {
             return (
               <div
                 key={worker.id}
-                className="rounded-3xl bg-white p-5 shadow"
+                className="rounded-3xl bg-white p-5 shadow-lg"
               >
                 <button
                   onClick={() => toggleWorker(worker.id)}
@@ -653,15 +676,15 @@ export default function HomePage() {
                     </div>
 
                     <div
-                      className={`text-sm font-semibold ${
-                        worker.paid ? 'text-green-600' : 'text-amber-600'
+                      className={`text-sm font-bold ${
+                        worker.paid ? 'text-green-700' : 'text-amber-700'
                       }`}
                     >
                       {worker.paid ? 'PAID' : 'UNPAID'}
                     </div>
                   </div>
 
-                  <div className="text-2xl text-slate-600">
+                  <div className="text-2xl font-bold text-slate-700">
                     {open ? '−' : '+'}
                   </div>
                 </button>
@@ -670,7 +693,7 @@ export default function HomePage() {
                   <div className="mt-5">
                     <div className="mb-5 grid gap-3 md:grid-cols-4">
                       <div className="rounded-2xl bg-slate-100 p-4">
-                        <div className="text-sm text-slate-500">
+                        <div className="text-sm font-semibold text-slate-700">
                           Gross Pay
                         </div>
                         <div className="mt-1 text-2xl font-bold text-black">
@@ -679,16 +702,16 @@ export default function HomePage() {
                       </div>
 
                       <div className="rounded-2xl bg-slate-100 p-4">
-                        <div className="text-sm text-slate-500">
+                        <div className="text-sm font-semibold text-slate-700">
                           Advance Summary
                         </div>
-                        <div className="mt-1 text-2xl font-bold text-red-600">
+                        <div className="mt-1 text-2xl font-bold text-red-700">
                           -${workerAdvanceTotal(worker).toFixed(2)}
                         </div>
                       </div>
 
                       <div className="rounded-2xl bg-slate-100 p-4">
-                        <div className="text-sm text-slate-500">
+                        <div className="text-sm font-semibold text-slate-700">
                           Net Payout
                         </div>
                         <div className="mt-1 text-2xl font-bold text-black">
@@ -697,12 +720,12 @@ export default function HomePage() {
                       </div>
 
                       <div className="rounded-2xl bg-slate-100 p-4">
-                        <div className="text-sm text-slate-500">
+                        <div className="text-sm font-semibold text-slate-700">
                           Payroll Slip
                         </div>
                         <button
                           onClick={() => printWorkerSlip(worker)}
-                          className="mt-2 rounded-xl bg-slate-900 px-4 py-2 text-white"
+                          className="mt-2 rounded-xl bg-slate-900 px-4 py-2 font-semibold text-white"
                         >
                           Print Worker Slip
                         </button>
@@ -712,7 +735,7 @@ export default function HomePage() {
                     <div className="mb-5 flex flex-wrap gap-2">
                       <button
                         onClick={() => setTab(worker.id, 'payroll')}
-                        className={`rounded-xl px-4 py-2 ${
+                        className={`rounded-xl px-4 py-2 font-semibold ${
                           tab === 'payroll'
                             ? 'bg-slate-900 text-white'
                             : 'bg-slate-200 text-black'
@@ -723,7 +746,7 @@ export default function HomePage() {
 
                       <button
                         onClick={() => setTab(worker.id, 'notes')}
-                        className={`rounded-xl px-4 py-2 ${
+                        className={`rounded-xl px-4 py-2 font-semibold ${
                           tab === 'notes'
                             ? 'bg-slate-900 text-white'
                             : 'bg-slate-200 text-black'
@@ -734,7 +757,7 @@ export default function HomePage() {
 
                       <button
                         onClick={() => setTab(worker.id, 'admin')}
-                        className={`rounded-xl px-4 py-2 ${
+                        className={`rounded-xl px-4 py-2 font-semibold ${
                           tab === 'admin'
                             ? 'bg-slate-900 text-white'
                             : 'bg-slate-200 text-black'
@@ -750,11 +773,12 @@ export default function HomePage() {
                           const dayOpen = isDayOpen(worker.id, d.day)
                           const key = `${worker.id}-${d.day}`
                           const { presetJobs, customJobText } = parseJobValue(d.job)
+                          const jobMenuOpen = isJobMenuOpen(worker.id, d.day)
 
                           return (
                             <div
                               key={d.day}
-                              className="rounded-2xl border p-4"
+                              className="rounded-2xl border border-slate-300 p-4"
                             >
                               <button
                                 onClick={() => toggleDay(worker.id, d.day)}
@@ -764,7 +788,7 @@ export default function HomePage() {
                                   {d.day} ({getDayDateFromWeekEnding(weekEnding, d.day)})
                                 </div>
 
-                                <div className="text-xl">
+                                <div className="text-xl font-bold text-slate-700">
                                   {dayOpen ? '−' : '+'}
                                 </div>
                               </button>
@@ -793,7 +817,7 @@ export default function HomePage() {
                                         updateDay(worker.id, d.day, 'location', e.target.value)
                                       }
                                     }}
-                                    className="w-full rounded-xl border bg-white px-3 py-2 text-black disabled:bg-slate-200"
+                                    className="w-full rounded-xl border bg-white px-3 py-2 font-medium text-black disabled:bg-slate-200"
                                   >
                                     <option value="">Select property</option>
 
@@ -816,43 +840,66 @@ export default function HomePage() {
                                         updateDay(worker.id, d.day, 'location', e.target.value)
                                       }
                                       placeholder="Type property"
-                                      className="w-full rounded-xl border bg-white px-3 py-2 text-black disabled:bg-slate-200"
+                                      className="w-full rounded-xl border bg-white px-3 py-2 font-medium text-black placeholder:text-slate-500 disabled:bg-slate-200"
                                     />
                                   )}
 
                                   <div className="rounded-xl border bg-slate-50 p-3">
-                                    <div className="mb-2 text-sm font-semibold text-black">
+                                    <div className="text-sm font-bold text-black">
                                       Job Being Done
                                     </div>
 
-                                    <div className="space-y-2">
-                                      {JOB_OPTIONS.map((option) => (
-                                        <label
-                                          key={option}
-                                          className="flex items-center gap-2 text-black"
-                                        >
-                                          <input
-                                            type="checkbox"
-                                            checked={presetJobs.includes(option)}
-                                            disabled={isLocked}
-                                            onChange={() =>
-                                              toggleJobOption(worker, d.day, option)
-                                            }
-                                          />
-                                          <span>{option}</span>
-                                        </label>
-                                      ))}
-                                    </div>
-
-                                    <input
-                                      value={customJobText}
+                                    <button
+                                      type="button"
                                       disabled={isLocked}
-                                      onChange={(e) =>
-                                        updateCustomJob(worker, d.day, e.target.value)
-                                      }
-                                      placeholder="Fill in your own job"
-                                      className="mt-3 w-full rounded-xl border bg-white px-3 py-2 text-black disabled:bg-slate-200"
-                                    />
+                                      onClick={() => toggleJobMenu(worker.id, d.day)}
+                                      className="mt-3 rounded-xl bg-slate-900 px-4 py-2 font-semibold text-white disabled:opacity-50"
+                                    >
+                                      {jobMenuOpen ? 'Hide Jobs ▲' : 'Select Jobs ▼'}
+                                    </button>
+
+                                    {jobMenuOpen && (
+                                      <div className="mt-3 space-y-2 rounded-xl bg-white p-3">
+                                        {JOB_OPTIONS.map((option) => (
+                                          <label
+                                            key={option}
+                                            className="flex items-center gap-2 text-sm font-medium text-black"
+                                          >
+                                            <input
+                                              type="checkbox"
+                                              checked={presetJobs.includes(option)}
+                                              disabled={isLocked}
+                                              onChange={() =>
+                                                toggleJobOption(worker, d.day, option)
+                                              }
+                                            />
+                                            <span>{option}</span>
+                                          </label>
+                                        ))}
+
+                                        <input
+                                          value={customJobText}
+                                          disabled={isLocked}
+                                          onChange={(e) =>
+                                            updateCustomJob(worker, d.day, e.target.value)
+                                          }
+                                          placeholder="Fill in your own job"
+                                          className="mt-3 w-full rounded-xl border bg-white px-3 py-2 font-medium text-black placeholder:text-slate-500 disabled:bg-slate-200"
+                                        />
+                                      </div>
+                                    )}
+
+                                    {(presetJobs.length > 0 || customJobText) && (
+                                      <div className="mt-3 flex flex-wrap gap-2">
+                                        {presetJobs.map((job) => (
+                                          <Tag key={job}>{job}</Tag>
+                                        ))}
+
+                                        {customJobText && (
+                                          <Tag>Custom: {customJobText}</Tag>
+                                        )}
+                                      </div>
+                                    )}
                                   </div>
 
                                   <input
@@ -862,7 +909,7 @@ export default function HomePage() {
                                       updateDay(worker.id, d.day, 'pay', e.target.value)
                                     }
                                     placeholder="Pay"
-                                    className="w-full rounded-xl border bg-white px-3 py-2 text-black disabled:bg-slate-200"
+                                    className="w-full rounded-xl border bg-white px-3 py-2 font-medium text-black placeholder:text-slate-500 disabled:bg-slate-200"
                                   />
 
                                   <input
@@ -872,7 +919,7 @@ export default function HomePage() {
                                       updateDay(worker.id, d.day, 'advance', e.target.value)
                                     }
                                     placeholder="Advance"
-                                    className="w-full rounded-xl border bg-white px-3 py-2 text-black disabled:bg-slate-200"
+                                    className="w-full rounded-xl border bg-white px-3 py-2 font-medium text-black placeholder:text-slate-500 disabled:bg-slate-200"
                                   />
 
                                   <textarea
@@ -882,7 +929,7 @@ export default function HomePage() {
                                       updateDay(worker.id, d.day, 'advanceNote', e.target.value)
                                     }
                                     placeholder="Reason for advance"
-                                    className="min-h-20 w-full rounded-xl border bg-white px-3 py-2 text-black disabled:bg-slate-200"
+                                    className="min-h-20 w-full rounded-xl border bg-white px-3 py-2 font-medium text-black placeholder:text-slate-500 disabled:bg-slate-200"
                                   />
                                 </div>
                               )}
@@ -891,7 +938,7 @@ export default function HomePage() {
                         })}
 
                         <div className="rounded-2xl bg-slate-100 p-4 text-right">
-                          <div className="text-sm text-slate-500">
+                          <div className="text-sm font-semibold text-slate-700">
                             End of Week Total
                           </div>
 
@@ -905,7 +952,7 @@ export default function HomePage() {
                     {tab === 'notes' && (
                       <div className="space-y-4">
                         <div className="rounded-2xl bg-slate-100 p-4">
-                          <label className="text-sm text-slate-500">
+                          <label className="text-sm font-semibold text-slate-700">
                             Phone Number
                           </label>
                           <input
@@ -915,12 +962,12 @@ export default function HomePage() {
                               updateWorkerField(worker.id, 'phone', e.target.value)
                             }
                             placeholder="Worker phone number"
-                            className="mt-2 w-full rounded-xl border bg-white px-3 py-2 text-black disabled:bg-slate-200"
+                            className="mt-2 w-full rounded-xl border bg-white px-3 py-2 font-medium text-black placeholder:text-slate-500 disabled:bg-slate-200"
                           />
                         </div>
 
                         <div className="rounded-2xl bg-slate-100 p-4">
-                          <label className="text-sm text-slate-500">
+                          <label className="text-sm font-semibold text-slate-700">
                             Worker Notes
                           </label>
                           <textarea
@@ -930,7 +977,7 @@ export default function HomePage() {
                               updateWorkerField(worker.id, 'notes', e.target.value)
                             }
                             placeholder="Add notes about this worker"
-                            className="mt-2 min-h-32 w-full rounded-xl border bg-white px-3 py-2 text-black disabled:bg-slate-200"
+                            className="mt-2 min-h-32 w-full rounded-xl border bg-white px-3 py-2 font-medium text-black placeholder:text-slate-500 disabled:bg-slate-200"
                           />
                         </div>
                       </div>
@@ -939,13 +986,13 @@ export default function HomePage() {
                     {tab === 'admin' && (
                       <div className="space-y-4">
                         <div className="rounded-2xl bg-slate-100 p-4">
-                          <div className="text-sm text-slate-500">
+                          <div className="text-sm font-semibold text-slate-700">
                             Status
                           </div>
 
                           <div
                             className={`mt-1 text-xl font-bold ${
-                              worker.paid ? 'text-green-600' : 'text-amber-600'
+                              worker.paid ? 'text-green-700' : 'text-amber-700'
                             }`}
                           >
                             {worker.paid ? 'PAID' : 'UNPAID'}
@@ -954,25 +1001,25 @@ export default function HomePage() {
                           <button
                             onClick={() => togglePaid(worker)}
                             disabled={isLocked}
-                            className="mt-4 rounded-xl bg-slate-900 px-4 py-2 text-white disabled:opacity-50"
+                            className="mt-4 rounded-xl bg-slate-900 px-4 py-2 font-semibold text-white disabled:opacity-50"
                           >
                             {worker.paid ? 'Mark Unpaid' : 'Mark Paid'}
                           </button>
                         </div>
 
                         <div className="rounded-2xl border border-red-300 bg-red-50 p-4">
-                          <div className="font-semibold text-red-700">
+                          <div className="font-bold text-red-700">
                             Danger Zone
                           </div>
 
-                          <p className="mt-1 text-sm text-red-600">
+                          <p className="mt-1 text-sm font-medium text-red-700">
                             Delete worker only if sure.
                           </p>
 
                           <button
                             onClick={() => deleteWorker(worker.id)}
                             disabled={isLocked}
-                            className="mt-4 rounded-xl bg-red-600 px-4 py-2 text-white disabled:opacity-50"
+                            className="mt-4 rounded-xl bg-red-600 px-4 py-2 font-semibold text-white disabled:opacity-50"
                           >
                             Delete Worker
                           </button>
