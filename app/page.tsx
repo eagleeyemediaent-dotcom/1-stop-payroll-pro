@@ -136,31 +136,47 @@ export default function HomePage() {
     window.print()
   }
 
+  function getDayDate(dayName: string) {
+    if (!weekEnding) return ''
+
+    const end = new Date(`${weekEnding}T12:00:00`)
+    const offsets: Record<string, number> = {
+      Monday: -5,
+      Tuesday: -4,
+      Wednesday: -3,
+      Thursday: -2,
+      Friday: -1,
+      Saturday: 0,
+    }
+
+    const date = new Date(end)
+    date.setDate(end.getDate() + offsets[dayName])
+
+    return `(${date.getMonth() + 1}/${date.getDate()}/${date.getFullYear()})`
+  }
+
   return (
     <main className="min-h-screen bg-slate-100 p-4 md:p-6 print:bg-white print:p-0">
       <div className="mx-auto max-w-7xl space-y-6 print:max-w-full print:space-y-4">
         <div className="rounded-3xl bg-slate-900 p-6 text-white print:rounded-none">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-            <div>
-              <div className="flex items-center gap-4">
-  <img
-    src="/logo.png"
-    alt="1 Stop Logo"
-    className="h-16 w-16 rounded-xl bg-white object-contain p-1"
-  />
-  <div>
-    <h1 className="text-3xl font-bold">1 Stop Payroll Pro</h1>
-    <p className="text-sm text-slate-300">Owner Control Center</p>
-  </div>
-</div>
-              <p className="mt-2 text-sm text-slate-300">
-                Worker name, location, job being done, pay & weekly total
-              </p>
+            <div className="flex items-center gap-4">
+              <img
+                src="/logo.png"
+                alt="1 Stop Logo"
+                className="h-16 w-16 rounded-xl bg-white object-contain p-1"
+              />
+              <div>
+                <h1 className="text-3xl font-bold">1 Stop Payroll Pro</h1>
+                <p className="text-sm text-slate-300">Owner Control Center</p>
+              </div>
             </div>
 
             <div className="grid gap-3 sm:grid-cols-2">
               <div>
-                <label className="mb-1 block text-sm text-slate-300">Week Ending</label>
+                <label className="mb-1 block text-sm text-slate-300">
+                  Week Ending
+                </label>
                 <input
                   type="date"
                   value={weekEnding}
@@ -183,7 +199,7 @@ export default function HomePage() {
 
         <div className="grid gap-4 print:hidden lg:grid-cols-[1fr_auto]">
           <div className="rounded-3xl bg-white p-5 shadow">
-            <h2 className="font-bold text-lg">Add Worker</h2>
+            <h2 className="text-lg font-bold text-black">Add Worker</h2>
 
             <div className="mt-3 grid gap-3 md:grid-cols-[1fr_auto]">
               <input
@@ -204,7 +220,7 @@ export default function HomePage() {
           </div>
 
           <div className="rounded-3xl bg-white p-5 shadow">
-            <h2 className="font-bold text-lg">Search Worker</h2>
+            <h2 className="text-lg font-bold text-black">Search Worker</h2>
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
@@ -217,14 +233,16 @@ export default function HomePage() {
         <div className="hidden rounded-3xl bg-white p-5 shadow print:block">
           <div className="flex items-center justify-between">
             <div>
-              <h2 className="text-xl font-bold">Payroll Report</h2>
+              <h2 className="text-xl font-bold text-black">Payroll Report</h2>
               <p className="text-sm text-slate-500">
                 Week Ending: {weekEnding || 'Not set'}
               </p>
             </div>
             <div className="text-right">
               <div className="text-sm text-slate-500">Total Payroll</div>
-              <div className="text-2xl font-bold">${grandTotal.toFixed(2)}</div>
+              <div className="text-2xl font-bold text-black">
+                ${grandTotal.toFixed(2)}
+              </div>
             </div>
           </div>
         </div>
@@ -240,17 +258,24 @@ export default function HomePage() {
         </div>
 
         {loading ? (
-          <div className="rounded-3xl bg-white p-5 shadow">Loading workers...</div>
+          <div className="rounded-3xl bg-white p-5 shadow text-black">
+            Loading workers...
+          </div>
         ) : filteredWorkers.length === 0 ? (
-          <div className="rounded-3xl bg-white p-5 shadow">
+          <div className="rounded-3xl bg-white p-5 shadow text-black">
             {search ? 'No workers found.' : 'No workers yet.'}
           </div>
         ) : (
           filteredWorkers.map((worker) => (
-            <div key={worker.id} className="rounded-3xl bg-white p-5 shadow print:break-inside-avoid">
+            <div
+              key={worker.id}
+              className="rounded-3xl bg-white p-5 shadow print:break-inside-avoid"
+            >
               <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                 <div>
-                  <h2 className="text-2xl font-bold text-black">{worker.name}</h2>
+                  <h2 className="text-2xl font-bold text-black">
+                    {worker.name}
+                  </h2>
                   <p className="text-slate-500">
                     Weekly Total: ${total(worker).toFixed(2)}
                   </p>
@@ -267,7 +292,9 @@ export default function HomePage() {
               <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
                 {worker.days.map((d) => (
                   <div key={d.day} className="rounded-2xl border p-4">
-                    <h3 className="font-bold text-black">{d.day}</h3>
+                    <h3 className="font-bold text-black">
+                      {d.day} {getDayDate(d.day)}
+                    </h3>
 
                     <input
                       value={d.location}
