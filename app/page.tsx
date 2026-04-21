@@ -42,7 +42,7 @@ type Worker = {
   phone: string
   notes: string
   paid: boolean
-  weekEnding: string
+  weekending: string
   days: WorkerDay[]
 }
 
@@ -116,17 +116,19 @@ export default function HomePage() {
 
   useEffect(() => {
     const saved = localStorage.getItem(WEEK_ENDING_STORAGE_KEY)
-    const initialWeek = saved || getDefaultWeekEnding()
-    setWeekEnding(initialWeek)
+    setWeekEnding(saved || getDefaultWeekEnding())
   }, [])
 
   useEffect(() => {
     if (!weekEnding) return
+
     localStorage.setItem(WEEK_ENDING_STORAGE_KEY, weekEnding)
-    ensureWeekExists(weekEnding).then(() => {
-      loadWeeks()
-      loadWorkers(weekEnding)
-    })
+
+    ;(async () => {
+      await ensureWeekExists(weekEnding)
+      await loadWeeks()
+      await loadWorkers(weekEnding)
+    })()
   }, [weekEnding])
 
   async function ensureWeekExists(targetWeekEnding: string) {
@@ -161,17 +163,17 @@ export default function HomePage() {
     const { data, error } = await supabase
       .from('payroll_workers')
       .select('*')
-      .eq('weekEnding', targetWeekEnding)
+      .eq('weekending', targetWeekEnding)
       .order('created_at', { ascending: true })
 
     if (!error && data) {
       const list: Worker[] = data.map((w) => ({
         id: w.id,
-        name: w.name,
+        name: w.name || '',
         phone: w.phone || '',
         notes: w.notes || '',
         paid: !!w.paid,
-        weekEnding: w.weekEnding || targetWeekEnding,
+        weekending: w.weekending || targetWeekEnding,
         days: normalizeDays(w.days),
       }))
 
@@ -185,8 +187,7 @@ export default function HomePage() {
         w.days.forEach((d) => {
           const key = `${w.id}-${d.day}`
           customModes[key] =
-            !!d.location &&
-            !PROPERTY_OPTIONS.includes(d.location)
+            !!d.location && !PROPERTY_OPTIONS.includes(d.location)
         })
       })
 
@@ -213,7 +214,7 @@ export default function HomePage() {
       phone: '',
       notes: '',
       paid: false,
-      weekEnding,
+      weekending: weekEnding,
       days: DAYS.map((d) => ({
         day: d,
         location: '',
@@ -233,11 +234,11 @@ export default function HomePage() {
     if (!error && data) {
       const worker: Worker = {
         id: data.id,
-        name: data.name,
+        name: data.name || '',
         phone: data.phone || '',
         notes: data.notes || '',
         paid: !!data.paid,
-        weekEnding: data.weekEnding || weekEnding,
+        weekending: data.weekending || weekEnding,
         days: normalizeDays(data.days),
       }
 
@@ -261,7 +262,7 @@ export default function HomePage() {
         phone: nextWorker.phone,
         notes: nextWorker.notes,
         paid: nextWorker.paid,
-        weekEnding: nextWorker.weekEnding,
+        weekending: nextWorker.weekending,
         days: nextWorker.days,
       })
       .eq('id', workerId)
@@ -550,7 +551,7 @@ export default function HomePage() {
               <button
                 onClick={addWorker}
                 disabled={isLocked}
-                className="mt-3 w-full rounded-xl bg-slate-950 px-4 py-3 disabled:opacity-50"
+                className="mt-3 w-full rounded-xl bg-slate-950 px-4 py-3 text-white disabled:opacity-50"
               >
                 Add Worker
               </button>
@@ -865,9 +866,7 @@ export default function HomePage() {
 
                           <div
                             className={`mt-1 text-xl font-bold ${
-                              worker.paid
-                                ? 'text-green-600'
-                                : 'text-amber-600'
+                              worker.paid ? 'text-green-600' : 'text-amber-600'
                             }`}
                           >
                             {worker.paid ? 'PAID' : 'UNPAID'}
