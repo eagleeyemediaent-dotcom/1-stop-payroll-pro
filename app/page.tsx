@@ -6,6 +6,27 @@ import { createClient } from '@/lib/supabase-browser'
 const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 const WEEK_ENDING_STORAGE_KEY = 'one-stop-week-ending'
 
+const PROPERTY_OPTIONS = [
+  '125 Governor St, Providence',
+  'Charles Place Apartments',
+  'Copley Chambers 206 Broad Street',
+  'Copley Chambers 220 Broad Street',
+  'Copley Chambers 228 Broad Street',
+  'MAPLE GARDENS',
+  'OMNI POINT 322 Friendship St.',
+  'Phoenix Renaissance 102 Linwood Av.',
+  'Riverstone Apartments',
+  'Spring Villa Apartments',
+  'Four Sisters Apartments',
+  'HDC Properties (322 Friendship St.)',
+  'Joseph Caffey Apartment',
+  'TURNING POINT (1380 Broad St)',
+  'Tanglewood Village Apartments',
+  'Valley Apartments',
+  'Waterview Apartments',
+  'OTHER',
+] as const
+
 type WorkerDay = {
   day: string
   location: string
@@ -51,6 +72,13 @@ function getDayDateFromWeekEnding(weekEnding: string, dayName: string) {
   date.setDate(end.getDate() + offsets[dayName])
 
   return `${date.getMonth() + 1}/${date.getDate()}/${date.getFullYear()}`
+}
+
+function getLocationSelectValue(location: string) {
+  if (!location) return ''
+  return PROPERTY_OPTIONS.includes(location as (typeof PROPERTY_OPTIONS)[number])
+    ? location
+    : 'OTHER'
 }
 
 export default function HomePage() {
@@ -299,6 +327,8 @@ export default function HomePage() {
                   <div className="mt-5 space-y-4">
                     {worker.days.map((d) => {
                       const dayOpen = isDayOpen(worker.id, d.day)
+                      const selectedLocation = getLocationSelectValue(d.location)
+                      const showOtherLocation = selectedLocation === 'OTHER'
 
                       return (
                         <div key={d.day} className="rounded-2xl border p-4">
@@ -317,19 +347,47 @@ export default function HomePage() {
 
                           {dayOpen && (
                             <div className="mt-4">
-                              <input
-                                value={d.location}
+                              <select
+                                value={selectedLocation}
                                 onChange={(e) =>
                                   updateDay(
                                     worker.id,
                                     d.day,
                                     'location',
-                                    e.target.value
+                                    e.target.value === 'OTHER' ? '' : e.target.value
                                   )
                                 }
-                                placeholder="Location"
-                                className="mt-3 w-full rounded-xl border bg-white px-3 py-2 text-black placeholder:text-gray-400"
-                              />
+                                className="mt-3 w-full rounded-xl border bg-white px-3 py-2 text-black"
+                              >
+                                <option value="">Select property</option>
+                                {PROPERTY_OPTIONS.map((property) => (
+                                  <option key={property} value={property}>
+                                    {property}
+                                  </option>
+                                ))}
+                              </select>
+
+                              {showOtherLocation && (
+                                <input
+                                  value={
+                                    PROPERTY_OPTIONS.includes(
+                                      d.location as (typeof PROPERTY_OPTIONS)[number]
+                                    )
+                                      ? ''
+                                      : d.location
+                                  }
+                                  onChange={(e) =>
+                                    updateDay(
+                                      worker.id,
+                                      d.day,
+                                      'location',
+                                      e.target.value
+                                    )
+                                  }
+                                  placeholder="Enter other property"
+                                  className="mt-3 w-full rounded-xl border bg-white px-3 py-2 text-black placeholder:text-gray-400"
+                                />
+                              )}
 
                               <textarea
                                 value={d.job}
