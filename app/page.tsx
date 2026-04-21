@@ -240,7 +240,7 @@ export default function HomePage() {
             <div key={worker.id} className="rounded-3xl bg-white p-5 shadow print:break-inside-avoid">
               <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                 <div>
-                  <h2 className="text-2xl font-bold">{worker.name}</h2>
+                  <h2 className="text-2xl font-bold text-black">{worker.name}</h2>
                   <p className="text-slate-500">
                     Weekly Total: ${total(worker).toFixed(2)}
                   </p>
@@ -257,7 +257,7 @@ export default function HomePage() {
               <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
                 {worker.days.map((d) => (
                   <div key={d.day} className="rounded-2xl border p-4">
-                    <h3 className="font-bold">{d.day}</h3>
+                    <h3 className="font-bold text-black">{d.day}</h3>
 
                     <input
                       value={d.location}
