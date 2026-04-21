@@ -20,32 +20,33 @@ type Worker = {
 
 export default function HomePage() {
   const supabase = createClient()
+
   const [workers, setWorkers] = useState<Worker[]>([])
   const [workerName, setWorkerName] = useState('')
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    async function loadWorkers() {
-      const { data, error } = await supabase
-        .from('payroll_workers')
-        .select('*')
-        .order('created_at', { ascending: true })
+    loadWorkers()
+  }, [])
 
-      if (!error && data) {
-        setWorkers(
-          data.map((worker) => ({
-            id: worker.id,
-            name: worker.name,
-            days: Array.isArray(worker.days) ? worker.days : [],
-          }))
-        )
-      }
+  async function loadWorkers() {
+    const { data, error } = await supabase
+      .from('payroll_workers')
+      .select('*')
+      .order('created_at', { ascending: true })
 
-      setLoading(false)
+    if (!error && data) {
+      setWorkers(
+        data.map((w) => ({
+          id: w.id,
+          name: w.name,
+          days: Array.isArray(w.days) ? w.days : [],
+        }))
+      )
     }
 
-    loadWorkers()
-  }, [supabase])
+    setLoading(false)
+  }
 
   async function addWorker() {
     if (!workerName.trim()) return
@@ -72,9 +73,10 @@ export default function HomePage() {
         {
           id: data.id,
           name: data.name,
-          days: Array.isArray(data.days) ? data.days : [],
+          days: data.days || [],
         },
       ])
+
       setWorkerName('')
     }
   }
@@ -85,7 +87,7 @@ export default function HomePage() {
     field: 'location' | 'job' | 'pay',
     value: string
   ) {
-    const updatedWorkers = workers.map((worker) =>
+    const updated = workers.map((worker) =>
       worker.id === workerId
         ? {
             ...worker,
@@ -96,29 +98,23 @@ export default function HomePage() {
         : worker
     )
 
-    setWorkers(updatedWorkers)
+    setWorkers(updated)
 
-    const updatedWorker = updatedWorkers.find((w) => w.id === workerId)
-    if (!updatedWorker) return
+    const current = updated.find((w) => w.id === workerId)
+    if (!current) return
 
     await supabase
       .from('payroll_workers')
-      .update({
-        name: updatedWorker.name,
-        days: updatedWorker.days,
-      })
+      .update({ days: current.days })
       .eq('id', workerId)
   }
 
   async function deleteWorker(workerId: string) {
-    const confirmed = window.confirm('Delete this worker?')
-    if (!confirmed) return
-
     await supabase.from('payroll_workers').delete().eq('id', workerId)
-    setWorkers((prev) => prev.filter((worker) => worker.id !== workerId))
+    setWorkers((prev) => prev.filter((w) => w.id !== workerId))
   }
 
-  function workerTotal(worker: Worker) {
+  function total(worker: Worker) {
     return worker.days.reduce((sum, d) => sum + Number(d.pay || 0), 0)
   }
 
@@ -128,79 +124,84 @@ export default function HomePage() {
         <div className="rounded-3xl bg-slate-900 p-6 text-white">
           <h1 className="text-3xl font-bold">1 Stop Payroll Pro</h1>
           <p className="mt-2 text-sm text-slate-300">
-            Worker name, location, job being done, pay, and weekly total.
+            Worker name, location, job being done, pay & weekly total
           </p>
         </div>
 
         <div className="rounded-3xl bg-white p-5 shadow">
-          <h2 className="font-bold">Add Worker</h2>
+          <h2 className="font-bold text-lg">Add Worker</h2>
+
           <input
-            className="mt-3 w-full rounded-2xl border px-4 py-3"
-            placeholder="Worker name"
             value={workerName}
             onChange={(e) => setWorkerName(e.target.value)}
+            placeholder="Worker name"
+            className="mt-3 w-full rounded-2xl border bg-white px-4 py-3 text-black placeholder:text-gray-400"
           />
+
           <button
+            type="button"
             onClick={addWorker}
-            className="mt-3 rounded-2xl bg-slate-900 px-4 py-3 text-white"
+            className="mt-3 rounded-2xl bg-slate-900 px-5 py-3 text-white"
           >
             Add Worker
           </button>
         </div>
 
         {loading ? (
-          <div className="rounded-3xl bg-white p-5 shadow">Loading workers...</div>
+          <div className="rounded-3xl bg-white p-5 shadow">
+            Loading workers...
+          </div>
         ) : (
           workers.map((worker) => (
             <div key={worker.id} className="rounded-3xl bg-white p-5 shadow">
               <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                 <div>
-                  <h3 className="text-2xl font-bold">{worker.name}</h3>
-                  <p className="mt-1 text-sm text-slate-500">
-                    Weekly total: ${workerTotal(worker).toFixed(2)}
+                  <h2 className="text-2xl font-bold">{worker.name}</h2>
+                  <p className="text-slate-500">
+                    Weekly Total: ${total(worker).toFixed(2)}
                   </p>
                 </div>
 
                 <button
                   onClick={() => deleteWorker(worker.id)}
-                  className="rounded-2xl border border-red-300 px-4 py-2 text-red-600"
+                  className="rounded-2xl bg-red-600 px-4 py-2 text-white"
                 >
                   Delete Worker
                 </button>
               </div>
 
-              <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+              <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
                 {worker.days.map((d) => (
                   <div key={d.day} className="rounded-2xl border p-4">
-                    <h4 className="font-bold">{d.day}</h4>
+                    <h3 className="font-bold">{d.day}</h3>
 
                     <input
-                      className="mt-3 w-full rounded-xl border px-3 py-2"
-                      placeholder="Location"
                       value={d.location}
                       onChange={(e) =>
                         updateDay(worker.id, d.day, 'location', e.target.value)
                       }
+                      placeholder="Location"
+                      className="mt-3 w-full rounded-xl border bg-white px-3 py-2 text-black placeholder:text-gray-400"
                     />
 
                     <textarea
-                      className="mt-3 min-h-24 w-full rounded-xl border px-3 py-2"
-                      placeholder="Job being done"
                       value={d.job}
                       onChange={(e) =>
                         updateDay(worker.id, d.day, 'job', e.target.value)
                       }
+                      placeholder="Job being done"
+                      className="mt-3 min-h-24 w-full rounded-xl border bg-white px-3 py-2 text-black placeholder:text-gray-400"
                     />
 
                     <input
                       type="number"
                       step="0.01"
-                      className="mt-3 w-full rounded-xl border px-3 py-2"
-                      placeholder="Pay"
                       value={d.pay}
                       onChange={(e) =>
                         updateDay(worker.id, d.day, 'pay', e.target.value)
                       }
+                      placeholder="Pay"
+                      className="mt-3 w-full rounded-xl border bg-white px-3 py-2 text-black placeholder:text-gray-400"
                     />
                   </div>
                 ))}
