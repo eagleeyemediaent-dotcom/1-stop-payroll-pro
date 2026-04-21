@@ -142,7 +142,17 @@ export default function HomePage() {
         <div className="rounded-3xl bg-slate-900 p-6 text-white print:rounded-none">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
             <div>
-              <h1 className="text-3xl font-bold">1 Stop Payroll Pro</h1>
+              <div className="flex items-center gap-4">
+  <img
+    src="/logo.png"
+    alt="1 Stop Logo"
+    className="h-16 w-16 rounded-xl bg-white object-contain p-1"
+  />
+  <div>
+    <h1 className="text-3xl font-bold">1 Stop Payroll Pro</h1>
+    <p className="text-sm text-slate-300">Owner Control Center</p>
+  </div>
+</div>
               <p className="mt-2 text-sm text-slate-300">
                 Worker name, location, job being done, pay & weekly total
               </p>
