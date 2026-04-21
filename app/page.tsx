@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { createClient } from '@/lib/supabase-browser'
 
 const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+const WEEK_ENDING_STORAGE_KEY = 'one-stop-week-ending'
 
 type WorkerDay = {
   day: string
@@ -18,6 +19,40 @@ type Worker = {
   days: WorkerDay[]
 }
 
+function getDefaultWeekEnding() {
+  const today = new Date()
+  const day = today.getDay()
+  const daysUntilSaturday = (6 - day + 7) % 7
+  const saturday = new Date(today)
+  saturday.setDate(today.getDate() + daysUntilSaturday)
+
+  const yyyy = saturday.getFullYear()
+  const mm = String(saturday.getMonth() + 1).padStart(2, '0')
+  const dd = String(saturday.getDate()).padStart(2, '0')
+
+  return `${yyyy}-${mm}-${dd}`
+}
+
+function getDayDateFromWeekEnding(weekEnding: string, dayName: string) {
+  if (!weekEnding) return ''
+
+  const end = new Date(`${weekEnding}T12:00:00`)
+
+  const offsets: Record<string, number> = {
+    Monday: -5,
+    Tuesday: -4,
+    Wednesday: -3,
+    Thursday: -2,
+    Friday: -1,
+    Saturday: 0,
+  }
+
+  const date = new Date(end)
+  date.setDate(end.getDate() + offsets[dayName])
+
+  return `${date.getMonth() + 1}/${date.getDate()}/${date.getFullYear()}`
+}
+
 export default function HomePage() {
   const supabase = createClient()
 
@@ -26,10 +61,20 @@ export default function HomePage() {
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [weekEnding, setWeekEnding] = useState('')
+  const [openWorkerId, setOpenWorkerId] = useState<string | null>(null)
+  const [openDays, setOpenDays] = useState<Record<string, boolean>>({})
 
   useEffect(() => {
+    const savedWeekEnding = localStorage.getItem(WEEK_ENDING_STORAGE_KEY)
+    setWeekEnding(savedWeekEnding || getDefaultWeekEnding())
     loadWorkers()
   }, [])
+
+  useEffect(() => {
+    if (weekEnding) {
+      localStorage.setItem(WEEK_ENDING_STORAGE_KEY, weekEnding)
+    }
+  }, [weekEnding])
 
   async function loadWorkers() {
     const { data, error } = await supabase
@@ -88,7 +133,7 @@ export default function HomePage() {
     field: 'location' | 'job' | 'pay',
     value: string
   ) {
-    const updated = workers.map((worker) =>
+    const updatedWorkers = workers.map((worker) =>
       worker.id === workerId
         ? {
             ...worker,
@@ -99,14 +144,17 @@ export default function HomePage() {
         : worker
     )
 
-    setWorkers(updated)
+    setWorkers(updatedWorkers)
 
-    const current = updated.find((w) => w.id === workerId)
-    if (!current) return
+    const updatedWorker = updatedWorkers.find((w) => w.id === workerId)
+    if (!updatedWorker) return
 
     await supabase
       .from('payroll_workers')
-      .update({ days: current.days })
+      .update({
+        name: updatedWorker.name,
+        days: updatedWorker.days,
+      })
       .eq('id', workerId)
   }
 
@@ -116,6 +164,10 @@ export default function HomePage() {
 
     await supabase.from('payroll_workers').delete().eq('id', workerId)
     setWorkers((prev) => prev.filter((w) => w.id !== workerId))
+
+    if (openWorkerId === workerId) {
+      setOpenWorkerId(null)
+    }
   }
 
   function total(worker: Worker) {
@@ -132,27 +184,35 @@ export default function HomePage() {
     return filteredWorkers.reduce((sum, worker) => sum + total(worker), 0)
   }, [filteredWorkers])
 
-  function printPayroll() {
-    window.print()
+  function toggleWorker(workerId: string) {
+    setOpenWorkerId((prev) => (prev === workerId ? null : workerId))
+    setOpenDays({})
   }
 
-  function getDayDate(dayName: string) {
-    if (!weekEnding) return ''
+  function toggleDay(workerId: string, dayName: string) {
+    const key = `${workerId}-${dayName}`
 
-    const end = new Date(`${weekEnding}T12:00:00`)
-    const offsets: Record<string, number> = {
-      Monday: -5,
-      Tuesday: -4,
-      Wednesday: -3,
-      Thursday: -2,
-      Friday: -1,
-      Saturday: 0,
-    }
+    setOpenDays((prev) => {
+      const next: Record<string, boolean> = {}
 
-    const date = new Date(end)
-    date.setDate(end.getDate() + offsets[dayName])
+      Object.keys(prev).forEach((k) => {
+        if (!k.startsWith(`${workerId}-`)) {
+          next[k] = prev[k]
+        }
+      })
 
-    return `(${date.getMonth() + 1}/${date.getDate()}/${date.getFullYear()})`
+      next[key] = !prev[key]
+      return next
+    })
+  }
+
+  function isDayOpen(workerId: string, dayName: string) {
+    const key = `${workerId}-${dayName}`
+    return !!openDays[key]
+  }
+
+  function printPayroll() {
+    window.print()
   }
 
   return (
@@ -200,7 +260,6 @@ export default function HomePage() {
         <div className="grid gap-4 print:hidden lg:grid-cols-[1fr_auto]">
           <div className="rounded-3xl bg-white p-5 shadow">
             <h2 className="text-lg font-bold text-black">Add Worker</h2>
-
             <div className="mt-3 grid gap-3 md:grid-cols-[1fr_auto]">
               <input
                 value={workerName}
@@ -208,7 +267,6 @@ export default function HomePage() {
                 placeholder="Worker name"
                 className="w-full rounded-2xl border bg-white px-4 py-3 text-black placeholder:text-gray-400"
               />
-
               <button
                 type="button"
                 onClick={addWorker}
@@ -230,6 +288,16 @@ export default function HomePage() {
           </div>
         </div>
 
+        <div className="print:hidden">
+          <button
+            type="button"
+            onClick={printPayroll}
+            className="rounded-2xl bg-emerald-600 px-5 py-3 text-white"
+          >
+            Print / Save PDF
+          </button>
+        </div>
+
         <div className="hidden rounded-3xl bg-white p-5 shadow print:block">
           <div className="flex items-center justify-between">
             <div>
@@ -247,16 +315,6 @@ export default function HomePage() {
           </div>
         </div>
 
-        <div className="print:hidden">
-          <button
-            type="button"
-            onClick={printPayroll}
-            className="rounded-2xl bg-emerald-600 px-5 py-3 text-white"
-          >
-            Print / Save PDF
-          </button>
-        </div>
-
         {loading ? (
           <div className="rounded-3xl bg-white p-5 shadow text-black">
             Loading workers...
@@ -266,69 +324,120 @@ export default function HomePage() {
             {search ? 'No workers found.' : 'No workers yet.'}
           </div>
         ) : (
-          filteredWorkers.map((worker) => (
-            <div
-              key={worker.id}
-              className="rounded-3xl bg-white p-5 shadow print:break-inside-avoid"
-            >
-              <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                <div>
+          filteredWorkers.map((worker) => {
+            const workerOpen = openWorkerId === worker.id
+
+            return (
+              <div
+                key={worker.id}
+                className="rounded-3xl bg-white p-5 shadow print:break-inside-avoid"
+              >
+                <button
+                  type="button"
+                  onClick={() => toggleWorker(worker.id)}
+                  className="flex w-full items-center justify-between text-left"
+                >
                   <h2 className="text-2xl font-bold text-black">
                     {worker.name}
                   </h2>
-                  <p className="text-slate-500">
-                    Weekly Total: ${total(worker).toFixed(2)}
-                  </p>
-                </div>
-
-                <button
-                  onClick={() => deleteWorker(worker.id)}
-                  className="rounded-2xl bg-red-600 px-4 py-2 text-white print:hidden"
-                >
-                  Delete Worker
+                  <span className="text-2xl text-slate-600">
+                    {workerOpen ? '−' : '+'}
+                  </span>
                 </button>
-              </div>
 
-              <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-                {worker.days.map((d) => (
-                  <div key={d.day} className="rounded-2xl border p-4">
-                    <h3 className="font-bold text-black">
-                      {d.day} {getDayDate(d.day)}
-                    </h3>
+                {workerOpen && (
+                  <div className="mt-5 space-y-4">
+                    {worker.days.map((d) => {
+                      const dayOpen = isDayOpen(worker.id, d.day)
 
-                    <input
-                      value={d.location}
-                      onChange={(e) =>
-                        updateDay(worker.id, d.day, 'location', e.target.value)
-                      }
-                      placeholder="Location"
-                      className="mt-3 w-full rounded-xl border bg-white px-3 py-2 text-black placeholder:text-gray-400"
-                    />
+                      return (
+                        <div key={d.day} className="rounded-2xl border p-4">
+                          <button
+                            type="button"
+                            onClick={() => toggleDay(worker.id, d.day)}
+                            className="flex w-full items-center justify-between text-left"
+                          >
+                            <h3 className="font-bold text-black">
+                              {d.day} ({getDayDateFromWeekEnding(weekEnding, d.day)})
+                            </h3>
+                            <span className="text-xl text-slate-600">
+                              {dayOpen ? '−' : '+'}
+                            </span>
+                          </button>
 
-                    <textarea
-                      value={d.job}
-                      onChange={(e) =>
-                        updateDay(worker.id, d.day, 'job', e.target.value)
-                      }
-                      placeholder="Job being done"
-                      className="mt-3 min-h-24 w-full rounded-xl border bg-white px-3 py-2 text-black placeholder:text-gray-400"
-                    />
+                          {dayOpen && (
+                            <div className="mt-4">
+                              <input
+                                value={d.location}
+                                onChange={(e) =>
+                                  updateDay(
+                                    worker.id,
+                                    d.day,
+                                    'location',
+                                    e.target.value
+                                  )
+                                }
+                                placeholder="Location"
+                                className="mt-3 w-full rounded-xl border bg-white px-3 py-2 text-black placeholder:text-gray-400"
+                              />
 
-                    <input
-                      type="number"
-                      step="0.01"
-                      value={d.pay}
-                      onChange={(e) =>
-                        updateDay(worker.id, d.day, 'pay', e.target.value)
-                      }
-                      placeholder="Pay"
-                      className="mt-3 w-full rounded-xl border bg-white px-3 py-2 text-black placeholder:text-gray-400"
-                    />
+                              <textarea
+                                value={d.job}
+                                onChange={(e) =>
+                                  updateDay(
+                                    worker.id,
+                                    d.day,
+                                    'job',
+                                    e.target.value
+                                  )
+                                }
+                                placeholder="Job being done"
+                                className="mt-3 min-h-24 w-full rounded-xl border bg-white px-3 py-2 text-black placeholder:text-gray-400"
+                              />
+
+                              <input
+                                type="number"
+                                step="0.01"
+                                value={d.pay}
+                                onChange={(e) =>
+                                  updateDay(
+                                    worker.id,
+                                    d.day,
+                                    'pay',
+                                    e.target.value
+                                  )
+                                }
+                                placeholder="Pay"
+                                className="mt-3 w-full rounded-xl border bg-white px-3 py-2 text-black placeholder:text-gray-400"
+                              />
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })}
+
+                    <div className="rounded-2xl bg-slate-100 p-4 text-right">
+                      <div className="text-sm text-slate-500">
+                        End of Week Total
+                      </div>
+                      <div className="text-3xl font-bold text-black">
+                        ${total(worker).toFixed(2)}
+                      </div>
+                    </div>
+
+                    <div className="flex justify-end print:hidden">
+                      <button
+                        onClick={() => deleteWorker(worker.id)}
+                        className="rounded-2xl bg-red-600 px-4 py-2 text-white"
+                      >
+                        Delete Worker
+                      </button>
+                    </div>
                   </div>
-                ))}
+                )}
               </div>
-            </div>
-          ))
+            )
+          })
         )}
       </div>
     </main>
