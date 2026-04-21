@@ -33,6 +33,7 @@ type WorkerDay = {
   job: string
   pay: string
   advance: string
+  advanceNote: string
 }
 
 type Worker = {
@@ -75,13 +76,6 @@ function getDayDateFromWeekEnding(weekEnding: string, dayName: string) {
   return `${date.getMonth() + 1}/${date.getDate()}/${date.getFullYear()}`
 }
 
-function getLocationSelectValue(location: string) {
-  if (!location) return ''
-  return PROPERTY_OPTIONS.includes(location as (typeof PROPERTY_OPTIONS)[number])
-    ? location
-    : FILL_IN_BLANK_OPTION
-}
-
 function normalizeDays(days: any[]): WorkerDay[] {
   return DAYS.map((dayName) => {
     const existing = Array.isArray(days)
@@ -94,8 +88,13 @@ function normalizeDays(days: any[]): WorkerDay[] {
       job: existing?.job || '',
       pay: existing?.pay || '',
       advance: existing?.advance || '',
+      advanceNote: existing?.advanceNote || '',
     }
   })
+}
+
+function isPresetProperty(location: string) {
+  return PROPERTY_OPTIONS.includes(location as (typeof PROPERTY_OPTIONS)[number])
 }
 
 export default function HomePage() {
@@ -107,6 +106,7 @@ export default function HomePage() {
   const [weekEnding, setWeekEnding] = useState('')
   const [openWorkerId, setOpenWorkerId] = useState<string | null>(null)
   const [openDays, setOpenDays] = useState<Record<string, boolean>>({})
+  const [locationMode, setLocationMode] = useState<Record<string, 'preset' | 'custom'>>({})
 
   useEffect(() => {
     const savedWeekEnding = localStorage.getItem(WEEK_ENDING_STORAGE_KEY)
@@ -127,13 +127,22 @@ export default function HomePage() {
       .order('created_at', { ascending: true })
 
     if (!error && data) {
-      setWorkers(
-        data.map((w) => ({
-          id: w.id,
-          name: w.name,
-          days: normalizeDays(Array.isArray(w.days) ? w.days : []),
-        }))
-      )
+      const normalizedWorkers = data.map((w) => ({
+        id: w.id,
+        name: w.name,
+        days: normalizeDays(Array.isArray(w.days) ? w.days : []),
+      }))
+
+      setWorkers(normalizedWorkers)
+
+      const modeMap: Record<string, 'preset' | 'custom'> = {}
+      normalizedWorkers.forEach((worker) => {
+        worker.days.forEach((day) => {
+          modeMap[`${worker.id}-${day.day}`] =
+            day.location && !isPresetProperty(day.location) ? 'custom' : 'preset'
+        })
+      })
+      setLocationMode(modeMap)
     }
 
     setLoading(false)
@@ -150,6 +159,7 @@ export default function HomePage() {
         job: '',
         pay: '',
         advance: '',
+        advanceNote: '',
       })),
     }
 
@@ -160,14 +170,20 @@ export default function HomePage() {
       .single()
 
     if (!error && data) {
-      setWorkers((prev) => [
-        ...prev,
-        {
-          id: data.id,
-          name: data.name,
-          days: normalizeDays(Array.isArray(data.days) ? data.days : []),
-        },
-      ])
+      const worker = {
+        id: data.id,
+        name: data.name,
+        days: normalizeDays(Array.isArray(data.days) ? data.days : []),
+      }
+
+      setWorkers((prev) => [...prev, worker])
+
+      const modeMap: Record<string, 'preset' | 'custom'> = {}
+      worker.days.forEach((day) => {
+        modeMap[`${worker.id}-${day.day}`] = 'preset'
+      })
+      setLocationMode((prev) => ({ ...prev, ...modeMap }))
+
       setWorkerName('')
     }
   }
@@ -175,7 +191,7 @@ export default function HomePage() {
   async function updateDay(
     workerId: string,
     day: string,
-    field: 'location' | 'job' | 'pay' | 'advance',
+    field: 'location' | 'job' | 'pay' | 'advance' | 'advanceNote',
     value: string
   ) {
     const updatedWorkers = workers.map((worker) =>
@@ -232,10 +248,7 @@ export default function HomePage() {
 
     for (const worker of workers) {
       for (const day of worker.days) {
-        if (
-          day.location &&
-          PROPERTY_OPTIONS.includes(day.location as (typeof PROPERTY_OPTIONS)[number])
-        ) {
+        if (day.location && isPresetProperty(day.location)) {
           counts.set(day.location, (counts.get(day.location) || 0) + 1)
         }
       }
@@ -372,9 +385,8 @@ export default function HomePage() {
                   <div className="mt-5 space-y-4">
                     {worker.days.map((d) => {
                       const dayOpen = isDayOpen(worker.id, d.day)
-                      const selectedLocation = getLocationSelectValue(d.location)
-                      const showCustomLocationInput =
-                        selectedLocation === FILL_IN_BLANK_OPTION
+                      const locationKey = `${worker.id}-${d.day}`
+                      const currentMode = locationMode[locationKey] || 'preset'
 
                       return (
                         <div key={d.day} className="rounded-2xl border p-4">
@@ -394,15 +406,28 @@ export default function HomePage() {
                           {dayOpen && (
                             <div className="mt-4">
                               <select
-                                value={selectedLocation}
-                                onChange={(e) =>
-                                  updateDay(
-                                    worker.id,
-                                    d.day,
-                                    'location',
-                                    e.target.value === FILL_IN_BLANK_OPTION ? '' : e.target.value
-                                  )
+                                value={
+                                  currentMode === 'custom'
+                                    ? FILL_IN_BLANK_OPTION
+                                    : d.location
                                 }
+                                onChange={(e) => {
+                                  const selected = e.target.value
+
+                                  if (selected === FILL_IN_BLANK_OPTION) {
+                                    setLocationMode((prev) => ({
+                                      ...prev,
+                                      [locationKey]: 'custom',
+                                    }))
+                                    updateDay(worker.id, d.day, 'location', '')
+                                  } else {
+                                    setLocationMode((prev) => ({
+                                      ...prev,
+                                      [locationKey]: 'preset',
+                                    }))
+                                    updateDay(worker.id, d.day, 'location', selected)
+                                  }
+                                }}
                                 className="mt-3 w-full rounded-xl border bg-white px-3 py-2 text-black"
                               >
                                 <option value="">Select property</option>
@@ -416,15 +441,9 @@ export default function HomePage() {
                                 </option>
                               </select>
 
-                              {showCustomLocationInput && (
+                              {currentMode === 'custom' && (
                                 <input
-                                  value={
-                                    PROPERTY_OPTIONS.includes(
-                                      d.location as (typeof PROPERTY_OPTIONS)[number]
-                                    )
-                                      ? ''
-                                      : d.location
-                                  }
+                                  value={d.location}
                                   onChange={(e) =>
                                     updateDay(
                                       worker.id,
@@ -482,6 +501,20 @@ export default function HomePage() {
                                 }
                                 placeholder="Advance / Deduction"
                                 className="mt-3 w-full rounded-xl border bg-white px-3 py-2 text-black placeholder:text-gray-400"
+                              />
+
+                              <textarea
+                                value={d.advanceNote}
+                                onChange={(e) =>
+                                  updateDay(
+                                    worker.id,
+                                    d.day,
+                                    'advanceNote',
+                                    e.target.value
+                                  )
+                                }
+                                placeholder="Reason for advance / deduction"
+                                className="mt-3 min-h-20 w-full rounded-xl border bg-white px-3 py-2 text-black placeholder:text-gray-400"
                               />
                             </div>
                           )}
