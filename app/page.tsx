@@ -138,12 +138,42 @@ function parseLocationValue(location: string) {
   return { presetLocation: '', customLocationText: location }
 }
 
-function Tag({ children }: { children: React.ReactNode }) {
+function DarkTag({ children }: { children: React.ReactNode }) {
   return (
     <span className="rounded-full bg-slate-900 px-3 py-1 text-xs font-semibold text-white">
       {children}
     </span>
   )
+}
+
+function PayTag({ amount }: { amount: string }) {
+  return (
+    <span className="rounded-full bg-green-100 px-3 py-1 text-xs font-bold text-green-800">
+      ${Number(amount || 0).toFixed(2)}
+    </span>
+  )
+}
+
+function JobTag({ label }: { label: string }) {
+  const lower = label.toLowerCase()
+
+  let className = 'rounded-full px-3 py-1 text-xs font-semibold '
+
+  if (lower.includes('paint')) {
+    className += 'bg-blue-100 text-blue-800'
+  } else if (lower.includes('trash')) {
+    className += 'bg-red-100 text-red-800'
+  } else if (lower.includes('repair')) {
+    className += 'bg-orange-100 text-orange-800'
+  } else if (lower.includes('occupied')) {
+    className += 'bg-purple-100 text-purple-800'
+  } else if (lower.includes('custom:')) {
+    className += 'bg-slate-200 text-slate-900'
+  } else {
+    className += 'bg-slate-200 text-slate-900'
+  }
+
+  return <span className={className}>{label}</span>
 }
 
 export default function HomePage() {
@@ -554,9 +584,7 @@ export default function HomePage() {
 
     const html = `
       <html>
-        <head>
-          <title>${worker.name} Payroll Slip</title>
-        </head>
+        <head><title>${worker.name} Payroll Slip</title></head>
         <body style="font-family:Arial,sans-serif;padding:24px;">
           <h1>1 Stop Turnover Specialist LLC Pro</h1>
           <h2>Payroll Slip</h2>
@@ -564,7 +592,6 @@ export default function HomePage() {
           <p><strong>Phone:</strong> ${worker.phone || ''}</p>
           <p><strong>Week Ending:</strong> ${weekEnding}</p>
           <p><strong>Status:</strong> ${worker.paid ? 'PAID' : 'UNPAID'}</p>
-
           <table style="border-collapse:collapse;width:100%;margin-top:16px;">
             <thead>
               <tr>
@@ -580,13 +607,11 @@ export default function HomePage() {
             </thead>
             <tbody>${rows}</tbody>
           </table>
-
           <div style="margin-top:24px;">
             <p><strong>Gross Pay:</strong> $${workerGross(worker).toFixed(2)}</p>
             <p><strong>Total Advances:</strong> $${workerAdvanceTotal(worker).toFixed(2)}</p>
             <p><strong>Net Payout:</strong> $${workerNet(worker).toFixed(2)}</p>
           </div>
-
           <script>window.onload = function(){ window.print(); }</script>
         </body>
       </html>
@@ -828,10 +853,7 @@ export default function HomePage() {
             const tab = workerTabs[worker.id] || 'payroll'
 
             return (
-              <div
-                key={worker.id}
-                className="rounded-3xl bg-white p-5 shadow-lg"
-              >
+              <div key={worker.id} className="rounded-3xl bg-white p-5 shadow-lg">
                 <button
                   onClick={() => toggleWorker(worker.id)}
                   className="flex w-full items-center justify-between"
@@ -842,11 +864,7 @@ export default function HomePage() {
                     </div>
 
                     <div className="mt-1 flex flex-wrap items-center gap-2">
-                      <span
-                        className={`text-sm font-bold ${
-                          worker.paid ? 'text-green-700' : 'text-amber-700'
-                        }`}
-                      >
+                      <span className={`text-sm font-bold ${worker.paid ? 'text-green-700' : 'text-amber-700'}`}>
                         {worker.paid ? 'PAID' : 'UNPAID'}
                       </span>
 
@@ -865,36 +883,28 @@ export default function HomePage() {
                   <div className="mt-5">
                     <div className="mb-5 grid gap-3 md:grid-cols-4">
                       <div className="rounded-2xl bg-slate-100 p-4">
-                        <div className="text-sm font-semibold text-slate-700">
-                          Gross Pay
-                        </div>
+                        <div className="text-sm font-semibold text-slate-700">Gross Pay</div>
                         <div className="mt-1 text-2xl font-bold text-black">
                           ${workerGross(worker).toFixed(2)}
                         </div>
                       </div>
 
                       <div className="rounded-2xl bg-slate-100 p-4">
-                        <div className="text-sm font-semibold text-slate-700">
-                          Advance Summary
-                        </div>
+                        <div className="text-sm font-semibold text-slate-700">Advance Summary</div>
                         <div className="mt-1 text-2xl font-bold text-red-700">
                           -${workerAdvanceTotal(worker).toFixed(2)}
                         </div>
                       </div>
 
                       <div className="rounded-2xl bg-slate-100 p-4">
-                        <div className="text-sm font-semibold text-slate-700">
-                          Net Payout
-                        </div>
+                        <div className="text-sm font-semibold text-slate-700">Net Payout</div>
                         <div className="mt-1 text-2xl font-bold text-black">
                           ${workerNet(worker).toFixed(2)}
                         </div>
                       </div>
 
                       <div className="rounded-2xl bg-slate-100 p-4">
-                        <div className="text-sm font-semibold text-slate-700">
-                          Payroll Slip
-                        </div>
+                        <div className="text-sm font-semibold text-slate-700">Payroll Slip</div>
                         <button
                           onClick={() => printWorkerSlip(worker)}
                           className="mt-2 rounded-xl bg-slate-900 px-4 py-2 font-semibold text-white"
@@ -907,33 +917,21 @@ export default function HomePage() {
                     <div className="mb-5 flex flex-wrap gap-2">
                       <button
                         onClick={() => setTab(worker.id, 'payroll')}
-                        className={`rounded-xl px-4 py-2 font-semibold ${
-                          tab === 'payroll'
-                            ? 'bg-slate-900 text-white'
-                            : 'bg-slate-200 text-black'
-                        }`}
+                        className={`rounded-xl px-4 py-2 font-semibold ${tab === 'payroll' ? 'bg-slate-900 text-white' : 'bg-slate-200 text-black'}`}
                       >
                         Payroll
                       </button>
 
                       <button
                         onClick={() => setTab(worker.id, 'notes')}
-                        className={`rounded-xl px-4 py-2 font-semibold ${
-                          tab === 'notes'
-                            ? 'bg-slate-900 text-white'
-                            : 'bg-slate-200 text-black'
-                        }`}
+                        className={`rounded-xl px-4 py-2 font-semibold ${tab === 'notes' ? 'bg-slate-900 text-white' : 'bg-slate-200 text-black'}`}
                       >
                         Notes
                       </button>
 
                       <button
                         onClick={() => setTab(worker.id, 'admin')}
-                        className={`rounded-xl px-4 py-2 font-semibold ${
-                          tab === 'admin'
-                            ? 'bg-slate-900 text-white'
-                            : 'bg-slate-200 text-black'
-                        }`}
+                        className={`rounded-xl px-4 py-2 font-semibold ${tab === 'admin' ? 'bg-slate-900 text-white' : 'bg-slate-200 text-black'}`}
                       >
                         Admin
                       </button>
@@ -949,20 +947,33 @@ export default function HomePage() {
                           const propertyMenuOpen = isPropertyMenuOpen(worker.id, d.day)
                           const { presetLocation, customLocationText } = parseLocationValue(d.location)
 
+                          const previewJobLabel = presetJobs[0]
+                            ? presetJobs[0]
+                            : customJobText
+                            ? `Custom: ${customJobText}`
+                            : 'No Job'
+
+                          const previewPropertyLabel = presetLocation || customLocationText || 'No Property'
+
                           return (
-                            <div
-                              key={d.day}
-                              className="rounded-2xl border border-slate-300 p-4"
-                            >
+                            <div key={d.day} className="rounded-2xl border border-slate-300 p-4">
                               <button
                                 onClick={() => toggleDay(worker.id, d.day)}
-                                className="flex w-full items-center justify-between"
+                                className="flex w-full items-center justify-between gap-4"
                               >
-                                <div className="font-bold text-black">
-                                  {d.day} ({getDayDateFromWeekEnding(weekEnding, d.day)})
+                                <div className="min-w-0 flex-1 text-left">
+                                  <div className="font-bold text-black">
+                                    {d.day} ({getDayDateFromWeekEnding(weekEnding, d.day)})
+                                  </div>
+
+                                  <div className="mt-2 flex flex-wrap gap-2">
+                                    <DarkTag>{previewPropertyLabel}</DarkTag>
+                                    <JobTag label={previewJobLabel} />
+                                    <PayTag amount={d.pay} />
+                                  </div>
                                 </div>
 
-                                <div className="text-xl font-bold text-slate-700">
+                                <div className="shrink-0 text-xl font-bold text-slate-700">
                                   {dayOpen ? '−' : '+'}
                                 </div>
                               </button>
@@ -970,9 +981,7 @@ export default function HomePage() {
                               {dayOpen && (
                                 <div className="mt-4 space-y-3">
                                   <div className="rounded-xl border bg-slate-50 p-3">
-                                    <div className="text-sm font-bold text-black">
-                                      Property
-                                    </div>
+                                    <div className="text-sm font-bold text-black">Property</div>
 
                                     <button
                                       type="button"
@@ -985,7 +994,7 @@ export default function HomePage() {
 
                                     {propertyMenuOpen && (
                                       <div className="mt-3 rounded-xl bg-white p-3">
-                                        <div className="space-y-2 max-h-64 overflow-y-auto">
+                                        <div className="max-h-64 space-y-2 overflow-y-auto">
                                           {orderedPropertyOptions.map((property) => (
                                             <button
                                               key={property}
@@ -1024,16 +1033,14 @@ export default function HomePage() {
 
                                     {(presetLocation || customLocationText) && (
                                       <div className="mt-3 flex flex-wrap gap-2">
-                                        {presetLocation && <Tag>{presetLocation}</Tag>}
-                                        {customLocationText && <Tag>Custom: {customLocationText}</Tag>}
+                                        {presetLocation && <DarkTag>{presetLocation}</DarkTag>}
+                                        {customLocationText && <DarkTag>Custom: {customLocationText}</DarkTag>}
                                       </div>
                                     )}
                                   </div>
 
                                   <div className="rounded-xl border bg-slate-50 p-3">
-                                    <div className="text-sm font-bold text-black">
-                                      Job Being Done
-                                    </div>
+                                    <div className="text-sm font-bold text-black">Job Being Done</div>
 
                                     <button
                                       type="button"
@@ -1055,9 +1062,7 @@ export default function HomePage() {
                                               type="checkbox"
                                               checked={presetJobs.includes(option)}
                                               disabled={isLocked}
-                                              onChange={() =>
-                                                toggleJobOption(worker, d.day, option)
-                                              }
+                                              onChange={() => toggleJobOption(worker, d.day, option)}
                                             />
                                             <span>{option}</span>
                                           </label>
@@ -1066,9 +1071,7 @@ export default function HomePage() {
                                         <input
                                           value={customJobText}
                                           disabled={isLocked}
-                                          onChange={(e) =>
-                                            updateCustomJob(worker, d.day, e.target.value)
-                                          }
+                                          onChange={(e) => updateCustomJob(worker, d.day, e.target.value)}
                                           placeholder="Fill in your own job"
                                           className="mt-3 w-full rounded-xl border bg-white px-3 py-2 font-medium text-black placeholder:text-slate-500 disabled:bg-slate-200"
                                         />
@@ -1078,11 +1081,11 @@ export default function HomePage() {
                                     {(presetJobs.length > 0 || customJobText) && (
                                       <div className="mt-3 flex flex-wrap gap-2">
                                         {presetJobs.map((job) => (
-                                          <Tag key={job}>{job}</Tag>
+                                          <JobTag key={job} label={job} />
                                         ))}
 
                                         {customJobText && (
-                                          <Tag>Custom: {customJobText}</Tag>
+                                          <JobTag label={`Custom: ${customJobText}`} />
                                         )}
                                       </div>
                                     )}
@@ -1091,9 +1094,7 @@ export default function HomePage() {
                                   <input
                                     value={d.pay}
                                     disabled={isLocked}
-                                    onChange={(e) =>
-                                      updateDay(worker.id, d.day, 'pay', e.target.value)
-                                    }
+                                    onChange={(e) => updateDay(worker.id, d.day, 'pay', e.target.value)}
                                     placeholder="Pay"
                                     className="w-full rounded-xl border bg-white px-3 py-2 font-medium text-black placeholder:text-slate-500 disabled:bg-slate-200"
                                   />
@@ -1101,9 +1102,7 @@ export default function HomePage() {
                                   <input
                                     value={d.advance}
                                     disabled={isLocked}
-                                    onChange={(e) =>
-                                      updateDay(worker.id, d.day, 'advance', e.target.value)
-                                    }
+                                    onChange={(e) => updateDay(worker.id, d.day, 'advance', e.target.value)}
                                     placeholder="Advance"
                                     className="w-full rounded-xl border bg-white px-3 py-2 font-medium text-black placeholder:text-slate-500 disabled:bg-slate-200"
                                   />
@@ -1111,9 +1110,7 @@ export default function HomePage() {
                                   <textarea
                                     value={d.advanceNote}
                                     disabled={isLocked}
-                                    onChange={(e) =>
-                                      updateDay(worker.id, d.day, 'advanceNote', e.target.value)
-                                    }
+                                    onChange={(e) => updateDay(worker.id, d.day, 'advanceNote', e.target.value)}
                                     placeholder="Reason for advance"
                                     className="min-h-20 w-full rounded-xl border bg-white px-3 py-2 font-medium text-black placeholder:text-slate-500 disabled:bg-slate-200"
                                   />
@@ -1127,7 +1124,6 @@ export default function HomePage() {
                           <div className="text-sm font-semibold text-slate-700">
                             End of Week Total
                           </div>
-
                           <div className="text-3xl font-bold text-black">
                             ${workerNet(worker).toFixed(2)}
                           </div>
@@ -1144,9 +1140,7 @@ export default function HomePage() {
                           <input
                             value={worker.phone}
                             disabled={isLocked}
-                            onChange={(e) =>
-                              updateWorkerField(worker.id, 'phone', e.target.value)
-                            }
+                            onChange={(e) => updateWorkerField(worker.id, 'phone', e.target.value)}
                             placeholder="Worker phone number"
                             className="mt-2 w-full rounded-xl border bg-white px-3 py-2 font-medium text-black placeholder:text-slate-500 disabled:bg-slate-200"
                           />
@@ -1159,9 +1153,7 @@ export default function HomePage() {
                           <textarea
                             value={worker.notes}
                             disabled={isLocked}
-                            onChange={(e) =>
-                              updateWorkerField(worker.id, 'notes', e.target.value)
-                            }
+                            onChange={(e) => updateWorkerField(worker.id, 'notes', e.target.value)}
                             placeholder="Add notes about this worker"
                             className="mt-2 min-h-32 w-full rounded-xl border bg-white px-3 py-2 font-medium text-black placeholder:text-slate-500 disabled:bg-slate-200"
                           />
@@ -1176,11 +1168,7 @@ export default function HomePage() {
                             Status
                           </div>
 
-                          <div
-                            className={`mt-1 text-xl font-bold ${
-                              worker.paid ? 'text-green-700' : 'text-amber-700'
-                            }`}
-                          >
+                          <div className={`mt-1 text-xl font-bold ${worker.paid ? 'text-green-700' : 'text-amber-700'}`}>
                             {worker.paid ? 'PAID' : 'UNPAID'}
                           </div>
 
@@ -1194,9 +1182,7 @@ export default function HomePage() {
                         </div>
 
                         <div className="rounded-2xl border border-red-300 bg-red-50 p-4">
-                          <div className="font-bold text-red-700">
-                            Danger Zone
-                          </div>
+                          <div className="font-bold text-red-700">Danger Zone</div>
 
                           <p className="mt-1 text-sm font-medium text-red-700">
                             Delete worker only if sure.
