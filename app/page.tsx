@@ -102,7 +102,7 @@ const JOB_OPTIONS = [
   "Occupied Unit",
 ];
 
-const STORAGE_KEY = "one-stop-turnover-employees-v5";
+const STORAGE_KEY = "one-stop-turnover-employees-v5-previewfix";
 
 function createJobEntry(): JobEntry {
   return {
@@ -216,6 +216,42 @@ function getStatusStyles(status: JobStatus) {
     default:
       return "bg-white/5 text-gray-200 border border-white/10";
   }
+}
+
+function getEntryPreviewText(entry: JobEntry) {
+  const property =
+    entry.property === "Other"
+      ? entry.customProperty.trim() || "No property"
+      : entry.property || "No property";
+
+  const jobs = [
+    ...entry.jobs,
+    ...(entry.customJob.trim() ? [entry.customJob.trim()] : []),
+  ];
+
+  return {
+    property,
+    jobs: jobs.length ? jobs.join(", ") : "No job selected",
+  };
+}
+
+function getDayPreview(day: DayRecord) {
+  const firstEntry = day.entries[0];
+  if (!firstEntry) {
+    return {
+      property: "No property",
+      jobs: "No job selected",
+      extraCount: 0,
+    };
+  }
+
+  const first = getEntryPreviewText(firstEntry);
+
+  return {
+    property: first.property,
+    jobs: first.jobs,
+    extraCount: Math.max(day.entries.length - 1, 0),
+  };
 }
 
 export default function Page() {
@@ -883,6 +919,7 @@ export default function Page() {
                   const dayRecord = selectedEmployee.days[day.key];
                   const dayTotal = getDayTotal(dayRecord);
                   const jobCount = dayRecord.entries.length;
+                  const preview = getDayPreview(dayRecord);
 
                   return (
                     <div
@@ -909,6 +946,22 @@ export default function Page() {
                             <div className="rounded-full bg-white/5 px-4 py-2 text-sm font-semibold text-gray-100">
                               {jobCount} Job{jobCount !== 1 ? "s" : ""}
                             </div>
+
+                            <div className="inline-flex items-center gap-2 rounded-full bg-white/5 px-4 py-2 text-sm text-gray-100">
+                              <Building2 className="h-4 w-4 text-amber-300" />
+                              {preview.property}
+                            </div>
+
+                            <div className="inline-flex items-center gap-2 rounded-full bg-white/5 px-4 py-2 text-sm text-gray-100">
+                              <Briefcase className="h-4 w-4 text-amber-300" />
+                              {preview.jobs}
+                            </div>
+
+                            {preview.extraCount > 0 && (
+                              <div className="rounded-full bg-white/5 px-4 py-2 text-sm font-semibold text-gray-100">
+                                +{preview.extraCount} more
+                              </div>
+                            )}
                           </div>
 
                           <div className="flex flex-wrap items-center gap-2 lg:justify-end">
