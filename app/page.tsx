@@ -10,9 +10,11 @@ import {
   ChevronDown,
   ChevronUp,
   DollarSign,
+  Lock,
   MoreHorizontal,
   Plus,
   Trash2,
+  Unlock,
   Upload,
   UserRound,
   Wallet,
@@ -28,6 +30,7 @@ type DayKey =
   | "saturday";
 
 type JobStatus = "Pending" | "In Progress" | "Completed";
+type PayoutStatus = "Unpaid" | "Partial" | "Paid";
 
 type JobPhoto = {
   id: string;
@@ -64,6 +67,9 @@ type Employee = {
   notes: string;
   advance: string;
   advanceReason: string;
+  paidAmount: string;
+  payoutStatus: PayoutStatus;
+  weekLocked: boolean;
   days: Record<DayKey, DayRecord>;
 };
 
@@ -102,7 +108,16 @@ const JOB_OPTIONS = [
   "Occupied Unit",
 ];
 
-const STORAGE_KEY = "one-stop-turnover-employees-v5-previewfix";
+const CURRENT_STORAGE_KEY = "one-stop-turnover-employees-v6";
+const LEGACY_STORAGE_KEYS = [
+  "one-stop-turnover-employees-v5-previewfix",
+  "one-stop-turnover-employees-v5",
+  "one-stop-turnover-employees-v41",
+  "one-stop-turnover-employees-v4",
+  "one-stop-turnover-employees-v3",
+  "one-stop-turnover-employees-v2",
+  "one-stop-turnover-employees-v1",
+];
 
 function createJobEntry(): JobEntry {
   return {
@@ -143,6 +158,9 @@ function createEmployee(
     notes,
     advance: "",
     advanceReason: "",
+    paidAmount: "",
+    payoutStatus: "Unpaid",
+    weekLocked: false,
     days: {
       monday: createDayRecord("monday"),
       tuesday: createDayRecord("tuesday"),
@@ -163,7 +181,7 @@ function getDefaultEmployees(): Employee[] {
 }
 
 function parseMoney(value: string) {
-  const n = Number(String(value).replace(/[^0-9.-]+/g, ""));
+  const n = Number(String(value ?? "").replace(/[^0-9.-]+/g, ""));
   return Number.isFinite(n) ? n : 0;
 }
 
@@ -172,6 +190,10 @@ function formatCurrency(value: number) {
     style: "currency",
     currency: "USD",
   }).format(value);
+}
+
+function clampMoney(value: number) {
+  return Math.max(0, Number.isFinite(value) ? value : 0);
 }
 
 function getEntryPropertyText(entry: JobEntry) {
@@ -196,15 +218,30 @@ function getEmployeeGross(employee: Employee) {
   return DAYS.reduce((sum, day) => sum + getDayTotal(employee.days[day.key]), 0);
 }
 
-function isValidSavedEmployees(data: unknown): data is Employee[] {
-  return (
-    Array.isArray(data) &&
-    data.length > 0 &&
-    typeof data[0] === "object" &&
-    data[0] !== null &&
-    "name" in data[0] &&
-    "days" in data[0]
-  );
+function getEmployeeAdvance(employee: Employee) {
+  return parseMoney(employee.advance);
+}
+
+function getEmployeeFinalPayout(employee: Employee) {
+  return clampMoney(getEmployeeGross(employee) - getEmployeeAdvance(employee));
+}
+
+function normalizePayoutStatus(
+  paidAmount: number,
+  finalPayout: number
+): PayoutStatus {
+  if (finalPayout <= 0) return "Paid";
+  if (paidAmount <= 0) return "Unpaid";
+  if (paidAmount >= finalPayout) return "Paid";
+  return "Partial";
+}
+
+function getEmployeePaidAmount(employee: Employee) {
+  return clampMoney(parseMoney(employee.paidAmount));
+}
+
+function getEmployeeRemainingBalance(employee: Employee) {
+  return clampMoney(getEmployeeFinalPayout(employee) - getEmployeePaidAmount(employee));
 }
 
 function getStatusStyles(status: JobStatus) {
@@ -212,6 +249,17 @@ function getStatusStyles(status: JobStatus) {
     case "Completed":
       return "bg-emerald-500/15 text-emerald-300 border border-emerald-400/20";
     case "In Progress":
+      return "bg-amber-500/15 text-amber-300 border border-amber-400/20";
+    default:
+      return "bg-white/5 text-gray-200 border border-white/10";
+  }
+}
+
+function getPayoutStatusStyles(status: PayoutStatus) {
+  switch (status) {
+    case "Paid":
+      return "bg-emerald-500/15 text-emerald-300 border border-emerald-400/20";
+    case "Partial":
       return "bg-amber-500/15 text-amber-300 border border-amber-400/20";
     default:
       return "bg-white/5 text-gray-200 border border-white/10";
@@ -254,6 +302,113 @@ function getDayPreview(day: DayRecord) {
   };
 }
 
+function isDayKey(value: string): value is DayKey {
+  return DAYS.some((d) => d.key === value);
+}
+
+function migrateJobEntry(raw: any): JobEntry {
+  return {
+    id: raw?.id || crypto.randomUUID(),
+    property: String(raw?.property ?? ""),
+    customProperty: String(raw?.customProperty ?? ""),
+    jobs: Array.isArray(raw?.jobs) ? raw.jobs.map(String) : [],
+    customJob: String(raw?.customJob ?? ""),
+    pay: String(raw?.pay ?? ""),
+    notes: String(raw?.notes ?? ""),
+    status:
+      raw?.status === "Pending" ||
+      raw?.status === "In Progress" ||
+      raw?.status === "Completed"
+        ? raw.status
+        : "Pending",
+    beforePhotos: Array.isArray(raw?.beforePhotos)
+      ? raw.beforePhotos
+          .filter((p: any) => p?.id && p?.dataUrl)
+          .map((p: any) => ({
+            id: String(p.id),
+            name: String(p.name ?? "photo"),
+            dataUrl: String(p.dataUrl),
+          }))
+      : [],
+    afterPhotos: Array.isArray(raw?.afterPhotos)
+      ? raw.afterPhotos
+          .filter((p: any) => p?.id && p?.dataUrl)
+          .map((p: any) => ({
+            id: String(p.id),
+            name: String(p.name ?? "photo"),
+            dataUrl: String(p.dataUrl),
+          }))
+      : [],
+  };
+}
+
+function migrateDayRecord(dayKey: DayKey, raw: any): DayRecord {
+  const entries = Array.isArray(raw?.entries) && raw.entries.length
+    ? raw.entries.map(migrateJobEntry)
+    : [createJobEntry()];
+
+  return {
+    id: raw?.id || `${dayKey}-${crypto.randomUUID()}`,
+    day: dayKey,
+    date: String(raw?.date ?? ""),
+    expanded: Boolean(raw?.expanded),
+    entries,
+  };
+}
+
+function migrateEmployee(raw: any): Employee {
+  const base = createEmployee(
+    String(raw?.name ?? ""),
+    String(raw?.phone ?? ""),
+    String(raw?.rate ?? ""),
+    String(raw?.notes ?? "")
+  );
+
+  const migratedDays: Record<DayKey, DayRecord> = { ...base.days };
+
+  if (raw?.days && typeof raw.days === "object") {
+    for (const key of Object.keys(raw.days)) {
+      if (isDayKey(key)) {
+        migratedDays[key] = migrateDayRecord(key, raw.days[key]);
+      }
+    }
+  }
+
+  const employee: Employee = {
+    ...base,
+    id: String(raw?.id ?? crypto.randomUUID()),
+    name: String(raw?.name ?? ""),
+    phone: String(raw?.phone ?? ""),
+    rate: String(raw?.rate ?? ""),
+    notes: String(raw?.notes ?? ""),
+    advance: String(raw?.advance ?? ""),
+    advanceReason: String(raw?.advanceReason ?? ""),
+    paidAmount: String(raw?.paidAmount ?? ""),
+    payoutStatus:
+      raw?.payoutStatus === "Unpaid" ||
+      raw?.payoutStatus === "Partial" ||
+      raw?.payoutStatus === "Paid"
+        ? raw.payoutStatus
+        : "Unpaid",
+    weekLocked: Boolean(raw?.weekLocked),
+    days: migratedDays,
+  };
+
+  const finalPayout = getEmployeeFinalPayout(employee);
+  const paidAmount = getEmployeePaidAmount(employee);
+
+  employee.payoutStatus = normalizePayoutStatus(paidAmount, finalPayout);
+  if (paidAmount > finalPayout) {
+    employee.paidAmount = String(finalPayout);
+  }
+
+  return employee;
+}
+
+function isValidSavedEmployees(data: unknown): data is any[] {
+  return Array.isArray(data) && data.length > 0;
+}
+
 export default function Page() {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [selectedEmployeeId, setSelectedEmployeeId] = useState("");
@@ -270,16 +425,27 @@ export default function Page() {
 
   useEffect(() => {
     try {
-      const saved =
+      let saved: string | null =
         typeof window !== "undefined"
-          ? localStorage.getItem(STORAGE_KEY)
+          ? localStorage.getItem(CURRENT_STORAGE_KEY)
           : null;
+
+      if (!saved && typeof window !== "undefined") {
+        for (const key of LEGACY_STORAGE_KEYS) {
+          const legacy = localStorage.getItem(key);
+          if (legacy) {
+            saved = legacy;
+            break;
+          }
+        }
+      }
 
       if (saved) {
         const parsed = JSON.parse(saved);
         if (isValidSavedEmployees(parsed)) {
-          setEmployees(parsed);
-          setSelectedEmployeeId(parsed[0].id);
+          const migrated = parsed.map(migrateEmployee);
+          setEmployees(migrated);
+          setSelectedEmployeeId(migrated[0]?.id ?? "");
           setLoaded(true);
           return;
         }
@@ -294,7 +460,7 @@ export default function Page() {
 
   useEffect(() => {
     if (!loaded || !employees.length) return;
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(employees));
+    localStorage.setItem(CURRENT_STORAGE_KEY, JSON.stringify(employees));
   }, [employees, loaded]);
 
   useEffect(() => {
@@ -326,7 +492,9 @@ export default function Page() {
   ) => {
     setEmployees((prev) =>
       prev.map((employee) =>
-        employee.id === employeeId ? { ...employee, ...patch } : employee
+        employee.id === employeeId && !employee.weekLocked
+          ? { ...employee, ...patch }
+          : employee
       )
     );
   };
@@ -336,8 +504,45 @@ export default function Page() {
     patch: { advance?: string; advanceReason?: string }
   ) => {
     setEmployees((prev) =>
+      prev.map((employee) => {
+        if (employee.id !== employeeId || employee.weekLocked) return employee;
+
+        const updated = { ...employee, ...patch };
+        const finalPayout = getEmployeeFinalPayout(updated);
+        const paidAmount = Math.min(getEmployeePaidAmount(updated), finalPayout);
+
+        return {
+          ...updated,
+          paidAmount: String(paidAmount || ""),
+          payoutStatus: normalizePayoutStatus(paidAmount, finalPayout),
+        };
+      })
+    );
+  };
+
+  const updatePaidAmount = (employeeId: string, paidAmountRaw: string) => {
+    setEmployees((prev) =>
+      prev.map((employee) => {
+        if (employee.id !== employeeId || employee.weekLocked) return employee;
+
+        const finalPayout = getEmployeeFinalPayout(employee);
+        const paidAmount = Math.min(parseMoney(paidAmountRaw), finalPayout);
+
+        return {
+          ...employee,
+          paidAmount: paidAmountRaw === "" ? "" : String(paidAmount),
+          payoutStatus: normalizePayoutStatus(paidAmount, finalPayout),
+        };
+      })
+    );
+  };
+
+  const toggleWeekLock = (employeeId: string) => {
+    setEmployees((prev) =>
       prev.map((employee) =>
-        employee.id === employeeId ? { ...employee, ...patch } : employee
+        employee.id === employeeId
+          ? { ...employee, weekLocked: !employee.weekLocked }
+          : employee
       )
     );
   };
@@ -349,7 +554,7 @@ export default function Page() {
   ) => {
     setEmployees((prev) =>
       prev.map((employee) => {
-        if (employee.id !== employeeId) return employee;
+        if (employee.id !== employeeId || employee.weekLocked) return employee;
         return {
           ...employee,
           days: {
@@ -372,7 +577,7 @@ export default function Page() {
   ) => {
     setEmployees((prev) =>
       prev.map((employee) => {
-        if (employee.id !== employeeId) return employee;
+        if (employee.id !== employeeId || employee.weekLocked) return employee;
 
         return {
           ...employee,
@@ -394,7 +599,6 @@ export default function Page() {
     setEmployees((prev) =>
       prev.map((employee) => {
         if (employee.id !== employeeId) return employee;
-
         return {
           ...employee,
           days: {
@@ -412,7 +616,7 @@ export default function Page() {
   const addJobEntry = (employeeId: string, day: DayKey) => {
     setEmployees((prev) =>
       prev.map((employee) => {
-        if (employee.id !== employeeId) return employee;
+        if (employee.id !== employeeId || employee.weekLocked) return employee;
 
         return {
           ...employee,
@@ -432,7 +636,7 @@ export default function Page() {
   const deleteJobEntry = (employeeId: string, day: DayKey, entryId: string) => {
     setEmployees((prev) =>
       prev.map((employee) => {
-        if (employee.id !== employeeId) return employee;
+        if (employee.id !== employeeId || employee.weekLocked) return employee;
 
         const currentEntries = employee.days[day].entries;
         const filtered = currentEntries.filter((entry) => entry.id !== entryId);
@@ -459,7 +663,7 @@ export default function Page() {
   ) => {
     setEmployees((prev) =>
       prev.map((employee) => {
-        if (employee.id !== employeeId) return employee;
+        if (employee.id !== employeeId || employee.weekLocked) return employee;
 
         return {
           ...employee,
@@ -520,14 +724,20 @@ export default function Page() {
   const employeeTotals = useMemo(() => {
     return employees.map((employee) => {
       const gross = getEmployeeGross(employee);
-      const advance = parseMoney(employee.advance);
-      const finalPayout = gross - advance;
+      const advance = getEmployeeAdvance(employee);
+      const finalPayout = clampMoney(gross - advance);
+      const paidAmount = Math.min(getEmployeePaidAmount(employee), finalPayout);
+      const remainingBalance = clampMoney(finalPayout - paidAmount);
+      const payoutStatus = normalizePayoutStatus(paidAmount, finalPayout);
 
       return {
         employeeId: employee.id,
         gross,
         advance,
         finalPayout,
+        paidAmount,
+        remainingBalance,
+        payoutStatus,
       };
     });
   }, [employees]);
@@ -542,6 +752,14 @@ export default function Page() {
     (sum, e) => sum + e.finalPayout,
     0
   );
+  const overallPaidAmount = employeeTotals.reduce(
+    (sum, e) => sum + e.paidAmount,
+    0
+  );
+  const overallRemainingBalance = employeeTotals.reduce(
+    (sum, e) => sum + e.remainingBalance,
+    0
+  );
 
   const handlePhotoUpload = async (
     employeeId: string,
@@ -550,6 +768,8 @@ export default function Page() {
     files: FileList | null,
     photoType: "beforePhotos" | "afterPhotos"
   ) => {
+    const employee = employees.find((e) => e.id === employeeId);
+    if (employee?.weekLocked) return;
     if (!files || files.length === 0) return;
 
     const fileReaders = Array.from(files).map(
@@ -573,7 +793,7 @@ export default function Page() {
 
       setEmployees((prev) =>
         prev.map((employee) => {
-          if (employee.id !== employeeId) return employee;
+          if (employee.id !== employeeId || employee.weekLocked) return employee;
 
           return {
             ...employee,
@@ -605,7 +825,7 @@ export default function Page() {
   ) => {
     setEmployees((prev) =>
       prev.map((employee) => {
-        if (employee.id !== employeeId) return employee;
+        if (employee.id !== employeeId || employee.weekLocked) return employee;
 
         return {
           ...employee,
@@ -653,15 +873,13 @@ export default function Page() {
             </h1>
 
             <p className="mt-4 max-w-3xl text-sm leading-7 text-gray-300 md:text-lg">
-              A cleaner, faster, premium workflow for selecting employees,
-              tracking multiple jobs per day, documenting before/after proof,
-              assigning properties, managing advances, and controlling weekly
-              payouts.
+              Payroll control, proof of work, payout tracking, remaining balances,
+              and weekly closeout for each employee.
             </p>
           </div>
         </section>
 
-        <section className="mb-8 grid gap-6 md:grid-cols-2 xl:grid-cols-4">
+        <section className="mb-8 grid gap-6 md:grid-cols-2 xl:grid-cols-5">
           <div className="rounded-[28px] border border-white/10 bg-white/[0.05] p-5 shadow-[0_20px_60px_rgba(0,0,0,0.3)]">
             <div className="text-xs uppercase tracking-[0.2em] text-gray-400">
               Total Employees
@@ -682,19 +900,28 @@ export default function Page() {
 
           <div className="rounded-[28px] border border-white/10 bg-white/[0.05] p-5 shadow-[0_20px_60px_rgba(0,0,0,0.3)]">
             <div className="text-xs uppercase tracking-[0.2em] text-gray-400">
-              Total Advances
-            </div>
-            <div className="mt-2 text-3xl font-extrabold text-red-300">
-              {formatCurrency(overallAdvances)}
-            </div>
-          </div>
-
-          <div className="rounded-[28px] border border-emerald-400/20 bg-emerald-500/10 p-5 shadow-[0_20px_60px_rgba(0,0,0,0.3)]">
-            <div className="text-xs uppercase tracking-[0.2em] text-emerald-200/80">
               Total Final Payout
             </div>
             <div className="mt-2 text-3xl font-extrabold text-emerald-300">
               {formatCurrency(overallFinalPayout)}
+            </div>
+          </div>
+
+          <div className="rounded-[28px] border border-white/10 bg-white/[0.05] p-5 shadow-[0_20px_60px_rgba(0,0,0,0.3)]">
+            <div className="text-xs uppercase tracking-[0.2em] text-gray-400">
+              Total Paid So Far
+            </div>
+            <div className="mt-2 text-3xl font-extrabold text-white">
+              {formatCurrency(overallPaidAmount)}
+            </div>
+          </div>
+
+          <div className="rounded-[28px] border border-amber-400/20 bg-amber-500/10 p-5 shadow-[0_20px_60px_rgba(0,0,0,0.3)]">
+            <div className="text-xs uppercase tracking-[0.2em] text-amber-200/80">
+              Total Remaining
+            </div>
+            <div className="mt-2 text-3xl font-extrabold text-amber-300">
+              {formatCurrency(overallRemainingBalance)}
             </div>
           </div>
         </section>
@@ -708,8 +935,7 @@ export default function Page() {
               <div>
                 <h2 className="text-xl font-bold">Employee Control Center</h2>
                 <p className="text-sm text-gray-300">
-                  Select an employee and manage everything from one premium
-                  panel.
+                  Your current employee data stays intact while Phase 6 adds payroll control.
                 </p>
               </div>
             </div>
@@ -776,7 +1002,7 @@ export default function Page() {
               <div>
                 <h2 className="text-xl font-bold">Weekly Summary</h2>
                 <p className="text-sm text-gray-300">
-                  Live totals for the selected employee.
+                  Full payout control for the selected employee.
                 </p>
               </div>
             </div>
@@ -790,25 +1016,36 @@ export default function Page() {
               </div>
 
               <div className="flex items-center justify-between rounded-2xl bg-white/5 px-4 py-4">
-                <span className="text-gray-200">Gross Total</span>
+                <span className="text-gray-200">Final Payout</span>
                 <span className="font-bold text-white">
-                  {formatCurrency(selectedTotals?.gross ?? 0)}
+                  {formatCurrency(selectedTotals?.finalPayout ?? 0)}
                 </span>
               </div>
 
               <div className="flex items-center justify-between rounded-2xl bg-white/5 px-4 py-4">
-                <span className="text-gray-200">Advance</span>
-                <span className="font-bold text-red-300">
-                  - {formatCurrency(selectedTotals?.advance ?? 0)}
+                <span className="text-gray-200">Paid So Far</span>
+                <span className="font-bold text-white">
+                  {formatCurrency(selectedTotals?.paidAmount ?? 0)}
                 </span>
               </div>
 
-              <div className="flex items-center justify-between rounded-2xl bg-emerald-500/10 px-4 py-5">
-                <span className="text-base font-bold text-emerald-200">
-                  Final Payout
+              <div className="flex items-center justify-between rounded-2xl bg-amber-500/10 px-4 py-4">
+                <span className="text-base font-bold text-amber-200">
+                  Remaining
                 </span>
-                <span className="text-2xl font-extrabold text-emerald-300">
-                  {formatCurrency(selectedTotals?.finalPayout ?? 0)}
+                <span className="text-xl font-extrabold text-amber-300">
+                  {formatCurrency(selectedTotals?.remainingBalance ?? 0)}
+                </span>
+              </div>
+
+              <div className="flex items-center justify-between rounded-2xl bg-white/5 px-4 py-4">
+                <span className="text-gray-200">Status</span>
+                <span
+                  className={`rounded-full px-3 py-2 text-xs font-bold ${getPayoutStatusStyles(
+                    selectedTotals?.payoutStatus ?? "Unpaid"
+                  )}`}
+                >
+                  {selectedTotals?.payoutStatus ?? "Unpaid"}
                 </span>
               </div>
             </div>
@@ -817,7 +1054,7 @@ export default function Page() {
 
         {selectedEmployee && (
           <>
-            <section className="mb-8 grid gap-6 lg:grid-cols-[1fr_1fr_1fr]">
+            <section className="mb-8 grid gap-6 lg:grid-cols-[1fr_1fr_1fr_1fr]">
               <div className="rounded-[28px] border border-white/10 bg-white/[0.05] p-5 shadow-[0_20px_60px_rgba(0,0,0,0.3)]">
                 <div className="text-xs uppercase tracking-[0.2em] text-gray-400">
                   Selected Employee
@@ -838,12 +1075,196 @@ export default function Page() {
 
               <div className="rounded-[28px] border border-white/10 bg-white/[0.05] p-5 shadow-[0_20px_60px_rgba(0,0,0,0.3)]">
                 <div className="text-xs uppercase tracking-[0.2em] text-gray-400">
-                  Default Rate
+                  Payout Status
                 </div>
-                <div className="mt-2 text-xl font-bold text-white">
-                  {selectedEmployee.rate
-                    ? `$${selectedEmployee.rate}`
-                    : "Not added"}
+                <div className="mt-2">
+                  <span
+                    className={`rounded-full px-3 py-2 text-xs font-bold ${getPayoutStatusStyles(
+                      selectedTotals?.payoutStatus ?? "Unpaid"
+                    )}`}
+                  >
+                    {selectedTotals?.payoutStatus ?? "Unpaid"}
+                  </span>
+                </div>
+              </div>
+
+              <div className="rounded-[28px] border border-white/10 bg-white/[0.05] p-5 shadow-[0_20px_60px_rgba(0,0,0,0.3)]">
+                <div className="text-xs uppercase tracking-[0.2em] text-gray-400">
+                  Week Status
+                </div>
+                <div className="mt-2">
+                  <span
+                    className={`rounded-full px-3 py-2 text-xs font-bold ${
+                      selectedEmployee.weekLocked
+                        ? "border border-red-400/20 bg-red-500/10 text-red-300"
+                        : "border border-emerald-400/20 bg-emerald-500/10 text-emerald-300"
+                    }`}
+                  >
+                    {selectedEmployee.weekLocked ? "Locked" : "Open"}
+                  </span>
+                </div>
+              </div>
+            </section>
+
+            <section className="mb-8 grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
+              <div className="rounded-[30px] border border-white/10 bg-white/[0.05] p-6 shadow-[0_20px_80px_rgba(0,0,0,0.35)] backdrop-blur-xl">
+                <div className="mb-4 flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <div className="rounded-2xl bg-amber-500/15 p-3 text-amber-300">
+                      <DollarSign className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <h2 className="text-xl font-bold">Payout & Closeout</h2>
+                      <p className="text-sm text-gray-300">
+                        Track paid amount, remaining balance, and lock the week.
+                      </p>
+                    </div>
+                  </div>
+
+                  <button
+                    onClick={() => toggleWeekLock(selectedEmployee.id)}
+                    className={`inline-flex items-center gap-2 rounded-2xl px-4 py-3 text-sm font-bold ${
+                      selectedEmployee.weekLocked
+                        ? "border border-emerald-400/20 bg-emerald-500/10 text-emerald-300"
+                        : "border border-red-400/20 bg-red-500/10 text-red-300"
+                    }`}
+                  >
+                    {selectedEmployee.weekLocked ? (
+                      <>
+                        <Unlock className="h-4 w-4" />
+                        Reopen Week
+                      </>
+                    ) : (
+                      <>
+                        <Lock className="h-4 w-4" />
+                        Lock Week
+                      </>
+                    )}
+                  </button>
+                </div>
+
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div>
+                    <label className="mb-2 block text-sm font-semibold text-gray-100">
+                      Advance Amount
+                    </label>
+                    <input
+                      type="number"
+                      inputMode="decimal"
+                      value={selectedEmployee.advance}
+                      onChange={(e) =>
+                        updateAdvance(selectedEmployee.id, {
+                          advance: e.target.value,
+                        })
+                      }
+                      disabled={selectedEmployee.weekLocked}
+                      placeholder="0.00"
+                      className="w-full rounded-2xl border border-white/10 bg-[#111a31] px-4 py-3 text-white placeholder:text-gray-400 outline-none disabled:cursor-not-allowed disabled:opacity-60 focus:border-amber-400"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="mb-2 block text-sm font-semibold text-gray-100">
+                      Paid Amount So Far
+                    </label>
+                    <input
+                      type="number"
+                      inputMode="decimal"
+                      value={selectedEmployee.paidAmount}
+                      onChange={(e) =>
+                        updatePaidAmount(selectedEmployee.id, e.target.value)
+                      }
+                      disabled={selectedEmployee.weekLocked}
+                      placeholder="0.00"
+                      className="w-full rounded-2xl border border-white/10 bg-[#111a31] px-4 py-3 text-white placeholder:text-gray-400 outline-none disabled:cursor-not-allowed disabled:opacity-60 focus:border-amber-400"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="mb-2 block text-sm font-semibold text-gray-100">
+                      Reason For Advance
+                    </label>
+                    <input
+                      value={selectedEmployee.advanceReason}
+                      onChange={(e) =>
+                        updateAdvance(selectedEmployee.id, {
+                          advanceReason: e.target.value,
+                        })
+                      }
+                      disabled={selectedEmployee.weekLocked}
+                      placeholder="Reason for advance"
+                      className="w-full rounded-2xl border border-white/10 bg-[#111a31] px-4 py-3 text-white placeholder:text-gray-400 outline-none disabled:cursor-not-allowed disabled:opacity-60 focus:border-amber-400"
+                    />
+                  </div>
+
+                  <div className="rounded-2xl border border-white/10 bg-[#111a31] p-4">
+                    <div className="text-xs uppercase tracking-[0.2em] text-gray-400">
+                      Remaining Balance
+                    </div>
+                    <div className="mt-2 text-2xl font-extrabold text-amber-300">
+                      {formatCurrency(selectedTotals?.remainingBalance ?? 0)}
+                    </div>
+                  </div>
+                </div>
+
+                {selectedEmployee.weekLocked && (
+                  <div className="mt-4 rounded-2xl border border-red-400/20 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+                    This week is locked. Unlock it to edit payroll, jobs, or photos.
+                  </div>
+                )}
+              </div>
+
+              <div className="rounded-[30px] border border-white/10 bg-gradient-to-br from-[#13284b] to-[#0b1324] p-6 shadow-[0_20px_80px_rgba(0,0,0,0.35)]">
+                <h2 className="text-xl font-bold">Executive Snapshot</h2>
+                <p className="mt-1 text-sm text-gray-300">
+                  Full payout visibility for the selected employee.
+                </p>
+
+                <div className="mt-5 grid gap-3">
+                  <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-4">
+                    <div className="text-xs uppercase tracking-[0.2em] text-gray-400">
+                      Gross Total
+                    </div>
+                    <div className="mt-1 text-2xl font-extrabold text-white">
+                      {formatCurrency(selectedTotals?.gross ?? 0)}
+                    </div>
+                  </div>
+
+                  <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-4">
+                    <div className="text-xs uppercase tracking-[0.2em] text-gray-400">
+                      Advance
+                    </div>
+                    <div className="mt-1 text-2xl font-extrabold text-red-300">
+                      {formatCurrency(selectedTotals?.advance ?? 0)}
+                    </div>
+                  </div>
+
+                  <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-4">
+                    <div className="text-xs uppercase tracking-[0.2em] text-gray-400">
+                      Final Payout
+                    </div>
+                    <div className="mt-1 text-2xl font-extrabold text-emerald-300">
+                      {formatCurrency(selectedTotals?.finalPayout ?? 0)}
+                    </div>
+                  </div>
+
+                  <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-4">
+                    <div className="text-xs uppercase tracking-[0.2em] text-gray-400">
+                      Paid So Far
+                    </div>
+                    <div className="mt-1 text-2xl font-extrabold text-white">
+                      {formatCurrency(selectedTotals?.paidAmount ?? 0)}
+                    </div>
+                  </div>
+
+                  <div className="rounded-2xl border border-amber-400/20 bg-amber-500/10 px-4 py-5">
+                    <div className="text-xs uppercase tracking-[0.2em] text-amber-200/80">
+                      Remaining Balance
+                    </div>
+                    <div className="mt-1 text-3xl font-extrabold text-amber-300">
+                      {formatCurrency(selectedTotals?.remainingBalance ?? 0)}
+                    </div>
+                  </div>
                 </div>
               </div>
             </section>
@@ -876,8 +1297,9 @@ export default function Page() {
                         phone: e.target.value,
                       })
                     }
+                    disabled={selectedEmployee.weekLocked}
                     placeholder="Employee phone"
-                    className="w-full rounded-2xl border border-white/10 bg-[#111a31] px-4 py-3 text-white placeholder:text-gray-400 outline-none focus:border-amber-400"
+                    className="w-full rounded-2xl border border-white/10 bg-[#111a31] px-4 py-3 text-white placeholder:text-gray-400 outline-none disabled:cursor-not-allowed disabled:opacity-60 focus:border-amber-400"
                   />
                 </div>
 
@@ -892,8 +1314,9 @@ export default function Page() {
                         rate: e.target.value,
                       })
                     }
+                    disabled={selectedEmployee.weekLocked}
                     placeholder="Hourly or day rate"
-                    className="w-full rounded-2xl border border-white/10 bg-[#111a31] px-4 py-3 text-white placeholder:text-gray-400 outline-none focus:border-amber-400"
+                    className="w-full rounded-2xl border border-white/10 bg-[#111a31] px-4 py-3 text-white placeholder:text-gray-400 outline-none disabled:cursor-not-allowed disabled:opacity-60 focus:border-amber-400"
                   />
                 </div>
 
@@ -908,8 +1331,9 @@ export default function Page() {
                         notes: e.target.value,
                       })
                     }
+                    disabled={selectedEmployee.weekLocked}
                     placeholder="General employee notes"
-                    className="w-full rounded-2xl border border-white/10 bg-[#111a31] px-4 py-3 text-white placeholder:text-gray-400 outline-none focus:border-amber-400"
+                    className="w-full rounded-2xl border border-white/10 bg-[#111a31] px-4 py-3 text-white placeholder:text-gray-400 outline-none disabled:cursor-not-allowed disabled:opacity-60 focus:border-amber-400"
                   />
                 </div>
               </div>
@@ -962,6 +1386,13 @@ export default function Page() {
                                 +{preview.extraCount} more
                               </div>
                             )}
+
+                            {selectedEmployee.weekLocked && (
+                              <div className="inline-flex items-center gap-2 rounded-full border border-red-400/20 bg-red-500/10 px-4 py-2 text-xs font-bold text-red-300">
+                                <Lock className="h-3.5 w-3.5" />
+                                Locked
+                              </div>
+                            )}
                           </div>
 
                           <div className="flex flex-wrap items-center gap-2 lg:justify-end">
@@ -998,7 +1429,8 @@ export default function Page() {
                                       date: e.target.value,
                                     })
                                   }
-                                  className="w-full rounded-2xl border border-white/10 bg-[#111a31] px-10 py-3 text-white outline-none focus:border-amber-400"
+                                  disabled={selectedEmployee.weekLocked}
+                                  className="w-full rounded-2xl border border-white/10 bg-[#111a31] px-10 py-3 text-white outline-none disabled:cursor-not-allowed disabled:opacity-60 focus:border-amber-400"
                                 />
                               </div>
                             </div>
@@ -1007,7 +1439,8 @@ export default function Page() {
                               onClick={() =>
                                 addJobEntry(selectedEmployee.id, day.key)
                               }
-                              className="inline-flex items-center gap-2 rounded-2xl bg-amber-500 px-5 py-3 font-bold text-black hover:bg-amber-400"
+                              disabled={selectedEmployee.weekLocked}
+                              className="inline-flex items-center gap-2 rounded-2xl bg-amber-500 px-5 py-3 font-bold text-black hover:bg-amber-400 disabled:cursor-not-allowed disabled:opacity-60"
                             >
                               <Plus className="h-4 w-4" />
                               Add Job Entry
@@ -1050,7 +1483,8 @@ export default function Page() {
                                         entry.id
                                       )
                                     }
-                                    className="inline-flex items-center gap-2 rounded-xl border border-red-400/20 bg-red-500/10 px-3 py-2 text-sm font-semibold text-red-300 hover:bg-red-500/20"
+                                    disabled={selectedEmployee.weekLocked}
+                                    className="inline-flex items-center gap-2 rounded-xl border border-red-400/20 bg-red-500/10 px-3 py-2 text-sm font-semibold text-red-300 hover:bg-red-500/20 disabled:cursor-not-allowed disabled:opacity-60"
                                   >
                                     <Trash2 className="h-4 w-4" />
                                     Remove
@@ -1072,7 +1506,8 @@ export default function Page() {
                                           { property: e.target.value }
                                         )
                                       }
-                                      className="w-full rounded-2xl border border-white/10 bg-[#0d162b] px-4 py-3 text-white outline-none focus:border-amber-400"
+                                      disabled={selectedEmployee.weekLocked}
+                                      className="w-full rounded-2xl border border-white/10 bg-[#0d162b] px-4 py-3 text-white outline-none disabled:cursor-not-allowed disabled:opacity-60 focus:border-amber-400"
                                     >
                                       <option value="">Select property</option>
                                       {PROPERTY_OPTIONS.map((property) => (
@@ -1099,8 +1534,9 @@ export default function Page() {
                                           { pay: e.target.value }
                                         )
                                       }
+                                      disabled={selectedEmployee.weekLocked}
                                       placeholder="0.00"
-                                      className="w-full rounded-2xl border border-white/10 bg-[#0d162b] px-4 py-3 text-white placeholder:text-gray-400 outline-none focus:border-amber-400"
+                                      className="w-full rounded-2xl border border-white/10 bg-[#0d162b] px-4 py-3 text-white placeholder:text-gray-400 outline-none disabled:cursor-not-allowed disabled:opacity-60 focus:border-amber-400"
                                     />
                                   </div>
 
@@ -1120,7 +1556,8 @@ export default function Page() {
                                           }
                                         )
                                       }
-                                      className="w-full rounded-2xl border border-white/10 bg-[#0d162b] px-4 py-3 text-white outline-none focus:border-amber-400"
+                                      disabled={selectedEmployee.weekLocked}
+                                      className="w-full rounded-2xl border border-white/10 bg-[#0d162b] px-4 py-3 text-white outline-none disabled:cursor-not-allowed disabled:opacity-60 focus:border-amber-400"
                                     >
                                       <option value="Pending">Pending</option>
                                       <option value="In Progress">
@@ -1148,8 +1585,9 @@ export default function Page() {
                                           { customProperty: e.target.value }
                                         )
                                       }
+                                      disabled={selectedEmployee.weekLocked}
                                       placeholder="Type custom property"
-                                      className="w-full rounded-2xl border border-white/10 bg-[#0d162b] px-4 py-3 text-white placeholder:text-gray-400 outline-none focus:border-amber-400"
+                                      className="w-full rounded-2xl border border-white/10 bg-[#0d162b] px-4 py-3 text-white placeholder:text-gray-400 outline-none disabled:cursor-not-allowed disabled:opacity-60 focus:border-amber-400"
                                     />
                                   </div>
                                 )}
@@ -1174,7 +1612,8 @@ export default function Page() {
                                               job
                                             )
                                           }
-                                          className={`rounded-2xl border px-4 py-3 text-left text-sm font-semibold transition ${
+                                          disabled={selectedEmployee.weekLocked}
+                                          className={`rounded-2xl border px-4 py-3 text-left text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-60 ${
                                             selected
                                               ? "border-amber-400 bg-amber-500/15 text-amber-300"
                                               : "border-white/10 bg-[#0d162b] text-gray-100 hover:border-amber-400/60"
@@ -1201,8 +1640,9 @@ export default function Page() {
                                         { customJob: e.target.value }
                                       )
                                     }
+                                    disabled={selectedEmployee.weekLocked}
                                     placeholder="Add your own custom job if needed"
-                                    className="w-full rounded-2xl border border-white/10 bg-[#0d162b] px-4 py-3 text-white placeholder:text-gray-400 outline-none focus:border-amber-400"
+                                    className="w-full rounded-2xl border border-white/10 bg-[#0d162b] px-4 py-3 text-white placeholder:text-gray-400 outline-none disabled:cursor-not-allowed disabled:opacity-60 focus:border-amber-400"
                                   />
                                 </div>
 
@@ -1220,9 +1660,10 @@ export default function Page() {
                                         { notes: e.target.value }
                                       )
                                     }
+                                    disabled={selectedEmployee.weekLocked}
                                     placeholder="Extra details for this job entry"
                                     rows={3}
-                                    className="w-full rounded-2xl border border-white/10 bg-[#0d162b] px-4 py-3 text-white placeholder:text-gray-400 outline-none focus:border-amber-400"
+                                    className="w-full rounded-2xl border border-white/10 bg-[#0d162b] px-4 py-3 text-white placeholder:text-gray-400 outline-none disabled:cursor-not-allowed disabled:opacity-60 focus:border-amber-400"
                                   />
                                 </div>
 
@@ -1240,6 +1681,7 @@ export default function Page() {
                                         accept="image/*"
                                         multiple
                                         className="hidden"
+                                        disabled={selectedEmployee.weekLocked}
                                         onChange={(e) =>
                                           handlePhotoUpload(
                                             selectedEmployee.id,
@@ -1282,7 +1724,8 @@ export default function Page() {
                                                     "beforePhotos"
                                                   )
                                                 }
-                                                className="rounded-lg border border-red-400/20 bg-red-500/10 px-2 py-1 text-xs font-semibold text-red-300 hover:bg-red-500/20"
+                                                disabled={selectedEmployee.weekLocked}
+                                                className="rounded-lg border border-red-400/20 bg-red-500/10 px-2 py-1 text-xs font-semibold text-red-300 hover:bg-red-500/20 disabled:cursor-not-allowed disabled:opacity-60"
                                               >
                                                 Remove
                                               </button>
@@ -1306,6 +1749,7 @@ export default function Page() {
                                         accept="image/*"
                                         multiple
                                         className="hidden"
+                                        disabled={selectedEmployee.weekLocked}
                                         onChange={(e) =>
                                           handlePhotoUpload(
                                             selectedEmployee.id,
@@ -1348,7 +1792,8 @@ export default function Page() {
                                                     "afterPhotos"
                                                   )
                                                 }
-                                                className="rounded-lg border border-red-400/20 bg-red-500/10 px-2 py-1 text-xs font-semibold text-red-300 hover:bg-red-500/20"
+                                                disabled={selectedEmployee.weekLocked}
+                                                className="rounded-lg border border-red-400/20 bg-red-500/10 px-2 py-1 text-xs font-semibold text-red-300 hover:bg-red-500/20 disabled:cursor-not-allowed disabled:opacity-60"
                                               >
                                                 Remove
                                               </button>
@@ -1396,103 +1841,6 @@ export default function Page() {
                     </div>
                   );
                 })}
-              </div>
-            </section>
-
-            <section className="mb-8 grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
-              <div className="rounded-[30px] border border-white/10 bg-white/[0.05] p-6 shadow-[0_20px_80px_rgba(0,0,0,0.35)] backdrop-blur-xl">
-                <div className="mb-4 flex items-center gap-3">
-                  <div className="rounded-2xl bg-amber-500/15 p-3 text-amber-300">
-                    <DollarSign className="h-5 w-5" />
-                  </div>
-                  <div>
-                    <h2 className="text-xl font-bold">Advance / Deduction</h2>
-                    <p className="text-sm text-gray-300">
-                      Track any money given before final payout.
-                    </p>
-                  </div>
-                </div>
-
-                <div className="grid gap-4">
-                  <div>
-                    <label className="mb-2 block text-sm font-semibold text-gray-100">
-                      Advance Amount
-                    </label>
-                    <input
-                      type="number"
-                      inputMode="decimal"
-                      value={selectedEmployee.advance}
-                      onChange={(e) =>
-                        updateAdvance(selectedEmployee.id, {
-                          advance: e.target.value,
-                        })
-                      }
-                      placeholder="0.00"
-                      className="w-full rounded-2xl border border-white/10 bg-[#111a31] px-4 py-3 text-white placeholder:text-gray-400 outline-none focus:border-amber-400"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="mb-2 block text-sm font-semibold text-gray-100">
-                      Reason
-                    </label>
-                    <input
-                      value={selectedEmployee.advanceReason}
-                      onChange={(e) =>
-                        updateAdvance(selectedEmployee.id, {
-                          advanceReason: e.target.value,
-                        })
-                      }
-                      placeholder="Reason for advance"
-                      className="w-full rounded-2xl border border-white/10 bg-[#111a31] px-4 py-3 text-white placeholder:text-gray-400 outline-none focus:border-amber-400"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              <div className="rounded-[30px] border border-white/10 bg-gradient-to-br from-[#13284b] to-[#0b1324] p-6 shadow-[0_20px_80px_rgba(0,0,0,0.35)]">
-                <h2 className="text-xl font-bold">Executive Snapshot</h2>
-                <p className="mt-1 text-sm text-gray-300">
-                  Fast visual control for payroll decisions.
-                </p>
-
-                <div className="mt-5 grid gap-3">
-                  <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-4">
-                    <div className="text-xs uppercase tracking-[0.2em] text-gray-400">
-                      Selected Employee
-                    </div>
-                    <div className="mt-1 text-lg font-bold text-white">
-                      {selectedEmployee.name}
-                    </div>
-                  </div>
-
-                  <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-4">
-                    <div className="text-xs uppercase tracking-[0.2em] text-gray-400">
-                      Gross Total
-                    </div>
-                    <div className="mt-1 text-2xl font-extrabold text-white">
-                      {formatCurrency(selectedTotals?.gross ?? 0)}
-                    </div>
-                  </div>
-
-                  <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-4">
-                    <div className="text-xs uppercase tracking-[0.2em] text-gray-400">
-                      Deduction
-                    </div>
-                    <div className="mt-1 text-2xl font-extrabold text-red-300">
-                      {formatCurrency(selectedTotals?.advance ?? 0)}
-                    </div>
-                  </div>
-
-                  <div className="rounded-2xl border border-emerald-400/20 bg-emerald-500/10 px-4 py-5">
-                    <div className="text-xs uppercase tracking-[0.2em] text-emerald-200/80">
-                      Final Payout
-                    </div>
-                    <div className="mt-1 text-3xl font-extrabold text-emerald-300">
-                      {formatCurrency(selectedTotals?.finalPayout ?? 0)}
-                    </div>
-                  </div>
-                </div>
               </div>
             </section>
           </>
