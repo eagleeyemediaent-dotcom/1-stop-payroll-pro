@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Briefcase,
   Building2,
@@ -9,6 +9,7 @@ import {
   ChevronDown,
   ChevronUp,
   DollarSign,
+  MoreHorizontal,
   Plus,
   Trash2,
   UserRound,
@@ -24,17 +25,22 @@ type DayKey =
   | "friday"
   | "saturday";
 
-type ShiftItem = {
+type JobEntry = {
   id: string;
-  day: DayKey;
-  date: string;
   property: string;
   customProperty: string;
   jobs: string[];
   customJob: string;
   pay: string;
   notes: string;
+};
+
+type DayRecord = {
+  id: string;
+  day: DayKey;
+  date: string;
   expanded: boolean;
+  entries: JobEntry[];
 };
 
 type Employee = {
@@ -45,7 +51,7 @@ type Employee = {
   notes: string;
   advance: string;
   advanceReason: string;
-  shifts: Record<DayKey, ShiftItem>;
+  days: Record<DayKey, DayRecord>;
 };
 
 const DAYS: { key: DayKey; label: string }[] = [
@@ -83,20 +89,27 @@ const JOB_OPTIONS = [
   "Occupied Unit",
 ];
 
-const STORAGE_KEY = "one-stop-turnover-employees-v3";
+const STORAGE_KEY = "one-stop-turnover-employees-v4";
 
-function createEmptyShift(day: DayKey): ShiftItem {
+function createJobEntry(): JobEntry {
   return {
-    id: `${day}-${crypto.randomUUID()}`,
-    day,
-    date: "",
+    id: crypto.randomUUID(),
     property: "",
     customProperty: "",
     jobs: [],
     customJob: "",
     pay: "",
     notes: "",
+  };
+}
+
+function createDayRecord(day: DayKey): DayRecord {
+  return {
+    id: `${day}-${crypto.randomUUID()}`,
+    day,
+    date: "",
     expanded: false,
+    entries: [createJobEntry()],
   };
 }
 
@@ -114,13 +127,13 @@ function createEmployee(
     notes,
     advance: "",
     advanceReason: "",
-    shifts: {
-      monday: createEmptyShift("monday"),
-      tuesday: createEmptyShift("tuesday"),
-      wednesday: createEmptyShift("wednesday"),
-      thursday: createEmptyShift("thursday"),
-      friday: createEmptyShift("friday"),
-      saturday: createEmptyShift("saturday"),
+    days: {
+      monday: createDayRecord("monday"),
+      tuesday: createDayRecord("tuesday"),
+      wednesday: createDayRecord("wednesday"),
+      thursday: createDayRecord("thursday"),
+      friday: createDayRecord("friday"),
+      saturday: createDayRecord("saturday"),
     },
   };
 }
@@ -145,21 +158,26 @@ function formatCurrency(value: number) {
   }).format(value);
 }
 
-function buildPreview(shift: ShiftItem) {
-  const property =
-    shift.property === "Other" ? shift.customProperty : shift.property;
+function getEntryPropertyText(entry: JobEntry) {
+  return entry.property === "Other"
+    ? entry.customProperty.trim() || "No property"
+    : entry.property || "No property";
+}
 
-  const jobs = [
-    ...shift.jobs,
-    ...(shift.customJob.trim() ? [shift.customJob.trim()] : []),
+function getEntryJobText(entry: JobEntry) {
+  const combined = [
+    ...entry.jobs,
+    ...(entry.customJob.trim() ? [entry.customJob.trim()] : []),
   ];
+  return combined.length ? combined.join(", ") : "No job selected";
+}
 
-  return {
-    propertyText: property?.trim() || "No property",
-    jobText: jobs.length ? jobs.join(", ") : "No job selected",
-    payText: shift.pay ? formatCurrency(parseMoney(shift.pay)) : "$0.00",
-    dateText: shift.date || "No date",
-  };
+function getDayTotal(day: DayRecord) {
+  return day.entries.reduce((sum, entry) => sum + parseMoney(entry.pay), 0);
+}
+
+function getEmployeeGross(employee: Employee) {
+  return DAYS.reduce((sum, day) => sum + getDayTotal(employee.days[day.key]), 0);
 }
 
 function isValidSavedEmployees(data: unknown): data is Employee[] {
@@ -169,7 +187,7 @@ function isValidSavedEmployees(data: unknown): data is Employee[] {
     typeof data[0] === "object" &&
     data[0] !== null &&
     "name" in data[0] &&
-    "shifts" in data[0]
+    "days" in data[0]
   );
 }
 
@@ -177,12 +195,15 @@ export default function Page() {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [selectedEmployeeId, setSelectedEmployeeId] = useState("");
   const [showAddModal, setShowAddModal] = useState(false);
+  const [showEmployeeMenu, setShowEmployeeMenu] = useState(false);
   const [loaded, setLoaded] = useState(false);
 
   const [newEmployeeName, setNewEmployeeName] = useState("");
   const [newEmployeePhone, setNewEmployeePhone] = useState("");
   const [newEmployeeRate, setNewEmployeeRate] = useState("");
   const [newEmployeeNotes, setNewEmployeeNotes] = useState("");
+
+  const menuRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     try {
@@ -213,6 +234,18 @@ export default function Page() {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(employees));
   }, [employees, loaded]);
 
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (!menuRef.current) return;
+      if (!menuRef.current.contains(e.target as Node)) {
+        setShowEmployeeMenu(false);
+      }
+    }
+
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
   const selectedEmployee =
     employees.find((employee) => employee.id === selectedEmployeeId) ??
     employees[0] ??
@@ -223,29 +256,6 @@ export default function Page() {
       setSelectedEmployeeId(employees[0].id);
     }
   }, [employees, selectedEmployee]);
-
-  const updateShift = (
-    employeeId: string,
-    day: DayKey,
-    patch: Partial<ShiftItem>
-  ) => {
-    setEmployees((prev) =>
-      prev.map((employee) => {
-        if (employee.id !== employeeId) return employee;
-
-        return {
-          ...employee,
-          shifts: {
-            ...employee.shifts,
-            [day]: {
-              ...employee.shifts[day],
-              ...patch,
-            },
-          },
-        };
-      })
-    );
-  };
 
   const updateEmployeeMeta = (
     employeeId: string,
@@ -258,6 +268,65 @@ export default function Page() {
     );
   };
 
+  const updateAdvance = (
+    employeeId: string,
+    patch: { advance?: string; advanceReason?: string }
+  ) => {
+    setEmployees((prev) =>
+      prev.map((employee) =>
+        employee.id === employeeId ? { ...employee, ...patch } : employee
+      )
+    );
+  };
+
+  const updateDay = (
+    employeeId: string,
+    day: DayKey,
+    patch: Partial<DayRecord>
+  ) => {
+    setEmployees((prev) =>
+      prev.map((employee) => {
+        if (employee.id !== employeeId) return employee;
+        return {
+          ...employee,
+          days: {
+            ...employee.days,
+            [day]: {
+              ...employee.days[day],
+              ...patch,
+            },
+          },
+        };
+      })
+    );
+  };
+
+  const updateJobEntry = (
+    employeeId: string,
+    day: DayKey,
+    entryId: string,
+    patch: Partial<JobEntry>
+  ) => {
+    setEmployees((prev) =>
+      prev.map((employee) => {
+        if (employee.id !== employeeId) return employee;
+
+        return {
+          ...employee,
+          days: {
+            ...employee.days,
+            [day]: {
+              ...employee.days[day],
+              entries: employee.days[day].entries.map((entry) =>
+                entry.id === entryId ? { ...entry, ...patch } : entry
+              ),
+            },
+          },
+        };
+      })
+    );
+  };
+
   const toggleDayExpanded = (employeeId: string, day: DayKey) => {
     setEmployees((prev) =>
       prev.map((employee) => {
@@ -265,11 +334,53 @@ export default function Page() {
 
         return {
           ...employee,
-          shifts: {
-            ...employee.shifts,
+          days: {
+            ...employee.days,
             [day]: {
-              ...employee.shifts[day],
-              expanded: !employee.shifts[day].expanded,
+              ...employee.days[day],
+              expanded: !employee.days[day].expanded,
+            },
+          },
+        };
+      })
+    );
+  };
+
+  const addJobEntry = (employeeId: string, day: DayKey) => {
+    setEmployees((prev) =>
+      prev.map((employee) => {
+        if (employee.id !== employeeId) return employee;
+
+        return {
+          ...employee,
+          days: {
+            ...employee.days,
+            [day]: {
+              ...employee.days[day],
+              expanded: true,
+              entries: [...employee.days[day].entries, createJobEntry()],
+            },
+          },
+        };
+      })
+    );
+  };
+
+  const deleteJobEntry = (employeeId: string, day: DayKey, entryId: string) => {
+    setEmployees((prev) =>
+      prev.map((employee) => {
+        if (employee.id !== employeeId) return employee;
+
+        const currentEntries = employee.days[day].entries;
+        const filtered = currentEntries.filter((entry) => entry.id !== entryId);
+
+        return {
+          ...employee,
+          days: {
+            ...employee.days,
+            [day]: {
+              ...employee.days[day],
+              entries: filtered.length ? filtered : [createJobEntry()],
             },
           },
         };
@@ -280,39 +391,34 @@ export default function Page() {
   const toggleJobSelection = (
     employeeId: string,
     day: DayKey,
+    entryId: string,
     job: string
   ) => {
     setEmployees((prev) =>
       prev.map((employee) => {
         if (employee.id !== employeeId) return employee;
 
-        const currentJobs = employee.shifts[day].jobs;
-        const exists = currentJobs.includes(job);
-
         return {
           ...employee,
-          shifts: {
-            ...employee.shifts,
+          days: {
+            ...employee.days,
             [day]: {
-              ...employee.shifts[day],
-              jobs: exists
-                ? currentJobs.filter((item) => item !== job)
-                : [...currentJobs, job],
+              ...employee.days[day],
+              entries: employee.days[day].entries.map((entry) => {
+                if (entry.id !== entryId) return entry;
+                const exists = entry.jobs.includes(job);
+
+                return {
+                  ...entry,
+                  jobs: exists
+                    ? entry.jobs.filter((j) => j !== job)
+                    : [...entry.jobs, job],
+                };
+              }),
             },
           },
         };
       })
-    );
-  };
-
-  const updateAdvance = (
-    employeeId: string,
-    patch: { advance?: string; advanceReason?: string }
-  ) => {
-    setEmployees((prev) =>
-      prev.map((employee) =>
-        employee.id === employeeId ? { ...employee, ...patch } : employee
-      )
     );
   };
 
@@ -345,28 +451,33 @@ export default function Page() {
     );
     setEmployees(filtered);
     setSelectedEmployeeId(filtered[0]?.id ?? "");
+    setShowEmployeeMenu(false);
   };
 
-  const totals = useMemo(() => {
+  const employeeTotals = useMemo(() => {
     return employees.map((employee) => {
-      const totalPay = DAYS.reduce((sum, day) => {
-        return sum + parseMoney(employee.shifts[day.key].pay);
-      }, 0);
-
+      const gross = getEmployeeGross(employee);
       const advance = parseMoney(employee.advance);
-      const net = totalPay - advance;
+      const finalPayout = gross - advance;
 
       return {
         employeeId: employee.id,
-        totalPay,
+        gross,
         advance,
-        net,
+        finalPayout,
       };
     });
   }, [employees]);
 
-  const selectedTotals = totals.find(
+  const selectedTotals = employeeTotals.find(
     (item) => item.employeeId === selectedEmployee?.id
+  );
+
+  const overallGross = employeeTotals.reduce((sum, e) => sum + e.gross, 0);
+  const overallAdvances = employeeTotals.reduce((sum, e) => sum + e.advance, 0);
+  const overallFinalPayout = employeeTotals.reduce(
+    (sum, e) => sum + e.finalPayout,
+    0
   );
 
   return (
@@ -393,9 +504,47 @@ export default function Page() {
 
             <p className="mt-4 max-w-3xl text-sm leading-7 text-gray-300 md:text-lg">
               A cleaner, faster, premium workflow for selecting employees,
-              tracking daily jobs, assigning properties, managing advances, and
-              controlling weekly payouts.
+              tracking multiple jobs per day, assigning properties, managing
+              advances, and controlling weekly payouts.
             </p>
+          </div>
+        </section>
+
+        <section className="mb-8 grid gap-6 md:grid-cols-2 xl:grid-cols-4">
+          <div className="rounded-[28px] border border-white/10 bg-white/[0.05] p-5 shadow-[0_20px_60px_rgba(0,0,0,0.3)]">
+            <div className="text-xs uppercase tracking-[0.2em] text-gray-400">
+              Total Employees
+            </div>
+            <div className="mt-2 text-3xl font-extrabold text-white">
+              {employees.length}
+            </div>
+          </div>
+
+          <div className="rounded-[28px] border border-white/10 bg-white/[0.05] p-5 shadow-[0_20px_60px_rgba(0,0,0,0.3)]">
+            <div className="text-xs uppercase tracking-[0.2em] text-gray-400">
+              Total Gross Payroll
+            </div>
+            <div className="mt-2 text-3xl font-extrabold text-white">
+              {formatCurrency(overallGross)}
+            </div>
+          </div>
+
+          <div className="rounded-[28px] border border-white/10 bg-white/[0.05] p-5 shadow-[0_20px_60px_rgba(0,0,0,0.3)]">
+            <div className="text-xs uppercase tracking-[0.2em] text-gray-400">
+              Total Advances
+            </div>
+            <div className="mt-2 text-3xl font-extrabold text-red-300">
+              {formatCurrency(overallAdvances)}
+            </div>
+          </div>
+
+          <div className="rounded-[28px] border border-emerald-400/20 bg-emerald-500/10 p-5 shadow-[0_20px_60px_rgba(0,0,0,0.3)]">
+            <div className="text-xs uppercase tracking-[0.2em] text-emerald-200/80">
+              Total Final Payout
+            </div>
+            <div className="mt-2 text-3xl font-extrabold text-emerald-300">
+              {formatCurrency(overallFinalPayout)}
+            </div>
           </div>
         </section>
 
@@ -442,14 +591,28 @@ export default function Page() {
                 </button>
               </div>
 
-              <div className="flex items-end">
-                <button
-                  onClick={deleteSelectedEmployee}
-                  className="inline-flex h-[56px] items-center gap-2 rounded-2xl border border-red-400/20 bg-red-500/10 px-5 font-bold text-red-300 transition hover:bg-red-500/20"
-                >
-                  <Trash2 className="h-4 w-4" />
-                  Delete
-                </button>
+              <div className="flex items-end justify-end">
+                <div className="relative" ref={menuRef}>
+                  <button
+                    onClick={() => setShowEmployeeMenu((v) => !v)}
+                    className="inline-flex h-[56px] items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-5 font-bold text-white transition hover:bg-white/10"
+                  >
+                    <MoreHorizontal className="h-5 w-5" />
+                    More
+                  </button>
+
+                  {showEmployeeMenu && (
+                    <div className="absolute right-0 top-[64px] z-20 w-56 rounded-2xl border border-white/10 bg-[#0c1527] p-2 shadow-2xl">
+                      <button
+                        onClick={deleteSelectedEmployee}
+                        className="flex w-full items-center gap-3 rounded-xl px-4 py-3 text-left text-red-300 hover:bg-red-500/10"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                        Delete Employee
+                      </button>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           </div>
@@ -478,7 +641,7 @@ export default function Page() {
               <div className="flex items-center justify-between rounded-2xl bg-white/5 px-4 py-4">
                 <span className="text-gray-200">Gross Total</span>
                 <span className="font-bold text-white">
-                  {formatCurrency(selectedTotals?.totalPay ?? 0)}
+                  {formatCurrency(selectedTotals?.gross ?? 0)}
                 </span>
               </div>
 
@@ -494,7 +657,7 @@ export default function Page() {
                   Final Payout
                 </span>
                 <span className="text-2xl font-extrabold text-emerald-300">
-                  {formatCurrency(selectedTotals?.net ?? 0)}
+                  {formatCurrency(selectedTotals?.finalPayout ?? 0)}
                 </span>
               </div>
             </div>
@@ -541,7 +704,7 @@ export default function Page() {
                     {selectedEmployee.name}
                   </h2>
                   <p className="mt-1 text-sm text-gray-300">
-                    Daily job tracking for the selected employee.
+                    Track multiple jobs for the same day and same employee.
                   </p>
                 </div>
 
@@ -602,8 +765,9 @@ export default function Page() {
 
               <div className="grid gap-4">
                 {DAYS.map((day) => {
-                  const shift = selectedEmployee.shifts[day.key];
-                  const preview = buildPreview(shift);
+                  const dayRecord = selectedEmployee.days[day.key];
+                  const dayTotal = getDayTotal(dayRecord);
+                  const jobCount = dayRecord.entries.length;
 
                   return (
                     <div
@@ -624,28 +788,22 @@ export default function Page() {
                             </div>
 
                             <div className="rounded-full bg-white/5 px-4 py-2 text-sm font-semibold text-gray-100">
-                              {preview.dateText}
+                              {dayRecord.date || "No date"}
+                            </div>
+
+                            <div className="rounded-full bg-white/5 px-4 py-2 text-sm font-semibold text-gray-100">
+                              {jobCount} Job{jobCount !== 1 ? "s" : ""}
                             </div>
                           </div>
 
-                          <div className="flex flex-1 flex-wrap gap-2 lg:justify-end">
-                            <div className="inline-flex items-center gap-2 rounded-full bg-white/5 px-4 py-2 text-sm text-gray-100">
-                              <Building2 className="h-4 w-4 text-amber-300" />
-                              {preview.propertyText}
-                            </div>
-
-                            <div className="inline-flex items-center gap-2 rounded-full bg-white/5 px-4 py-2 text-sm text-gray-100">
-                              <Briefcase className="h-4 w-4 text-amber-300" />
-                              {preview.jobText}
-                            </div>
-
+                          <div className="flex flex-wrap items-center gap-2 lg:justify-end">
                             <div className="inline-flex items-center gap-2 rounded-full bg-emerald-500/10 px-4 py-2 text-sm font-semibold text-emerald-300">
                               <DollarSign className="h-4 w-4" />
-                              {preview.payText}
+                              {formatCurrency(dayTotal)}
                             </div>
 
                             <div className="inline-flex items-center justify-center rounded-full bg-white/5 px-3 py-2 text-gray-200">
-                              {shift.expanded ? (
+                              {dayRecord.expanded ? (
                                 <ChevronUp className="h-4 w-4" />
                               ) : (
                                 <ChevronDown className="h-4 w-4" />
@@ -655,10 +813,10 @@ export default function Page() {
                         </div>
                       </button>
 
-                      {shift.expanded && (
+                      {dayRecord.expanded && (
                         <div className="border-t border-white/10 px-4 py-5 md:px-5">
-                          <div className="grid gap-4 md:grid-cols-2">
-                            <div>
+                          <div className="mb-4 flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+                            <div className="w-full md:max-w-sm">
                               <label className="mb-2 block text-sm font-semibold text-gray-100">
                                 Date
                               </label>
@@ -666,9 +824,9 @@ export default function Page() {
                                 <CalendarDays className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-amber-300" />
                                 <input
                                   type="date"
-                                  value={shift.date}
+                                  value={dayRecord.date}
                                   onChange={(e) =>
-                                    updateShift(selectedEmployee.id, day.key, {
+                                    updateDay(selectedEmployee.id, day.key, {
                                       date: e.target.value,
                                     })
                                   }
@@ -677,128 +835,204 @@ export default function Page() {
                               </div>
                             </div>
 
-                            <div>
-                              <label className="mb-2 block text-sm font-semibold text-gray-100">
-                                Pay
-                              </label>
-                              <input
-                                type="number"
-                                inputMode="decimal"
-                                value={shift.pay}
-                                onChange={(e) =>
-                                  updateShift(selectedEmployee.id, day.key, {
-                                    pay: e.target.value,
-                                  })
-                                }
-                                placeholder="0.00"
-                                className="w-full rounded-2xl border border-white/10 bg-[#111a31] px-4 py-3 text-white placeholder:text-gray-400 outline-none focus:border-amber-400"
-                              />
-                            </div>
-                          </div>
-
-                          <div className="mt-4">
-                            <label className="mb-2 block text-sm font-semibold text-gray-100">
-                              Property
-                            </label>
-                            <select
-                              value={shift.property}
-                              onChange={(e) =>
-                                updateShift(selectedEmployee.id, day.key, {
-                                  property: e.target.value,
-                                })
+                            <button
+                              onClick={() =>
+                                addJobEntry(selectedEmployee.id, day.key)
                               }
-                              className="w-full rounded-2xl border border-white/10 bg-[#111a31] px-4 py-3 text-white outline-none focus:border-amber-400"
+                              className="inline-flex items-center gap-2 rounded-2xl bg-amber-500 px-5 py-3 font-bold text-black hover:bg-amber-400"
                             >
-                              <option value="">Select property</option>
-                              {PROPERTY_OPTIONS.map((property) => (
-                                <option key={property} value={property}>
-                                  {property}
-                                </option>
-                              ))}
-                            </select>
+                              <Plus className="h-4 w-4" />
+                              Add Job Entry
+                            </button>
                           </div>
 
-                          {shift.property === "Other" && (
-                            <div className="mt-4">
-                              <label className="mb-2 block text-sm font-semibold text-gray-100">
-                                Custom Property
-                              </label>
-                              <input
-                                value={shift.customProperty}
-                                onChange={(e) =>
-                                  updateShift(selectedEmployee.id, day.key, {
-                                    customProperty: e.target.value,
-                                  })
-                                }
-                                placeholder="Type custom property"
-                                className="w-full rounded-2xl border border-white/10 bg-[#111a31] px-4 py-3 text-white placeholder:text-gray-400 outline-none focus:border-amber-400"
-                              />
-                            </div>
-                          )}
+                          <div className="space-y-4">
+                            {dayRecord.entries.map((entry, index) => (
+                              <div
+                                key={entry.id}
+                                className="rounded-[24px] border border-white/10 bg-[#111a31] p-4"
+                              >
+                                <div className="mb-4 flex items-center justify-between">
+                                  <div className="rounded-full bg-white/5 px-4 py-2 text-sm font-semibold text-gray-100">
+                                    Job Entry {index + 1}
+                                  </div>
 
-                          <div className="mt-4">
-                            <label className="mb-2 block text-sm font-semibold text-gray-100">
-                              Job Being Done
-                            </label>
-                            <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
-                              {JOB_OPTIONS.map((job) => {
-                                const selected = shift.jobs.includes(job);
-
-                                return (
                                   <button
-                                    key={job}
-                                    type="button"
                                     onClick={() =>
-                                      toggleJobSelection(
+                                      deleteJobEntry(
                                         selectedEmployee.id,
                                         day.key,
-                                        job
+                                        entry.id
                                       )
                                     }
-                                    className={`rounded-2xl border px-4 py-3 text-left text-sm font-semibold transition ${
-                                      selected
-                                        ? "border-amber-400 bg-amber-500/15 text-amber-300"
-                                        : "border-white/10 bg-[#111a31] text-gray-100 hover:border-amber-400/60"
-                                    }`}
+                                    className="inline-flex items-center gap-2 rounded-xl border border-red-400/20 bg-red-500/10 px-3 py-2 text-sm font-semibold text-red-300 hover:bg-red-500/20"
                                   >
-                                    {job}
+                                    <Trash2 className="h-4 w-4" />
+                                    Remove
                                   </button>
-                                );
-                              })}
-                            </div>
-                          </div>
+                                </div>
 
-                          <div className="mt-4">
-                            <label className="mb-2 block text-sm font-semibold text-gray-100">
-                              Custom Job
-                            </label>
-                            <input
-                              value={shift.customJob}
-                              onChange={(e) =>
-                                updateShift(selectedEmployee.id, day.key, {
-                                  customJob: e.target.value,
-                                })
-                              }
-                              placeholder="Add your own custom job if needed"
-                              className="w-full rounded-2xl border border-white/10 bg-[#111a31] px-4 py-3 text-white placeholder:text-gray-400 outline-none focus:border-amber-400"
-                            />
-                          </div>
+                                <div className="grid gap-4 md:grid-cols-2">
+                                  <div>
+                                    <label className="mb-2 block text-sm font-semibold text-gray-100">
+                                      Property
+                                    </label>
+                                    <select
+                                      value={entry.property}
+                                      onChange={(e) =>
+                                        updateJobEntry(
+                                          selectedEmployee.id,
+                                          day.key,
+                                          entry.id,
+                                          { property: e.target.value }
+                                        )
+                                      }
+                                      className="w-full rounded-2xl border border-white/10 bg-[#0d162b] px-4 py-3 text-white outline-none focus:border-amber-400"
+                                    >
+                                      <option value="">Select property</option>
+                                      {PROPERTY_OPTIONS.map((property) => (
+                                        <option key={property} value={property}>
+                                          {property}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  </div>
 
-                          <div className="mt-4">
-                            <label className="mb-2 block text-sm font-semibold text-gray-100">
-                              Notes
-                            </label>
-                            <textarea
-                              value={shift.notes}
-                              onChange={(e) =>
-                                updateShift(selectedEmployee.id, day.key, {
-                                  notes: e.target.value,
-                                })
-                              }
-                              placeholder="Extra details for this day"
-                              rows={3}
-                              className="w-full rounded-2xl border border-white/10 bg-[#111a31] px-4 py-3 text-white placeholder:text-gray-400 outline-none focus:border-amber-400"
-                            />
+                                  <div>
+                                    <label className="mb-2 block text-sm font-semibold text-gray-100">
+                                      Pay
+                                    </label>
+                                    <input
+                                      type="number"
+                                      inputMode="decimal"
+                                      value={entry.pay}
+                                      onChange={(e) =>
+                                        updateJobEntry(
+                                          selectedEmployee.id,
+                                          day.key,
+                                          entry.id,
+                                          { pay: e.target.value }
+                                        )
+                                      }
+                                      placeholder="0.00"
+                                      className="w-full rounded-2xl border border-white/10 bg-[#0d162b] px-4 py-3 text-white placeholder:text-gray-400 outline-none focus:border-amber-400"
+                                    />
+                                  </div>
+                                </div>
+
+                                {entry.property === "Other" && (
+                                  <div className="mt-4">
+                                    <label className="mb-2 block text-sm font-semibold text-gray-100">
+                                      Custom Property
+                                    </label>
+                                    <input
+                                      value={entry.customProperty}
+                                      onChange={(e) =>
+                                        updateJobEntry(
+                                          selectedEmployee.id,
+                                          day.key,
+                                          entry.id,
+                                          { customProperty: e.target.value }
+                                        )
+                                      }
+                                      placeholder="Type custom property"
+                                      className="w-full rounded-2xl border border-white/10 bg-[#0d162b] px-4 py-3 text-white placeholder:text-gray-400 outline-none focus:border-amber-400"
+                                    />
+                                  </div>
+                                )}
+
+                                <div className="mt-4">
+                                  <label className="mb-2 block text-sm font-semibold text-gray-100">
+                                    Job Being Done
+                                  </label>
+                                  <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+                                    {JOB_OPTIONS.map((job) => {
+                                      const selected = entry.jobs.includes(job);
+
+                                      return (
+                                        <button
+                                          key={job}
+                                          type="button"
+                                          onClick={() =>
+                                            toggleJobSelection(
+                                              selectedEmployee.id,
+                                              day.key,
+                                              entry.id,
+                                              job
+                                            )
+                                          }
+                                          className={`rounded-2xl border px-4 py-3 text-left text-sm font-semibold transition ${
+                                            selected
+                                              ? "border-amber-400 bg-amber-500/15 text-amber-300"
+                                              : "border-white/10 bg-[#0d162b] text-gray-100 hover:border-amber-400/60"
+                                          }`}
+                                        >
+                                          {job}
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+
+                                <div className="mt-4">
+                                  <label className="mb-2 block text-sm font-semibold text-gray-100">
+                                    Custom Job
+                                  </label>
+                                  <input
+                                    value={entry.customJob}
+                                    onChange={(e) =>
+                                      updateJobEntry(
+                                        selectedEmployee.id,
+                                        day.key,
+                                        entry.id,
+                                        { customJob: e.target.value }
+                                      )
+                                    }
+                                    placeholder="Add your own custom job if needed"
+                                    className="w-full rounded-2xl border border-white/10 bg-[#0d162b] px-4 py-3 text-white placeholder:text-gray-400 outline-none focus:border-amber-400"
+                                  />
+                                </div>
+
+                                <div className="mt-4">
+                                  <label className="mb-2 block text-sm font-semibold text-gray-100">
+                                    Notes
+                                  </label>
+                                  <textarea
+                                    value={entry.notes}
+                                    onChange={(e) =>
+                                      updateJobEntry(
+                                        selectedEmployee.id,
+                                        day.key,
+                                        entry.id,
+                                        { notes: e.target.value }
+                                      )
+                                    }
+                                    placeholder="Extra details for this job entry"
+                                    rows={3}
+                                    className="w-full rounded-2xl border border-white/10 bg-[#0d162b] px-4 py-3 text-white placeholder:text-gray-400 outline-none focus:border-amber-400"
+                                  />
+                                </div>
+
+                                <div className="mt-4 flex flex-wrap gap-2">
+                                  <div className="inline-flex items-center gap-2 rounded-full bg-white/5 px-4 py-2 text-sm text-gray-100">
+                                    <Building2 className="h-4 w-4 text-amber-300" />
+                                    {getEntryPropertyText(entry)}
+                                  </div>
+
+                                  <div className="inline-flex items-center gap-2 rounded-full bg-white/5 px-4 py-2 text-sm text-gray-100">
+                                    <Briefcase className="h-4 w-4 text-amber-300" />
+                                    {getEntryJobText(entry)}
+                                  </div>
+
+                                  <div className="inline-flex items-center gap-2 rounded-full bg-emerald-500/10 px-4 py-2 text-sm font-semibold text-emerald-300">
+                                    <DollarSign className="h-4 w-4" />
+                                    {entry.pay
+                                      ? formatCurrency(parseMoney(entry.pay))
+                                      : "$0.00"}
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
                           </div>
                         </div>
                       )}
@@ -880,7 +1114,7 @@ export default function Page() {
                       Gross Total
                     </div>
                     <div className="mt-1 text-2xl font-extrabold text-white">
-                      {formatCurrency(selectedTotals?.totalPay ?? 0)}
+                      {formatCurrency(selectedTotals?.gross ?? 0)}
                     </div>
                   </div>
 
@@ -898,7 +1132,7 @@ export default function Page() {
                       Final Payout
                     </div>
                     <div className="mt-1 text-3xl font-extrabold text-emerald-300">
-                      {formatCurrency(selectedTotals?.net ?? 0)}
+                      {formatCurrency(selectedTotals?.finalPayout ?? 0)}
                     </div>
                   </div>
                 </div>
