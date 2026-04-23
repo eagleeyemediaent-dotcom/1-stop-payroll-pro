@@ -12,6 +12,7 @@ import {
   MoreHorizontal,
   Plus,
   Trash2,
+  Upload,
   UserRound,
   Wallet,
   X,
@@ -25,6 +26,12 @@ type DayKey =
   | "friday"
   | "saturday";
 
+type JobPhoto = {
+  id: string;
+  name: string;
+  dataUrl: string;
+};
+
 type JobEntry = {
   id: string;
   property: string;
@@ -33,6 +40,7 @@ type JobEntry = {
   customJob: string;
   pay: string;
   notes: string;
+  photos: JobPhoto[];
 };
 
 type DayRecord = {
@@ -89,7 +97,7 @@ const JOB_OPTIONS = [
   "Occupied Unit",
 ];
 
-const STORAGE_KEY = "one-stop-turnover-employees-v4";
+const STORAGE_KEY = "one-stop-turnover-employees-v41";
 
 function createJobEntry(): JobEntry {
   return {
@@ -100,6 +108,7 @@ function createJobEntry(): JobEntry {
     customJob: "",
     pay: "",
     notes: "",
+    photos: [],
   };
 }
 
@@ -480,6 +489,89 @@ export default function Page() {
     0
   );
 
+  const handlePhotoUpload = async (
+    employeeId: string,
+    day: DayKey,
+    entryId: string,
+    files: FileList | null
+  ) => {
+    if (!files || files.length === 0) return;
+
+    const fileReaders = Array.from(files).map(
+      (file) =>
+        new Promise<JobPhoto>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => {
+            resolve({
+              id: crypto.randomUUID(),
+              name: file.name,
+              dataUrl: String(reader.result),
+            });
+          };
+          reader.onerror = reject;
+          reader.readAsDataURL(file);
+        })
+    );
+
+    try {
+      const photos = await Promise.all(fileReaders);
+
+      setEmployees((prev) =>
+        prev.map((employee) => {
+          if (employee.id !== employeeId) return employee;
+
+          return {
+            ...employee,
+            days: {
+              ...employee.days,
+              [day]: {
+                ...employee.days[day],
+                entries: employee.days[day].entries.map((entry) =>
+                  entry.id === entryId
+                    ? { ...entry, photos: [...entry.photos, ...photos] }
+                    : entry
+                ),
+              },
+            },
+          };
+        })
+      );
+    } catch (error) {
+      console.error("Photo upload failed", error);
+    }
+  };
+
+  const removePhoto = (
+    employeeId: string,
+    day: DayKey,
+    entryId: string,
+    photoId: string
+  ) => {
+    setEmployees((prev) =>
+      prev.map((employee) => {
+        if (employee.id !== employeeId) return employee;
+
+        return {
+          ...employee,
+          days: {
+            ...employee.days,
+            [day]: {
+              ...employee.days[day],
+              entries: employee.days[day].entries.map((entry) =>
+                entry.id === entryId
+                  ? {
+                      ...entry,
+                      photos: entry.photos.filter((photo) => photo.id !== photoId),
+                    }
+                  : entry
+              ),
+            },
+          },
+        };
+      })
+    );
+  };
+
   return (
     <main className="min-h-screen bg-[radial-gradient(circle_at_top,_#193668_0%,_#0a1731_38%,_#040b18_100%)] text-white">
       <div className="mx-auto max-w-7xl px-4 py-8 md:px-8">
@@ -504,8 +596,8 @@ export default function Page() {
 
             <p className="mt-4 max-w-3xl text-sm leading-7 text-gray-300 md:text-lg">
               A cleaner, faster, premium workflow for selecting employees,
-              tracking multiple jobs per day, assigning properties, managing
-              advances, and controlling weekly payouts.
+              tracking multiple jobs per day, uploading proof photos, assigning
+              properties, managing advances, and controlling weekly payouts.
             </p>
           </div>
         </section>
@@ -1013,6 +1105,70 @@ export default function Page() {
                                   />
                                 </div>
 
+                                <div className="mt-4">
+                                  <label className="mb-2 block text-sm font-semibold text-gray-100">
+                                    Upload Photos
+                                  </label>
+
+                                  <label className="flex cursor-pointer items-center justify-center gap-2 rounded-2xl border border-dashed border-white/15 bg-[#0d162b] px-4 py-4 text-sm font-semibold text-gray-200 hover:border-amber-400/50 hover:bg-[#101a34]">
+                                    <Upload className="h-4 w-4 text-amber-300" />
+                                    Add Photos
+                                    <input
+                                      type="file"
+                                      accept="image/*"
+                                      multiple
+                                      className="hidden"
+                                      onChange={(e) =>
+                                        handlePhotoUpload(
+                                          selectedEmployee.id,
+                                          day.key,
+                                          entry.id,
+                                          e.target.files
+                                        )
+                                      }
+                                    />
+                                  </label>
+
+                                  {entry.photos.length > 0 && (
+                                    <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                                      {entry.photos.map((photo) => (
+                                        <div
+                                          key={photo.id}
+                                          className="overflow-hidden rounded-2xl border border-white/10 bg-[#0b1427]"
+                                        >
+                                          <div className="relative aspect-[4/3] w-full">
+                                            <img
+                                              src={photo.dataUrl}
+                                              alt={photo.name}
+                                              className="h-full w-full object-cover"
+                                            />
+                                          </div>
+
+                                          <div className="flex items-center justify-between gap-2 p-3">
+                                            <div className="truncate text-xs text-gray-300">
+                                              {photo.name}
+                                            </div>
+
+                                            <button
+                                              onClick={() =>
+                                                removePhoto(
+                                                  selectedEmployee.id,
+                                                  day.key,
+                                                  entry.id,
+                                                  photo.id
+                                                )
+                                              }
+                                              className="rounded-lg border border-red-400/20 bg-red-500/10 px-2 py-1 text-xs font-semibold text-red-300 hover:bg-red-500/20"
+                                            >
+                                              Remove
+                                            </button>
+                                          </div>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
+
                                 <div className="mt-4 flex flex-wrap gap-2">
                                   <div className="inline-flex items-center gap-2 rounded-full bg-white/5 px-4 py-2 text-sm text-gray-100">
                                     <Building2 className="h-4 w-4 text-amber-300" />
@@ -1029,6 +1185,12 @@ export default function Page() {
                                     {entry.pay
                                       ? formatCurrency(parseMoney(entry.pay))
                                       : "$0.00"}
+                                  </div>
+
+                                  <div className="inline-flex items-center gap-2 rounded-full bg-white/5 px-4 py-2 text-sm text-gray-100">
+                                    <Upload className="h-4 w-4 text-amber-300" />
+                                    {entry.photos.length} Photo
+                                    {entry.photos.length !== 1 ? "s" : ""}
                                   </div>
                                 </div>
                               </div>
