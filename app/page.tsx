@@ -6,6 +6,7 @@ import {
   Briefcase,
   Building2,
   CalendarDays,
+  CheckCircle2,
   ChevronDown,
   ChevronUp,
   DollarSign,
@@ -26,6 +27,8 @@ type DayKey =
   | "friday"
   | "saturday";
 
+type JobStatus = "Pending" | "In Progress" | "Completed";
+
 type JobPhoto = {
   id: string;
   name: string;
@@ -40,7 +43,9 @@ type JobEntry = {
   customJob: string;
   pay: string;
   notes: string;
-  photos: JobPhoto[];
+  status: JobStatus;
+  beforePhotos: JobPhoto[];
+  afterPhotos: JobPhoto[];
 };
 
 type DayRecord = {
@@ -97,7 +102,7 @@ const JOB_OPTIONS = [
   "Occupied Unit",
 ];
 
-const STORAGE_KEY = "one-stop-turnover-employees-v41";
+const STORAGE_KEY = "one-stop-turnover-employees-v5";
 
 function createJobEntry(): JobEntry {
   return {
@@ -108,7 +113,9 @@ function createJobEntry(): JobEntry {
     customJob: "",
     pay: "",
     notes: "",
-    photos: [],
+    status: "Pending",
+    beforePhotos: [],
+    afterPhotos: [],
   };
 }
 
@@ -198,6 +205,17 @@ function isValidSavedEmployees(data: unknown): data is Employee[] {
     "name" in data[0] &&
     "days" in data[0]
   );
+}
+
+function getStatusStyles(status: JobStatus) {
+  switch (status) {
+    case "Completed":
+      return "bg-emerald-500/15 text-emerald-300 border border-emerald-400/20";
+    case "In Progress":
+      return "bg-amber-500/15 text-amber-300 border border-amber-400/20";
+    default:
+      return "bg-white/5 text-gray-200 border border-white/10";
+  }
 }
 
 export default function Page() {
@@ -493,7 +511,8 @@ export default function Page() {
     employeeId: string,
     day: DayKey,
     entryId: string,
-    files: FileList | null
+    files: FileList | null,
+    photoType: "beforePhotos" | "afterPhotos"
   ) => {
     if (!files || files.length === 0) return;
 
@@ -528,7 +547,7 @@ export default function Page() {
                 ...employee.days[day],
                 entries: employee.days[day].entries.map((entry) =>
                   entry.id === entryId
-                    ? { ...entry, photos: [...entry.photos, ...photos] }
+                    ? { ...entry, [photoType]: [...entry[photoType], ...photos] }
                     : entry
                 ),
               },
@@ -545,7 +564,8 @@ export default function Page() {
     employeeId: string,
     day: DayKey,
     entryId: string,
-    photoId: string
+    photoId: string,
+    photoType: "beforePhotos" | "afterPhotos"
   ) => {
     setEmployees((prev) =>
       prev.map((employee) => {
@@ -561,7 +581,9 @@ export default function Page() {
                 entry.id === entryId
                   ? {
                       ...entry,
-                      photos: entry.photos.filter((photo) => photo.id !== photoId),
+                      [photoType]: entry[photoType].filter(
+                        (photo) => photo.id !== photoId
+                      ),
                     }
                   : entry
               ),
@@ -596,8 +618,9 @@ export default function Page() {
 
             <p className="mt-4 max-w-3xl text-sm leading-7 text-gray-300 md:text-lg">
               A cleaner, faster, premium workflow for selecting employees,
-              tracking multiple jobs per day, uploading proof photos, assigning
-              properties, managing advances, and controlling weekly payouts.
+              tracking multiple jobs per day, documenting before/after proof,
+              assigning properties, managing advances, and controlling weekly
+              payouts.
             </p>
           </div>
         </section>
@@ -944,9 +967,26 @@ export default function Page() {
                                 key={entry.id}
                                 className="rounded-[24px] border border-white/10 bg-[#111a31] p-4"
                               >
-                                <div className="mb-4 flex items-center justify-between">
-                                  <div className="rounded-full bg-white/5 px-4 py-2 text-sm font-semibold text-gray-100">
-                                    Job Entry {index + 1}
+                                <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <div className="rounded-full bg-white/5 px-4 py-2 text-sm font-semibold text-gray-100">
+                                      Job Entry {index + 1}
+                                    </div>
+
+                                    <div
+                                      className={`rounded-full px-3 py-2 text-xs font-bold ${getStatusStyles(
+                                        entry.status
+                                      )}`}
+                                    >
+                                      {entry.status}
+                                    </div>
+
+                                    {entry.status === "Completed" && (
+                                      <div className="inline-flex items-center gap-1 rounded-full border border-emerald-400/20 bg-emerald-500/10 px-3 py-2 text-xs font-bold text-emerald-300">
+                                        <CheckCircle2 className="h-4 w-4" />
+                                        Completed
+                                      </div>
+                                    )}
                                   </div>
 
                                   <button
@@ -964,8 +1004,8 @@ export default function Page() {
                                   </button>
                                 </div>
 
-                                <div className="grid gap-4 md:grid-cols-2">
-                                  <div>
+                                <div className="grid gap-4 md:grid-cols-3">
+                                  <div className="md:col-span-1">
                                     <label className="mb-2 block text-sm font-semibold text-gray-100">
                                       Property
                                     </label>
@@ -990,7 +1030,7 @@ export default function Page() {
                                     </select>
                                   </div>
 
-                                  <div>
+                                  <div className="md:col-span-1">
                                     <label className="mb-2 block text-sm font-semibold text-gray-100">
                                       Pay
                                     </label>
@@ -1009,6 +1049,34 @@ export default function Page() {
                                       placeholder="0.00"
                                       className="w-full rounded-2xl border border-white/10 bg-[#0d162b] px-4 py-3 text-white placeholder:text-gray-400 outline-none focus:border-amber-400"
                                     />
+                                  </div>
+
+                                  <div className="md:col-span-1">
+                                    <label className="mb-2 block text-sm font-semibold text-gray-100">
+                                      Status
+                                    </label>
+                                    <select
+                                      value={entry.status}
+                                      onChange={(e) =>
+                                        updateJobEntry(
+                                          selectedEmployee.id,
+                                          day.key,
+                                          entry.id,
+                                          {
+                                            status: e.target.value as JobStatus,
+                                          }
+                                        )
+                                      }
+                                      className="w-full rounded-2xl border border-white/10 bg-[#0d162b] px-4 py-3 text-white outline-none focus:border-amber-400"
+                                    >
+                                      <option value="Pending">Pending</option>
+                                      <option value="In Progress">
+                                        In Progress
+                                      </option>
+                                      <option value="Completed">
+                                        Completed
+                                      </option>
+                                    </select>
                                   </div>
                                 </div>
 
@@ -1105,68 +1173,138 @@ export default function Page() {
                                   />
                                 </div>
 
-                                <div className="mt-4">
-                                  <label className="mb-2 block text-sm font-semibold text-gray-100">
-                                    Upload Photos
-                                  </label>
+                                <div className="mt-5 grid gap-4 lg:grid-cols-2">
+                                  <div className="rounded-2xl border border-white/10 bg-[#0d162b] p-4">
+                                    <label className="mb-2 block text-sm font-semibold text-gray-100">
+                                      Before Photos
+                                    </label>
 
-                                  <label className="flex cursor-pointer items-center justify-center gap-2 rounded-2xl border border-dashed border-white/15 bg-[#0d162b] px-4 py-4 text-sm font-semibold text-gray-200 hover:border-amber-400/50 hover:bg-[#101a34]">
-                                    <Upload className="h-4 w-4 text-amber-300" />
-                                    Add Photos
-                                    <input
-                                      type="file"
-                                      accept="image/*"
-                                      multiple
-                                      className="hidden"
-                                      onChange={(e) =>
-                                        handlePhotoUpload(
-                                          selectedEmployee.id,
-                                          day.key,
-                                          entry.id,
-                                          e.target.files
-                                        )
-                                      }
-                                    />
-                                  </label>
+                                    <label className="flex cursor-pointer items-center justify-center gap-2 rounded-2xl border border-dashed border-white/15 bg-[#101a34] px-4 py-4 text-sm font-semibold text-gray-200 hover:border-amber-400/50">
+                                      <Upload className="h-4 w-4 text-amber-300" />
+                                      Upload Before Photos
+                                      <input
+                                        type="file"
+                                        accept="image/*"
+                                        multiple
+                                        className="hidden"
+                                        onChange={(e) =>
+                                          handlePhotoUpload(
+                                            selectedEmployee.id,
+                                            day.key,
+                                            entry.id,
+                                            e.target.files,
+                                            "beforePhotos"
+                                          )
+                                        }
+                                      />
+                                    </label>
 
-                                  {entry.photos.length > 0 && (
-                                    <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                                      {entry.photos.map((photo) => (
-                                        <div
-                                          key={photo.id}
-                                          className="overflow-hidden rounded-2xl border border-white/10 bg-[#0b1427]"
-                                        >
-                                          <div className="relative aspect-[4/3] w-full">
-                                            <img
-                                              src={photo.dataUrl}
-                                              alt={photo.name}
-                                              className="h-full w-full object-cover"
-                                            />
-                                          </div>
-
-                                          <div className="flex items-center justify-between gap-2 p-3">
-                                            <div className="truncate text-xs text-gray-300">
-                                              {photo.name}
+                                    {entry.beforePhotos.length > 0 && (
+                                      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                                        {entry.beforePhotos.map((photo) => (
+                                          <div
+                                            key={photo.id}
+                                            className="overflow-hidden rounded-2xl border border-white/10 bg-[#0b1427]"
+                                          >
+                                            <div className="relative aspect-[4/3] w-full">
+                                              <img
+                                                src={photo.dataUrl}
+                                                alt={photo.name}
+                                                className="h-full w-full object-cover"
+                                              />
                                             </div>
 
-                                            <button
-                                              onClick={() =>
-                                                removePhoto(
-                                                  selectedEmployee.id,
-                                                  day.key,
-                                                  entry.id,
-                                                  photo.id
-                                                )
-                                              }
-                                              className="rounded-lg border border-red-400/20 bg-red-500/10 px-2 py-1 text-xs font-semibold text-red-300 hover:bg-red-500/20"
-                                            >
-                                              Remove
-                                            </button>
+                                            <div className="flex items-center justify-between gap-2 p-3">
+                                              <div className="truncate text-xs text-gray-300">
+                                                {photo.name}
+                                              </div>
+
+                                              <button
+                                                onClick={() =>
+                                                  removePhoto(
+                                                    selectedEmployee.id,
+                                                    day.key,
+                                                    entry.id,
+                                                    photo.id,
+                                                    "beforePhotos"
+                                                  )
+                                                }
+                                                className="rounded-lg border border-red-400/20 bg-red-500/10 px-2 py-1 text-xs font-semibold text-red-300 hover:bg-red-500/20"
+                                              >
+                                                Remove
+                                              </button>
+                                            </div>
                                           </div>
-                                        </div>
-                                      ))}
-                                    </div>
-                                  )}
+                                        ))}
+                                      </div>
+                                    )}
+                                  </div>
+
+                                  <div className="rounded-2xl border border-white/10 bg-[#0d162b] p-4">
+                                    <label className="mb-2 block text-sm font-semibold text-gray-100">
+                                      After Photos
+                                    </label>
+
+                                    <label className="flex cursor-pointer items-center justify-center gap-2 rounded-2xl border border-dashed border-white/15 bg-[#101a34] px-4 py-4 text-sm font-semibold text-gray-200 hover:border-emerald-400/50">
+                                      <Upload className="h-4 w-4 text-emerald-300" />
+                                      Upload After Photos
+                                      <input
+                                        type="file"
+                                        accept="image/*"
+                                        multiple
+                                        className="hidden"
+                                        onChange={(e) =>
+                                          handlePhotoUpload(
+                                            selectedEmployee.id,
+                                            day.key,
+                                            entry.id,
+                                            e.target.files,
+                                            "afterPhotos"
+                                          )
+                                        }
+                                      />
+                                    </label>
+
+                                    {entry.afterPhotos.length > 0 && (
+                                      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                                        {entry.afterPhotos.map((photo) => (
+                                          <div
+                                            key={photo.id}
+                                            className="overflow-hidden rounded-2xl border border-white/10 bg-[#0b1427]"
+                                          >
+                                            <div className="relative aspect-[4/3] w-full">
+                                              <img
+                                                src={photo.dataUrl}
+                                                alt={photo.name}
+                                                className="h-full w-full object-cover"
+                                              />
+                                            </div>
+
+                                            <div className="flex items-center justify-between gap-2 p-3">
+                                              <div className="truncate text-xs text-gray-300">
+                                                {photo.name}
+                                              </div>
+
+                                              <button
+                                                onClick={() =>
+                                                  removePhoto(
+                                                    selectedEmployee.id,
+                                                    day.key,
+                                                    entry.id,
+                                                    photo.id,
+                                                    "afterPhotos"
+                                                  )
+                                                }
+                                                className="rounded-lg border border-red-400/20 bg-red-500/10 px-2 py-1 text-xs font-semibold text-red-300 hover:bg-red-500/20"
+                                              >
+                                                Remove
+                                              </button>
+                                            </div>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    )}
+                                  </div>
                                 </div>
 
                                 <div className="mt-4 flex flex-wrap gap-2">
@@ -1189,8 +1327,12 @@ export default function Page() {
 
                                   <div className="inline-flex items-center gap-2 rounded-full bg-white/5 px-4 py-2 text-sm text-gray-100">
                                     <Upload className="h-4 w-4 text-amber-300" />
-                                    {entry.photos.length} Photo
-                                    {entry.photos.length !== 1 ? "s" : ""}
+                                    {entry.beforePhotos.length} Before
+                                  </div>
+
+                                  <div className="inline-flex items-center gap-2 rounded-full bg-white/5 px-4 py-2 text-sm text-gray-100">
+                                    <Upload className="h-4 w-4 text-emerald-300" />
+                                    {entry.afterPhotos.length} After
                                   </div>
                                 </div>
                               </div>
