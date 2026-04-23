@@ -10,6 +10,7 @@ import {
   ChevronDown,
   ChevronUp,
   DollarSign,
+  Download,
   Lock,
   MoreHorizontal,
   Plus,
@@ -108,8 +109,9 @@ const JOB_OPTIONS = [
   "Occupied Unit",
 ];
 
-const CURRENT_STORAGE_KEY = "one-stop-turnover-employees-v6";
+const CURRENT_STORAGE_KEY = "one-stop-turnover-employees-v61";
 const LEGACY_STORAGE_KEYS = [
+  "one-stop-turnover-employees-v6",
   "one-stop-turnover-employees-v5-previewfix",
   "one-stop-turnover-employees-v5",
   "one-stop-turnover-employees-v41",
@@ -343,9 +345,10 @@ function migrateJobEntry(raw: any): JobEntry {
 }
 
 function migrateDayRecord(dayKey: DayKey, raw: any): DayRecord {
-  const entries = Array.isArray(raw?.entries) && raw.entries.length
-    ? raw.entries.map(migrateJobEntry)
-    : [createJobEntry()];
+  const entries =
+    Array.isArray(raw?.entries) && raw.entries.length
+      ? raw.entries.map(migrateJobEntry)
+      : [createJobEntry()];
 
   return {
     id: raw?.id || `${dayKey}-${crypto.randomUUID()}`,
@@ -422,6 +425,7 @@ export default function Page() {
   const [newEmployeeNotes, setNewEmployeeNotes] = useState("");
 
   const menuRef = useRef<HTMLDivElement | null>(null);
+  const importInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     try {
@@ -850,9 +854,79 @@ export default function Page() {
     );
   };
 
+  const handleExportData = () => {
+    const payload = {
+      exportedAt: new Date().toISOString(),
+      version: "phase-6.1",
+      employees,
+    };
+
+    const blob = new Blob([JSON.stringify(payload, null, 2)], {
+      type: "application/json",
+    });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    const dateStamp = new Date().toISOString().slice(0, 10);
+
+    link.href = url;
+    link.download = `one-stop-turnover-backup-${dateStamp}.json`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleImportClick = () => {
+    importInputRef.current?.click();
+  };
+
+  const handleImportFile = async (
+    event: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+
+    try {
+      const text = await file.text();
+      const parsed = JSON.parse(text);
+
+      const source = Array.isArray(parsed)
+        ? parsed
+        : Array.isArray(parsed?.employees)
+        ? parsed.employees
+        : null;
+
+      if (!source || !source.length) {
+        window.alert("Import failed. This backup file does not contain employee data.");
+        return;
+      }
+
+      const confirmed = window.confirm(
+        "Importing will replace the current employees in this app. Continue?"
+      );
+      if (!confirmed) return;
+
+      const migrated = source.map(migrateEmployee);
+      setEmployees(migrated);
+      setSelectedEmployeeId(migrated[0]?.id ?? "");
+      window.alert("Backup imported successfully.");
+    } catch {
+      window.alert("Import failed. Please choose a valid backup JSON file.");
+    }
+  };
+
   return (
     <main className="min-h-screen bg-[radial-gradient(circle_at_top,_#193668_0%,_#0a1731_38%,_#040b18_100%)] text-white">
       <div className="mx-auto max-w-7xl px-4 py-8 md:px-8">
+        <input
+          ref={importInputRef}
+          type="file"
+          accept="application/json"
+          className="hidden"
+          onChange={handleImportFile}
+        />
+
         <section className="mb-8 rounded-[34px] border border-white/10 bg-white/[0.05] p-6 shadow-[0_20px_80px_rgba(0,0,0,0.35)] backdrop-blur-xl md:p-10">
           <div className="flex flex-col items-center text-center">
             <Image
@@ -874,9 +948,27 @@ export default function Page() {
 
             <p className="mt-4 max-w-3xl text-sm leading-7 text-gray-300 md:text-lg">
               Payroll control, proof of work, payout tracking, remaining balances,
-              and weekly closeout for each employee.
+              weekly closeout, and backup recovery.
             </p>
           </div>
+        </section>
+
+        <section className="mb-8 flex flex-wrap gap-3">
+          <button
+            onClick={handleExportData}
+            className="inline-flex items-center gap-2 rounded-2xl border border-emerald-400/20 bg-emerald-500/10 px-5 py-3 font-bold text-emerald-300 hover:bg-emerald-500/20"
+          >
+            <Download className="h-4 w-4" />
+            Export Backup
+          </button>
+
+          <button
+            onClick={handleImportClick}
+            className="inline-flex items-center gap-2 rounded-2xl border border-amber-400/20 bg-amber-500/10 px-5 py-3 font-bold text-amber-300 hover:bg-amber-500/20"
+          >
+            <Upload className="h-4 w-4" />
+            Import Backup
+          </button>
         </section>
 
         <section className="mb-8 grid gap-6 md:grid-cols-2 xl:grid-cols-5">
@@ -935,7 +1027,7 @@ export default function Page() {
               <div>
                 <h2 className="text-xl font-bold">Employee Control Center</h2>
                 <p className="text-sm text-gray-300">
-                  Your current employee data stays intact while Phase 6 adds payroll control.
+                  Backup protection is now built in.
                 </p>
               </div>
             </div>
