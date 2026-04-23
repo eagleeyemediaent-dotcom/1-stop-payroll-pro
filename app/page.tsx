@@ -83,7 +83,7 @@ const JOB_OPTIONS = [
   "Occupied Unit",
 ];
 
-const STORAGE_KEY = "one-stop-turnover-employees-v2";
+const STORAGE_KEY = "one-stop-turnover-employees-v3";
 
 function createEmptyShift(day: DayKey): ShiftItem {
   return {
@@ -371,29 +371,16 @@ export default function Page() {
 
   return (
     <main className="min-h-screen bg-[radial-gradient(circle_at_top,_#193668_0%,_#0a1731_38%,_#040b18_100%)] text-white">
-      <div className="mx-auto max-w-7xl px-4 py-6 md:px-8">
-        <header className="mb-6 rounded-[30px] border border-white/10 bg-white/[0.04] px-6 py-5 shadow-[0_20px_80px_rgba(0,0,0,0.35)] backdrop-blur-xl">
-          <div className="flex items-center justify-center">
-            <Image
-              src="/logo.png"
-              alt="One Stop Turnover Specialist"
-              width={150}
-              height={60}
-              priority
-              className="h-16 w-auto object-contain"
-            />
-          </div>
-        </header>
-
-        <section className="mb-8 rounded-[32px] border border-white/10 bg-white/[0.05] p-6 shadow-[0_20px_80px_rgba(0,0,0,0.35)] backdrop-blur-xl md:p-8">
+      <div className="mx-auto max-w-7xl px-4 py-8 md:px-8">
+        <section className="mb-8 rounded-[34px] border border-white/10 bg-white/[0.05] p-6 shadow-[0_20px_80px_rgba(0,0,0,0.35)] backdrop-blur-xl md:p-10">
           <div className="flex flex-col items-center text-center">
             <Image
               src="/logo.png"
               alt="One Stop Turnover Specialist"
-              width={220}
-              height={100}
+              width={190}
+              height={90}
               priority
-              className="mb-4 h-24 w-auto object-contain"
+              className="mb-5 h-24 w-auto object-contain"
             />
 
             <div className="inline-flex items-center gap-2 rounded-full border border-amber-400/20 bg-amber-400/10 px-4 py-2 text-xs font-semibold uppercase tracking-[0.22em] text-amber-300">
