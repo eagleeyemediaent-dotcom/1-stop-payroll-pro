@@ -1,857 +1,2034 @@
 "use client";
 
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import Image from "next/image";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  Briefcase,
+  Building2,
   CalendarDays,
+  CheckCircle2,
   ChevronDown,
   ChevronUp,
-  CircleDollarSign,
+  DollarSign,
   Download,
-  FileUp,
-  Menu,
+  Lock,
   MoreHorizontal,
   Plus,
-  StickyNote,
-  User,
+  Trash2,
+  Unlock,
+  Upload,
+  UserRound,
   Wallet,
   X,
 } from "lucide-react";
 
+type DayKey =
+  | "monday"
+  | "tuesday"
+  | "wednesday"
+  | "thursday"
+  | "friday"
+  | "saturday";
+
+type JobStatus = "Pending" | "In Progress" | "Completed";
+type PayoutStatus = "Unpaid" | "Partial" | "Paid";
+
+type JobPhoto = {
+  id: string;
+  name: string;
+  dataUrl: string;
+};
+
 type JobEntry = {
   id: string;
   property: string;
-  workDone: string;
-  pay: number;
-  notes?: string;
+  customProperty: string;
+  jobs: string[];
+  customJob: string;
+  pay: string;
+  notes: string;
+  status: JobStatus;
+  beforePhotos: JobPhoto[];
+  afterPhotos: JobPhoto[];
 };
 
-type DayEntry = {
+type DayRecord = {
   id: string;
-  dayLabel: string;
+  day: DayKey;
   date: string;
-  jobs: JobEntry[];
-  collapsed?: boolean;
+  expanded: boolean;
+  entries: JobEntry[];
 };
-
-type EmployeeStatus = "Unpaid" | "Partial" | "Paid" | "Advance Due";
 
 type Employee = {
   id: string;
   name: string;
   phone: string;
-  defaultRate: string;
+  rate: string;
   notes: string;
-  paidAmountSoFar: number;
-  advanceAmount: number;
+  advance: string;
   advanceReason: string;
-  manualStatus: EmployeeStatus;
+  paidAmount: string;
+  payoutStatus: PayoutStatus;
   weekLocked: boolean;
-  days: DayEntry[];
+  days: Record<DayKey, DayRecord>;
 };
 
-const STORAGE_KEY = "one-stop-payroll-pro-v7-mobile-final";
+const DAYS: { key: DayKey; label: string }[] = [
+  { key: "monday", label: "Monday" },
+  { key: "tuesday", label: "Tuesday" },
+  { key: "wednesday", label: "Wednesday" },
+  { key: "thursday", label: "Thursday" },
+  { key: "friday", label: "Friday" },
+  { key: "saturday", label: "Saturday" },
+];
 
 const PROPERTY_OPTIONS = [
   "125 Governor St",
   "Charles Place Apartments",
   "Copley Chambers",
-  "Four Sisters Apartments",
   "Maple Gardens",
   "Omni Point",
   "Phoenix Renaissance",
   "Riverstone Apartments",
   "Spring Villa Apartments",
-  "Tanglewood Village Apartments",
+  "Four Sisters Apartments",
+  "Joseph Caffey Apartment",
   "Turning Point",
+  "Tanglewood Village Apartments",
   "Valley Apartments",
   "Waterview Apartments",
   "Other",
 ];
 
-const WORK_OPTIONS = [
+const JOB_OPTIONS = [
   "Full Unit Painting",
   "Repair Damage Walls",
   "Trash Removal",
   "Repair Damage Walls Due To Water Leak",
   "Occupied Unit",
-  "Clean Out",
-  "Touch Up",
-  "Patch And Paint",
-  "Final Clean",
-  "Other",
 ];
 
-function uid(prefix: string) {
-  return `${prefix}_${Math.random().toString(36).slice(2, 9)}`;
+const CURRENT_STORAGE_KEY = "one-stop-turnover-employees-v61";
+const LEGACY_STORAGE_KEYS = [
+  "one-stop-turnover-employees-v6",
+  "one-stop-turnover-employees-v5-previewfix",
+  "one-stop-turnover-employees-v5",
+  "one-stop-turnover-employees-v41",
+  "one-stop-turnover-employees-v4",
+  "one-stop-turnover-employees-v3",
+  "one-stop-turnover-employees-v2",
+  "one-stop-turnover-employees-v1",
+];
+
+function createJobEntry(): JobEntry {
+  return {
+    id: crypto.randomUUID(),
+    property: "",
+    customProperty: "",
+    jobs: [],
+    customJob: "",
+    pay: "",
+    notes: "",
+    status: "Pending",
+    beforePhotos: [],
+    afterPhotos: [],
+  };
 }
 
-function parseMoney(value: string | number | null | undefined) {
-  if (typeof value === "number") return Number.isFinite(value) ? value : 0;
-  if (!value) return 0;
-  const cleaned = String(value).replace(/[^0-9.-]/g, "");
-  const parsed = Number(cleaned);
-  return Number.isFinite(parsed) ? parsed : 0;
+function createDayRecord(day: DayKey): DayRecord {
+  return {
+    id: `${day}-${crypto.randomUUID()}`,
+    day,
+    date: "",
+    expanded: false,
+    entries: [createJobEntry()],
+  };
 }
 
-function formatMoney(value: number) {
+function createEmployee(
+  name = "",
+  phone = "",
+  rate = "",
+  notes = ""
+): Employee {
+  return {
+    id: crypto.randomUUID(),
+    name,
+    phone,
+    rate,
+    notes,
+    advance: "",
+    advanceReason: "",
+    paidAmount: "",
+    payoutStatus: "Unpaid",
+    weekLocked: false,
+    days: {
+      monday: createDayRecord("monday"),
+      tuesday: createDayRecord("tuesday"),
+      wednesday: createDayRecord("wednesday"),
+      thursday: createDayRecord("thursday"),
+      friday: createDayRecord("friday"),
+      saturday: createDayRecord("saturday"),
+    },
+  };
+}
+
+function getDefaultEmployees(): Employee[] {
+  return [
+    createEmployee("Sergio"),
+    createEmployee("Hector"),
+    createEmployee("Jose"),
+  ];
+}
+
+function parseMoney(value: string) {
+  const n = Number(String(value ?? "").replace(/[^0-9.-]+/g, ""));
+  return Number.isFinite(n) ? n : 0;
+}
+
+function formatCurrency(value: number) {
   return new Intl.NumberFormat("en-US", {
     style: "currency",
     currency: "USD",
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(Number.isFinite(value) ? value : 0);
+  }).format(value);
 }
 
-function blankJob(): JobEntry {
+function clampMoney(value: number) {
+  return Math.max(0, Number.isFinite(value) ? value : 0);
+}
+
+function getEntryPropertyText(entry: JobEntry) {
+  return entry.property === "Other"
+    ? entry.customProperty.trim() || "No property"
+    : entry.property || "No property";
+}
+
+function getEntryJobText(entry: JobEntry) {
+  const combined = [
+    ...entry.jobs,
+    ...(entry.customJob.trim() ? [entry.customJob.trim()] : []),
+  ];
+  return combined.length ? combined.join(", ") : "No job selected";
+}
+
+function getDayTotal(day: DayRecord) {
+  return day.entries.reduce((sum, entry) => sum + parseMoney(entry.pay), 0);
+}
+
+function getEmployeeGross(employee: Employee) {
+  return DAYS.reduce((sum, day) => sum + getDayTotal(employee.days[day.key]), 0);
+}
+
+function getEmployeeAdvance(employee: Employee) {
+  return parseMoney(employee.advance);
+}
+
+function getEmployeeFinalPayout(employee: Employee) {
+  return clampMoney(getEmployeeGross(employee) - getEmployeeAdvance(employee));
+}
+
+function normalizePayoutStatus(
+  paidAmount: number,
+  finalPayout: number
+): PayoutStatus {
+  if (finalPayout <= 0) return "Paid";
+  if (paidAmount <= 0) return "Unpaid";
+  if (paidAmount >= finalPayout) return "Paid";
+  return "Partial";
+}
+
+function getEmployeePaidAmount(employee: Employee) {
+  return clampMoney(parseMoney(employee.paidAmount));
+}
+
+function getEmployeeRemainingBalance(employee: Employee) {
+  return clampMoney(getEmployeeFinalPayout(employee) - getEmployeePaidAmount(employee));
+}
+
+function getStatusStyles(status: JobStatus) {
+  switch (status) {
+    case "Completed":
+      return "bg-emerald-500/15 text-emerald-300 border border-emerald-400/20";
+    case "In Progress":
+      return "bg-amber-500/15 text-amber-300 border border-amber-400/20";
+    default:
+      return "bg-white/5 text-gray-200 border border-white/10";
+  }
+}
+
+function getPayoutStatusStyles(status: PayoutStatus) {
+  switch (status) {
+    case "Paid":
+      return "bg-emerald-500/15 text-emerald-300 border border-emerald-400/20";
+    case "Partial":
+      return "bg-amber-500/15 text-amber-300 border border-amber-400/20";
+    default:
+      return "bg-white/5 text-gray-200 border border-white/10";
+  }
+}
+
+function getEntryPreviewText(entry: JobEntry) {
+  const property =
+    entry.property === "Other"
+      ? entry.customProperty.trim() || "No property"
+      : entry.property || "No property";
+
+  const jobs = [
+    ...entry.jobs,
+    ...(entry.customJob.trim() ? [entry.customJob.trim()] : []),
+  ];
+
   return {
-    id: uid("job"),
-    property: "",
-    workDone: "",
-    pay: 0,
-    notes: "",
+    property,
+    jobs: jobs.length ? jobs.join(", ") : "No job selected",
   };
 }
 
-function dayTemplate(dayLabel: string, date: string): DayEntry {
+function getDayPreview(day: DayRecord) {
+  const firstEntry = day.entries[0];
+  if (!firstEntry) {
+    return {
+      property: "No property",
+      jobs: "No job selected",
+      extraCount: 0,
+    };
+  }
+
+  const first = getEntryPreviewText(firstEntry);
+
   return {
-    id: uid("day"),
-    dayLabel,
-    date,
-    collapsed: false,
-    jobs: [blankJob()],
+    property: first.property,
+    jobs: first.jobs,
+    extraCount: Math.max(day.entries.length - 1, 0),
   };
 }
 
-function createWeekFromToday() {
-  const today = new Date();
-  const start = new Date(today);
-  const day = start.getDay();
-  const diffToMonday = day === 0 ? -6 : 1 - day;
-  start.setDate(start.getDate() + diffToMonday);
-
-  const labels = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
-
-  return labels.map((label, index) => {
-    const current = new Date(start);
-    current.setDate(start.getDate() + index);
-    return dayTemplate(label, current.toISOString().slice(0, 10));
-  });
+function isDayKey(value: string): value is DayKey {
+  return DAYS.some((d) => d.key === value);
 }
 
-function createEmployee(name = "New Employee"): Employee {
+function migrateJobEntry(raw: any): JobEntry {
   return {
-    id: uid("emp"),
-    name,
-    phone: "",
-    defaultRate: "",
-    notes: "",
-    paidAmountSoFar: 0,
-    advanceAmount: 0,
-    advanceReason: "",
-    manualStatus: "Unpaid",
-    weekLocked: false,
-    days: createWeekFromToday(),
+    id: raw?.id || crypto.randomUUID(),
+    property: String(raw?.property ?? ""),
+    customProperty: String(raw?.customProperty ?? ""),
+    jobs: Array.isArray(raw?.jobs) ? raw.jobs.map(String) : [],
+    customJob: String(raw?.customJob ?? ""),
+    pay: String(raw?.pay ?? ""),
+    notes: String(raw?.notes ?? ""),
+    status:
+      raw?.status === "Pending" ||
+      raw?.status === "In Progress" ||
+      raw?.status === "Completed"
+        ? raw.status
+        : "Pending",
+    beforePhotos: Array.isArray(raw?.beforePhotos)
+      ? raw.beforePhotos
+          .filter((p: any) => p?.id && p?.dataUrl)
+          .map((p: any) => ({
+            id: String(p.id),
+            name: String(p.name ?? "photo"),
+            dataUrl: String(p.dataUrl),
+          }))
+      : [],
+    afterPhotos: Array.isArray(raw?.afterPhotos)
+      ? raw.afterPhotos
+          .filter((p: any) => p?.id && p?.dataUrl)
+          .map((p: any) => ({
+            id: String(p.id),
+            name: String(p.name ?? "photo"),
+            dataUrl: String(p.dataUrl),
+          }))
+      : [],
   };
 }
 
-function seedEmployees(): Employee[] {
-  return [createEmployee("Marrero"), createEmployee("Hector"), createEmployee("Sergio")];
-}
-
-function getEmployeeTotals(employee: Employee) {
-  const grossTotal = employee.days.reduce((sum, day) => {
-    return sum + day.jobs.reduce((jobSum, job) => jobSum + parseMoney(job.pay), 0);
-  }, 0);
-
-  const advance = parseMoney(employee.advanceAmount);
-  const paidSoFar = parseMoney(employee.paidAmountSoFar);
-  const finalPayout = Math.max(0, grossTotal - advance);
-  const advanceStillOwed = Math.max(0, advance - grossTotal);
-  const remainingBalance = Math.max(0, finalPayout - paidSoFar);
-
-  let suggestedStatus: EmployeeStatus = "Unpaid";
-  if (advanceStillOwed > 0) suggestedStatus = "Advance Due";
-  else if (remainingBalance <= 0 && finalPayout > 0) suggestedStatus = "Paid";
-  else if (paidSoFar > 0 && remainingBalance > 0) suggestedStatus = "Partial";
-  else if (finalPayout === 0 && paidSoFar === 0) suggestedStatus = "Paid";
+function migrateDayRecord(dayKey: DayKey, raw: any): DayRecord {
+  const entries =
+    Array.isArray(raw?.entries) && raw.entries.length
+      ? raw.entries.map(migrateJobEntry)
+      : [createJobEntry()];
 
   return {
-    grossTotal,
-    advance,
-    paidSoFar,
-    finalPayout,
-    advanceStillOwed,
-    remainingBalance,
-    suggestedStatus,
+    id: raw?.id || `${dayKey}-${crypto.randomUUID()}`,
+    day: dayKey,
+    date: String(raw?.date ?? ""),
+    expanded: Boolean(raw?.expanded),
+    entries,
   };
 }
 
-function downloadJson(filename: string, data: unknown) {
-  const blob = new Blob([JSON.stringify(data, null, 2)], {
-    type: "application/json;charset=utf-8",
-  });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(url);
-}
-
-function Card({ children, className = "" }: { children: React.ReactNode; className?: string }) {
-  return (
-    <section className={`rounded-[30px] border border-white/10 bg-[#13295b]/85 shadow-2xl shadow-black/20 backdrop-blur ${className}`}>
-      {children}
-    </section>
+function migrateEmployee(raw: any): Employee {
+  const base = createEmployee(
+    String(raw?.name ?? ""),
+    String(raw?.phone ?? ""),
+    String(raw?.rate ?? ""),
+    String(raw?.notes ?? "")
   );
+
+  const migratedDays: Record<DayKey, DayRecord> = { ...base.days };
+
+  if (raw?.days && typeof raw.days === "object") {
+    for (const key of Object.keys(raw.days)) {
+      if (isDayKey(key)) {
+        migratedDays[key] = migrateDayRecord(key, raw.days[key]);
+      }
+    }
+  }
+
+  const employee: Employee = {
+    ...base,
+    id: String(raw?.id ?? crypto.randomUUID()),
+    name: String(raw?.name ?? ""),
+    phone: String(raw?.phone ?? ""),
+    rate: String(raw?.rate ?? ""),
+    notes: String(raw?.notes ?? ""),
+    advance: String(raw?.advance ?? ""),
+    advanceReason: String(raw?.advanceReason ?? ""),
+    paidAmount: String(raw?.paidAmount ?? ""),
+    payoutStatus:
+      raw?.payoutStatus === "Unpaid" ||
+      raw?.payoutStatus === "Partial" ||
+      raw?.payoutStatus === "Paid"
+        ? raw.payoutStatus
+        : "Unpaid",
+    weekLocked: Boolean(raw?.weekLocked),
+    days: migratedDays,
+  };
+
+  const finalPayout = getEmployeeFinalPayout(employee);
+  const paidAmount = getEmployeePaidAmount(employee);
+
+  employee.payoutStatus = normalizePayoutStatus(paidAmount, finalPayout);
+  if (paidAmount > finalPayout) {
+    employee.paidAmount = String(finalPayout);
+  }
+
+  return employee;
 }
 
-function Label({ children }: { children: React.ReactNode }) {
-  return <div className="mb-2 text-sm font-semibold text-white/90">{children}</div>;
-}
-
-function Capsule({
-  children,
-  tone = "default",
-}: {
-  children: React.ReactNode;
-  tone?: "default" | "gold" | "green" | "red";
-}) {
-  const toneClass =
-    tone === "gold"
-      ? "border-amber-400/20 bg-amber-500/15 text-amber-300"
-      : tone === "green"
-      ? "border-emerald-400/20 bg-emerald-500/15 text-emerald-300"
-      : tone === "red"
-      ? "border-rose-400/20 bg-rose-500/15 text-rose-300"
-      : "border-white/10 bg-white/5 text-white/85";
-
-  return <div className={`rounded-full border px-4 py-2 text-sm font-semibold ${toneClass}`}>{children}</div>;
+function isValidSavedEmployees(data: unknown): data is any[] {
+  return Array.isArray(data) && data.length > 0;
 }
 
 export default function Page() {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [selectedEmployeeId, setSelectedEmployeeId] = useState("");
-  const [showMainMenu, setShowMainMenu] = useState(false);
-  const [showAdminMenu, setShowAdminMenu] = useState(false);
+  const [showAddModal, setShowAddModal] = useState(false);
   const [showEmployeeMenu, setShowEmployeeMenu] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [loaded, setLoaded] = useState(false);
+
+  const [newEmployeeName, setNewEmployeeName] = useState("");
+  const [newEmployeePhone, setNewEmployeePhone] = useState("");
+  const [newEmployeeRate, setNewEmployeeRate] = useState("");
+  const [newEmployeeNotes, setNewEmployeeNotes] = useState("");
+
+  const menuRef = useRef<HTMLDivElement | null>(null);
+  const importInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw) as {
-          employees: Employee[];
-          selectedEmployeeId: string;
-        };
-        if (parsed?.employees?.length) {
-          setEmployees(parsed.employees);
-          setSelectedEmployeeId(parsed.selectedEmployeeId || parsed.employees[0].id);
+      let saved: string | null =
+        typeof window !== "undefined"
+          ? localStorage.getItem(CURRENT_STORAGE_KEY)
+          : null;
+
+      if (!saved && typeof window !== "undefined") {
+        for (const key of LEGACY_STORAGE_KEYS) {
+          const legacy = localStorage.getItem(key);
+          if (legacy) {
+            saved = legacy;
+            break;
+          }
+        }
+      }
+
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (isValidSavedEmployees(parsed)) {
+          const migrated = parsed.map(migrateEmployee);
+          setEmployees(migrated);
+          setSelectedEmployeeId(migrated[0]?.id ?? "");
+          setLoaded(true);
           return;
         }
       }
-    } catch {
-      // ignore broken local storage
-    }
+    } catch {}
 
-    const seeded = seedEmployees();
-    setEmployees(seeded);
-    setSelectedEmployeeId(seeded[0].id);
+    const defaults = getDefaultEmployees();
+    setEmployees(defaults);
+    setSelectedEmployeeId(defaults[0].id);
+    setLoaded(true);
   }, []);
 
   useEffect(() => {
-    if (!employees.length) return;
-    localStorage.setItem(
-      STORAGE_KEY,
-      JSON.stringify({ employees, selectedEmployeeId })
+    if (!loaded || !employees.length) return;
+    localStorage.setItem(CURRENT_STORAGE_KEY, JSON.stringify(employees));
+  }, [employees, loaded]);
+
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (!menuRef.current) return;
+      if (!menuRef.current.contains(e.target as Node)) {
+        setShowEmployeeMenu(false);
+      }
+    }
+
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  const selectedEmployee =
+    employees.find((employee) => employee.id === selectedEmployeeId) ??
+    employees[0] ??
+    null;
+
+  useEffect(() => {
+    if (!selectedEmployee && employees.length > 0) {
+      setSelectedEmployeeId(employees[0].id);
+    }
+  }, [employees, selectedEmployee]);
+
+  const updateEmployeeMeta = (
+    employeeId: string,
+    patch: Partial<Pick<Employee, "phone" | "rate" | "notes">>
+  ) => {
+    setEmployees((prev) =>
+      prev.map((employee) =>
+        employee.id === employeeId && !employee.weekLocked
+          ? { ...employee, ...patch }
+          : employee
+      )
     );
-  }, [employees, selectedEmployeeId]);
+  };
 
-  const selectedEmployee = useMemo(() => {
-    return employees.find((employee) => employee.id === selectedEmployeeId) || employees[0] || null;
-  }, [employees, selectedEmployeeId]);
+  const updateAdvance = (
+    employeeId: string,
+    patch: { advance?: string; advanceReason?: string }
+  ) => {
+    setEmployees((prev) =>
+      prev.map((employee) => {
+        if (employee.id !== employeeId || employee.weekLocked) return employee;
 
-  const selectedTotals = useMemo(() => {
-    return selectedEmployee ? getEmployeeTotals(selectedEmployee) : null;
-  }, [selectedEmployee]);
+        const updated = { ...employee, ...patch };
+        const finalPayout = getEmployeeFinalPayout(updated);
+        const paidAmount = Math.min(getEmployeePaidAmount(updated), finalPayout);
 
-  const totalRemaining = useMemo(() => {
-    return employees.reduce((sum, employee) => sum + getEmployeeTotals(employee).remainingBalance, 0);
-  }, [employees]);
-
-  function updateEmployee(employeeId: string, patch: Partial<Employee>) {
-    setEmployees((current) =>
-      current.map((employee) => (employee.id === employeeId ? { ...employee, ...patch } : employee))
-    );
-  }
-
-  function updateSelectedEmployee(patch: Partial<Employee>) {
-    if (!selectedEmployee) return;
-    updateEmployee(selectedEmployee.id, patch);
-  }
-
-  function updateDay(dayId: string, updater: (day: DayEntry) => DayEntry) {
-    if (!selectedEmployee) return;
-    setEmployees((current) =>
-      current.map((employee) => {
-        if (employee.id !== selectedEmployee.id) return employee;
         return {
-          ...employee,
-          days: employee.days.map((day) => (day.id === dayId ? updater(day) : day)),
+          ...updated,
+          paidAmount: String(paidAmount || ""),
+          payoutStatus: normalizePayoutStatus(paidAmount, finalPayout),
         };
       })
     );
-  }
+  };
 
-  function updateJob(dayId: string, jobId: string, patch: Partial<JobEntry>) {
-    updateDay(dayId, (day) => ({
-      ...day,
-      jobs: day.jobs.map((job) => (job.id === jobId ? { ...job, ...patch } : job)),
-    }));
-  }
+  const updatePaidAmount = (employeeId: string, paidAmountRaw: string) => {
+    setEmployees((prev) =>
+      prev.map((employee) => {
+        if (employee.id !== employeeId || employee.weekLocked) return employee;
 
-  function addJob(dayId: string) {
-    updateDay(dayId, (day) => ({ ...day, collapsed: false, jobs: [...day.jobs, blankJob()] }));
-  }
+        const finalPayout = getEmployeeFinalPayout(employee);
+        const paidAmount = Math.min(parseMoney(paidAmountRaw), finalPayout);
 
-  function removeJob(dayId: string, jobId: string) {
-    updateDay(dayId, (day) => {
-      const nextJobs = day.jobs.filter((job) => job.id !== jobId);
-      return { ...day, jobs: nextJobs.length ? nextJobs : [blankJob()] };
-    });
-  }
-
-  function toggleDay(dayId: string) {
-    updateDay(dayId, (day) => ({ ...day, collapsed: !day.collapsed }));
-  }
-
-  function addEmployee() {
-    const name = window.prompt("Employee name")?.trim();
-    if (!name) return;
-    const employee = createEmployee(name);
-    setEmployees((current) => [...current, employee]);
-    setSelectedEmployeeId(employee.id);
-    setShowAdminMenu(false);
-    setShowEmployeeMenu(false);
-  }
-
-  function handleExport() {
-    downloadJson(`1-stop-payroll-backup-${new Date().toISOString().slice(0, 10)}.json`, {
-      employees,
-      selectedEmployeeId,
-    });
-    setShowAdminMenu(false);
-  }
-
-  function handleImportFile(file: File) {
-    const reader = new FileReader();
-    reader.onload = () => {
-      try {
-        const parsed = JSON.parse(String(reader.result || "")) as {
-          employees: Employee[];
-          selectedEmployeeId?: string;
+        return {
+          ...employee,
+          paidAmount: paidAmountRaw === "" ? "" : String(paidAmount),
+          payoutStatus: normalizePayoutStatus(paidAmount, finalPayout),
         };
-        if (!parsed?.employees?.length) throw new Error("Invalid file");
-        setEmployees(parsed.employees);
-        setSelectedEmployeeId(parsed.selectedEmployeeId || parsed.employees[0].id);
-        setShowAdminMenu(false);
-        alert("Import completed.");
-      } catch {
-        alert("Import failed. Please choose a valid backup file.");
-      }
-    };
-    reader.readAsText(file);
-  }
+      })
+    );
+  };
 
-  if (!selectedEmployee || !selectedTotals) {
-    return <div className="min-h-screen bg-[#04112f] p-6 text-white">Loading...</div>;
-  }
+  const toggleWeekLock = (employeeId: string) => {
+    setEmployees((prev) =>
+      prev.map((employee) =>
+        employee.id === employeeId
+          ? { ...employee, weekLocked: !employee.weekLocked }
+          : employee
+      )
+    );
+  };
+
+  const updateDay = (
+    employeeId: string,
+    day: DayKey,
+    patch: Partial<DayRecord>
+  ) => {
+    setEmployees((prev) =>
+      prev.map((employee) => {
+        if (employee.id !== employeeId || employee.weekLocked) return employee;
+        return {
+          ...employee,
+          days: {
+            ...employee.days,
+            [day]: {
+              ...employee.days[day],
+              ...patch,
+            },
+          },
+        };
+      })
+    );
+  };
+
+  const updateJobEntry = (
+    employeeId: string,
+    day: DayKey,
+    entryId: string,
+    patch: Partial<JobEntry>
+  ) => {
+    setEmployees((prev) =>
+      prev.map((employee) => {
+        if (employee.id !== employeeId || employee.weekLocked) return employee;
+
+        return {
+          ...employee,
+          days: {
+            ...employee.days,
+            [day]: {
+              ...employee.days[day],
+              entries: employee.days[day].entries.map((entry) =>
+                entry.id === entryId ? { ...entry, ...patch } : entry
+              ),
+            },
+          },
+        };
+      })
+    );
+  };
+
+  const toggleDayExpanded = (employeeId: string, day: DayKey) => {
+    setEmployees((prev) =>
+      prev.map((employee) => {
+        if (employee.id !== employeeId) return employee;
+        return {
+          ...employee,
+          days: {
+            ...employee.days,
+            [day]: {
+              ...employee.days[day],
+              expanded: !employee.days[day].expanded,
+            },
+          },
+        };
+      })
+    );
+  };
+
+  const addJobEntry = (employeeId: string, day: DayKey) => {
+    setEmployees((prev) =>
+      prev.map((employee) => {
+        if (employee.id !== employeeId || employee.weekLocked) return employee;
+
+        return {
+          ...employee,
+          days: {
+            ...employee.days,
+            [day]: {
+              ...employee.days[day],
+              expanded: true,
+              entries: [...employee.days[day].entries, createJobEntry()],
+            },
+          },
+        };
+      })
+    );
+  };
+
+  const deleteJobEntry = (employeeId: string, day: DayKey, entryId: string) => {
+    setEmployees((prev) =>
+      prev.map((employee) => {
+        if (employee.id !== employeeId || employee.weekLocked) return employee;
+
+        const currentEntries = employee.days[day].entries;
+        const filtered = currentEntries.filter((entry) => entry.id !== entryId);
+
+        return {
+          ...employee,
+          days: {
+            ...employee.days,
+            [day]: {
+              ...employee.days[day],
+              entries: filtered.length ? filtered : [createJobEntry()],
+            },
+          },
+        };
+      })
+    );
+  };
+
+  const toggleJobSelection = (
+    employeeId: string,
+    day: DayKey,
+    entryId: string,
+    job: string
+  ) => {
+    setEmployees((prev) =>
+      prev.map((employee) => {
+        if (employee.id !== employeeId || employee.weekLocked) return employee;
+
+        return {
+          ...employee,
+          days: {
+            ...employee.days,
+            [day]: {
+              ...employee.days[day],
+              entries: employee.days[day].entries.map((entry) => {
+                if (entry.id !== entryId) return entry;
+                const exists = entry.jobs.includes(job);
+
+                return {
+                  ...entry,
+                  jobs: exists
+                    ? entry.jobs.filter((j) => j !== job)
+                    : [...entry.jobs, job],
+                };
+              }),
+            },
+          },
+        };
+      })
+    );
+  };
+
+  const addEmployee = () => {
+    const cleanName = newEmployeeName.trim();
+    if (!cleanName) return;
+
+    const employee = createEmployee(
+      cleanName,
+      newEmployeePhone.trim(),
+      newEmployeeRate.trim(),
+      newEmployeeNotes.trim()
+    );
+
+    setEmployees((prev) => [...prev, employee]);
+    setSelectedEmployeeId(employee.id);
+
+    setNewEmployeeName("");
+    setNewEmployeePhone("");
+    setNewEmployeeRate("");
+    setNewEmployeeNotes("");
+    setShowAddModal(false);
+  };
+
+  const deleteSelectedEmployee = () => {
+    if (!selectedEmployee || employees.length <= 1) return;
+
+    const filtered = employees.filter(
+      (employee) => employee.id !== selectedEmployee.id
+    );
+    setEmployees(filtered);
+    setSelectedEmployeeId(filtered[0]?.id ?? "");
+    setShowEmployeeMenu(false);
+  };
+
+  const employeeTotals = useMemo(() => {
+    return employees.map((employee) => {
+      const gross = getEmployeeGross(employee);
+      const advance = getEmployeeAdvance(employee);
+      const finalPayout = clampMoney(gross - advance);
+      const paidAmount = Math.min(getEmployeePaidAmount(employee), finalPayout);
+      const remainingBalance = clampMoney(finalPayout - paidAmount);
+      const payoutStatus = normalizePayoutStatus(paidAmount, finalPayout);
+
+      return {
+        employeeId: employee.id,
+        gross,
+        advance,
+        finalPayout,
+        paidAmount,
+        remainingBalance,
+        payoutStatus,
+      };
+    });
+  }, [employees]);
+
+  const selectedTotals = employeeTotals.find(
+    (item) => item.employeeId === selectedEmployee?.id
+  );
+
+  const overallGross = employeeTotals.reduce((sum, e) => sum + e.gross, 0);
+  const overallAdvances = employeeTotals.reduce((sum, e) => sum + e.advance, 0);
+  const overallFinalPayout = employeeTotals.reduce(
+    (sum, e) => sum + e.finalPayout,
+    0
+  );
+  const overallPaidAmount = employeeTotals.reduce(
+    (sum, e) => sum + e.paidAmount,
+    0
+  );
+  const overallRemainingBalance = employeeTotals.reduce(
+    (sum, e) => sum + e.remainingBalance,
+    0
+  );
+
+  const handlePhotoUpload = async (
+    employeeId: string,
+    day: DayKey,
+    entryId: string,
+    files: FileList | null,
+    photoType: "beforePhotos" | "afterPhotos"
+  ) => {
+    const employee = employees.find((e) => e.id === employeeId);
+    if (employee?.weekLocked) return;
+    if (!files || files.length === 0) return;
+
+    const fileReaders = Array.from(files).map(
+      (file) =>
+        new Promise<JobPhoto>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => {
+            resolve({
+              id: crypto.randomUUID(),
+              name: file.name,
+              dataUrl: String(reader.result),
+            });
+          };
+          reader.onerror = reject;
+          reader.readAsDataURL(file);
+        })
+    );
+
+    try {
+      const photos = await Promise.all(fileReaders);
+
+      setEmployees((prev) =>
+        prev.map((employee) => {
+          if (employee.id !== employeeId || employee.weekLocked) return employee;
+
+          return {
+            ...employee,
+            days: {
+              ...employee.days,
+              [day]: {
+                ...employee.days[day],
+                entries: employee.days[day].entries.map((entry) =>
+                  entry.id === entryId
+                    ? { ...entry, [photoType]: [...entry[photoType], ...photos] }
+                    : entry
+                ),
+              },
+            },
+          };
+        })
+      );
+    } catch (error) {
+      console.error("Photo upload failed", error);
+    }
+  };
+
+  const removePhoto = (
+    employeeId: string,
+    day: DayKey,
+    entryId: string,
+    photoId: string,
+    photoType: "beforePhotos" | "afterPhotos"
+  ) => {
+    setEmployees((prev) =>
+      prev.map((employee) => {
+        if (employee.id !== employeeId || employee.weekLocked) return employee;
+
+        return {
+          ...employee,
+          days: {
+            ...employee.days,
+            [day]: {
+              ...employee.days[day],
+              entries: employee.days[day].entries.map((entry) =>
+                entry.id === entryId
+                  ? {
+                      ...entry,
+                      [photoType]: entry[photoType].filter(
+                        (photo) => photo.id !== photoId
+                      ),
+                    }
+                  : entry
+              ),
+            },
+          },
+        };
+      })
+    );
+  };
+
+  const handleExportData = () => {
+    const payload = {
+      exportedAt: new Date().toISOString(),
+      version: "phase-6.1",
+      employees,
+    };
+
+    const blob = new Blob([JSON.stringify(payload, null, 2)], {
+      type: "application/json",
+    });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    const dateStamp = new Date().toISOString().slice(0, 10);
+
+    link.href = url;
+    link.download = `one-stop-turnover-backup-${dateStamp}.json`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleImportClick = () => {
+    importInputRef.current?.click();
+  };
+
+  const handleImportFile = async (
+    event: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+
+    try {
+      const text = await file.text();
+      const parsed = JSON.parse(text);
+
+      const source = Array.isArray(parsed)
+        ? parsed
+        : Array.isArray(parsed?.employees)
+        ? parsed.employees
+        : null;
+
+      if (!source || !source.length) {
+        window.alert("Import failed. This backup file does not contain employee data.");
+        return;
+      }
+
+      const confirmed = window.confirm(
+        "Importing will replace the current employees in this app. Continue?"
+      );
+      if (!confirmed) return;
+
+      const migrated = source.map(migrateEmployee);
+      setEmployees(migrated);
+      setSelectedEmployeeId(migrated[0]?.id ?? "");
+      window.alert("Backup imported successfully.");
+    } catch {
+      window.alert("Import failed. Please choose a valid backup JSON file.");
+    }
+  };
 
   return (
-    <div className="min-h-screen bg-[radial-gradient(circle_at_top,_#0c3a90_0%,_#07245e_28%,_#030d28_100%)] text-white">
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept="application/json"
-        className="hidden"
-        onChange={(event) => {
-          const file = event.target.files?.[0];
-          if (file) handleImportFile(file);
-          event.currentTarget.value = "";
-        }}
-      />
+    <main className="min-h-screen bg-[radial-gradient(circle_at_top,_#193668_0%,_#0a1731_38%,_#040b18_100%)] text-white">
+      <div className="mx-auto max-w-7xl px-4 py-8 md:px-8">
+        <input
+          ref={importInputRef}
+          type="file"
+          accept="application/json"
+          className="hidden"
+          onChange={handleImportFile}
+        />
 
-      <div className="mx-auto w-full max-w-md px-4 pb-12 pt-4">
-        <div className="mb-5 flex items-center justify-between">
-          <div className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold tracking-[0.22em] text-white/75">
-            MOBILE PAYROLL
-          </div>
+        <section className="mb-8 rounded-[34px] border border-white/10 bg-white/[0.05] p-6 shadow-[0_20px_80px_rgba(0,0,0,0.35)] backdrop-blur-xl md:p-10">
+          <div className="flex flex-col items-center text-center">
+            <Image
+              src="/logo.png"
+              alt="One Stop Turnover Specialist"
+              width={190}
+              height={90}
+              priority
+              className="mb-5 h-24 w-auto object-contain"
+            />
 
-          <div className="relative">
-            <button
-              onClick={() => setShowMainMenu((value) => !value)}
-              className="flex h-14 w-14 items-center justify-center rounded-full border border-white/15 bg-[#081631]/90 shadow-xl"
-              aria-label="Main menu"
-            >
-              {showMainMenu ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
-            </button>
-
-            {showMainMenu && (
-              <div className="absolute right-0 top-16 z-50 w-56 rounded-3xl border border-white/10 bg-[#081631]/95 p-2 shadow-2xl backdrop-blur">
-                <button
-                  onClick={() => {
-                    setShowMainMenu(false);
-                    setShowAdminMenu((value) => !value);
-                  }}
-                  className="flex w-full items-center gap-3 rounded-2xl px-4 py-3 text-left text-white/90 hover:bg-white/5"
-                >
-                  <MoreHorizontal className="h-5 w-5" />
-                  More actions
-                </button>
-                <button
-                  onClick={() => {
-                    setShowMainMenu(false);
-                    updateSelectedEmployee({ weekLocked: !selectedEmployee.weekLocked });
-                  }}
-                  className="flex w-full items-center gap-3 rounded-2xl px-4 py-3 text-left text-white/90 hover:bg-white/5"
-                >
-                  <CircleDollarSign className="h-5 w-5" />
-                  {selectedEmployee.weekLocked ? "Unlock week" : "Lock week"}
-                </button>
-              </div>
-            )}
-          </div>
-        </div>
-
-        <Card className="mb-5 p-6">
-          <div className="text-sm font-semibold uppercase tracking-[0.28em] text-amber-300/80">Total Remaining</div>
-          <div className="mt-3 text-5xl font-black tracking-tight text-amber-300">{formatMoney(totalRemaining)}</div>
-        </Card>
-
-        <Card className="relative mb-5 p-6">
-          <div className="mb-5 flex items-start gap-4">
-            <div className="mt-1 flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-amber-500/15 text-amber-300">
-              <User className="h-7 w-7" />
+            <div className="inline-flex items-center gap-2 rounded-full border border-amber-400/20 bg-amber-400/10 px-4 py-2 text-xs font-semibold uppercase tracking-[0.22em] text-amber-300">
+              Premium Workforce Dashboard
             </div>
-            <div>
-              <h2 className="text-[2rem] font-extrabold leading-none text-white">Employee Control Center</h2>
-              <p className="mt-2 text-base leading-6 text-white/70">Fast control built for mobile work days.</p>
-            </div>
-          </div>
 
-          <Label>Select Employee</Label>
-          <select
-            value={selectedEmployeeId}
-            onChange={(event) => {
-              setSelectedEmployeeId(event.target.value);
-              setShowEmployeeMenu(false);
-              setShowAdminMenu(false);
-            }}
-            className="w-full rounded-[22px] border border-white/10 bg-[#071533] px-5 py-5 text-xl font-semibold text-white outline-none"
+            <h1 className="mt-5 text-3xl font-extrabold tracking-tight md:text-6xl">
+              1 Stop Turnover Specialist LLC Pro
+            </h1>
+
+            <p className="mt-4 max-w-3xl text-sm leading-7 text-gray-300 md:text-lg">
+              Payroll control, proof of work, payout tracking, remaining balances,
+              weekly closeout, and backup recovery.
+            </p>
+          </div>
+        </section>
+
+        <section className="mb-8 flex flex-wrap gap-3">
+          <button
+            onClick={handleExportData}
+            className="inline-flex items-center gap-2 rounded-2xl border border-emerald-400/20 bg-emerald-500/10 px-5 py-3 font-bold text-emerald-300 hover:bg-emerald-500/20"
           >
-            {employees.map((employee) => (
-              <option key={employee.id} value={employee.id}>
-                {employee.name}
-              </option>
-            ))}
-          </select>
+            <Download className="h-4 w-4" />
+            Export Backup
+          </button>
 
-          <div className="mt-5 flex items-center justify-between gap-4">
-            <button
-              onClick={addEmployee}
-              className="flex min-h-[72px] flex-1 items-center justify-center gap-3 rounded-[24px] bg-amber-500 px-5 py-5 text-xl font-bold text-[#111827] shadow-xl shadow-amber-500/20"
-            >
-              <Plus className="h-6 w-6" />
-              Add Employee
-            </button>
+          <button
+            onClick={handleImportClick}
+            className="inline-flex items-center gap-2 rounded-2xl border border-amber-400/20 bg-amber-500/10 px-5 py-3 font-bold text-amber-300 hover:bg-amber-500/20"
+          >
+            <Upload className="h-4 w-4" />
+            Import Backup
+          </button>
+        </section>
 
-            <div className="relative">
-              <button
-                onClick={() => setShowAdminMenu((value) => !value)}
-                className="flex min-h-[72px] min-w-[132px] items-center justify-center gap-2 rounded-[24px] border border-white/10 bg-white/5 px-5 py-5 text-xl font-bold text-white"
-              >
-                <MoreHorizontal className="h-6 w-6" />
-                More
-              </button>
-
-              {showAdminMenu && (
-                <div className="absolute right-0 top-[84px] z-40 w-56 rounded-3xl border border-white/10 bg-[#081631]/95 p-2 shadow-2xl backdrop-blur">
-                  <button
-                    onClick={() => fileInputRef.current?.click()}
-                    className="flex w-full items-center gap-3 rounded-2xl px-4 py-3 text-left text-white/90 hover:bg-white/5"
-                  >
-                    <FileUp className="h-5 w-5" />
-                    Import Data
-                  </button>
-                  <button
-                    onClick={handleExport}
-                    className="flex w-full items-center gap-3 rounded-2xl px-4 py-3 text-left text-white/90 hover:bg-white/5"
-                  >
-                    <Download className="h-5 w-5" />
-                    Export Data
-                  </button>
-                </div>
-              )}
+        <section className="mb-8 grid gap-6 md:grid-cols-2 xl:grid-cols-5">
+          <div className="rounded-[28px] border border-white/10 bg-white/[0.05] p-5 shadow-[0_20px_60px_rgba(0,0,0,0.3)]">
+            <div className="text-xs uppercase tracking-[0.2em] text-gray-400">
+              Total Employees
+            </div>
+            <div className="mt-2 text-3xl font-extrabold text-white">
+              {employees.length}
             </div>
           </div>
-        </Card>
 
-        <Card className="mb-5 p-6">
-          <div className="flex items-start justify-between gap-4">
-            <div className="min-w-0">
-              <div className="truncate text-[2.2rem] font-extrabold leading-none text-white">{selectedEmployee.name}</div>
-              <p className="mt-2 text-base leading-6 text-white/70">Track jobs, pay, advances, and closeout.</p>
+          <div className="rounded-[28px] border border-white/10 bg-white/[0.05] p-5 shadow-[0_20px_60px_rgba(0,0,0,0.3)]">
+            <div className="text-xs uppercase tracking-[0.2em] text-gray-400">
+              Total Gross Payroll
             </div>
-
-            <div className="relative shrink-0">
-              <button
-                onClick={() => setShowEmployeeMenu((value) => !value)}
-                className="flex h-14 w-14 items-center justify-center rounded-2xl border border-white/10 bg-white/5"
-                aria-label="Employee details menu"
-              >
-                <MoreHorizontal className="h-6 w-6 text-white" />
-              </button>
-
-              {showEmployeeMenu && (
-                <div className="absolute right-0 top-16 z-40 w-[295px] rounded-3xl border border-white/10 bg-[#081631]/95 p-4 shadow-2xl backdrop-blur">
-                  <div className="space-y-4">
-                    <div>
-                      <Label>Employee Phone</Label>
-                      <input
-                        value={selectedEmployee.phone}
-                        onChange={(event) => updateSelectedEmployee({ phone: event.target.value })}
-                        placeholder="Employee phone"
-                        className="w-full rounded-2xl border border-white/10 bg-[#071533] px-4 py-4 text-lg text-white outline-none"
-                      />
-                    </div>
-
-                    <div>
-                      <Label>Default Rate</Label>
-                      <input
-                        value={selectedEmployee.defaultRate}
-                        onChange={(event) => updateSelectedEmployee({ defaultRate: event.target.value })}
-                        placeholder="Hourly or day rate"
-                        className="w-full rounded-2xl border border-white/10 bg-[#071533] px-4 py-4 text-lg text-white outline-none"
-                      />
-                    </div>
-
-                    <div>
-                      <Label>Employee Notes</Label>
-                      <textarea
-                        value={selectedEmployee.notes}
-                        onChange={(event) => updateSelectedEmployee({ notes: event.target.value })}
-                        placeholder="General employee notes"
-                        rows={4}
-                        className="w-full rounded-2xl border border-white/10 bg-[#071533] px-4 py-4 text-lg text-white outline-none"
-                      />
-                    </div>
-                  </div>
-                </div>
-              )}
+            <div className="mt-2 text-3xl font-extrabold text-white">
+              {formatCurrency(overallGross)}
             </div>
           </div>
-        </Card>
 
-        <Card className="mb-5 p-6">
-          <div className="mb-4 flex items-start justify-between gap-4">
-            <div className="flex items-start gap-4">
-              <div className="mt-1 flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-amber-500/15 text-amber-300">
-                <CalendarDays className="h-7 w-7" />
+          <div className="rounded-[28px] border border-white/10 bg-white/[0.05] p-5 shadow-[0_20px_60px_rgba(0,0,0,0.3)]">
+            <div className="text-xs uppercase tracking-[0.2em] text-gray-400">
+              Total Final Payout
+            </div>
+            <div className="mt-2 text-3xl font-extrabold text-emerald-300">
+              {formatCurrency(overallFinalPayout)}
+            </div>
+          </div>
+
+          <div className="rounded-[28px] border border-white/10 bg-white/[0.05] p-5 shadow-[0_20px_60px_rgba(0,0,0,0.3)]">
+            <div className="text-xs uppercase tracking-[0.2em] text-gray-400">
+              Total Paid So Far
+            </div>
+            <div className="mt-2 text-3xl font-extrabold text-white">
+              {formatCurrency(overallPaidAmount)}
+            </div>
+          </div>
+
+          <div className="rounded-[28px] border border-amber-400/20 bg-amber-500/10 p-5 shadow-[0_20px_60px_rgba(0,0,0,0.3)]">
+            <div className="text-xs uppercase tracking-[0.2em] text-amber-200/80">
+              Total Remaining
+            </div>
+            <div className="mt-2 text-3xl font-extrabold text-amber-300">
+              {formatCurrency(overallRemainingBalance)}
+            </div>
+          </div>
+        </section>
+
+        <section className="mb-8 grid gap-6 xl:grid-cols-[1.45fr_1fr]">
+          <div className="rounded-[30px] border border-white/10 bg-white/[0.05] p-5 shadow-[0_20px_80px_rgba(0,0,0,0.35)] backdrop-blur-xl">
+            <div className="mb-5 flex items-center gap-3">
+              <div className="rounded-2xl bg-amber-500/15 p-3 text-amber-300">
+                <UserRound className="h-5 w-5" />
               </div>
               <div>
-                <h3 className="text-[1.9rem] font-extrabold leading-none text-white">Employee Work Week</h3>
-                <p className="mt-2 text-base leading-6 text-white/70">Main work area. Fast on mobile.</p>
+                <h2 className="text-xl font-bold">Employee Control Center</h2>
+                <p className="text-sm text-gray-300">
+                  Backup protection is now built in.
+                </p>
               </div>
             </div>
 
-            <Capsule tone={selectedEmployee.weekLocked ? "red" : "green"}>
-              {selectedEmployee.weekLocked ? "Locked" : "Open"}
-            </Capsule>
-          </div>
+            <div className="grid gap-4 lg:grid-cols-[1.5fr_auto_auto]">
+              <div>
+                <label className="mb-2 block text-sm font-semibold text-gray-100">
+                  Select Employee
+                </label>
+                <select
+                  value={selectedEmployeeId}
+                  onChange={(e) => setSelectedEmployeeId(e.target.value)}
+                  className="w-full rounded-2xl border border-white/10 bg-[#0d162b] px-4 py-4 text-base text-white outline-none transition focus:border-amber-400"
+                >
+                  {employees.map((employee) => (
+                    <option key={employee.id} value={employee.id}>
+                      {employee.name || "Unnamed Employee"}
+                    </option>
+                  ))}
+                </select>
+              </div>
 
-          <div className="space-y-5">
-            {selectedEmployee.days.map((day) => {
-              const jobsCount = day.jobs.length;
-              const dayTotal = day.jobs.reduce((sum, job) => sum + parseMoney(job.pay), 0);
-              const previewJob = day.jobs.find((job) => job.property || job.workDone || job.pay);
+              <div className="flex items-end">
+                <button
+                  onClick={() => setShowAddModal(true)}
+                  className="inline-flex h-[56px] items-center gap-2 rounded-2xl bg-amber-500 px-5 font-bold text-black shadow-lg transition hover:scale-[1.01] hover:bg-amber-400"
+                >
+                  <Plus className="h-4 w-4" />
+                  Add Employee
+                </button>
+              </div>
 
-              return (
-                <div key={day.id} className="rounded-[28px] border border-white/10 bg-[#06132f]/85 p-4">
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="flex flex-wrap items-center gap-3">
-                      <Capsule tone="gold">{day.dayLabel}</Capsule>
-                      <Capsule>{day.date}</Capsule>
-                      <Capsule>{jobsCount} Job{jobsCount === 1 ? "" : "s"}</Capsule>
-                    </div>
+              <div className="flex items-end justify-end">
+                <div className="relative" ref={menuRef}>
+                  <button
+                    onClick={() => setShowEmployeeMenu((v) => !v)}
+                    className="inline-flex h-[56px] items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-5 font-bold text-white transition hover:bg-white/10"
+                  >
+                    <MoreHorizontal className="h-5 w-5" />
+                    More
+                  </button>
 
-                    <button
-                      onClick={() => toggleDay(day.id)}
-                      className="flex h-12 w-12 items-center justify-center rounded-2xl border border-white/10 bg-white/5"
-                      aria-label={day.collapsed ? "Expand day" : "Collapse day"}
-                    >
-                      {day.collapsed ? <ChevronDown className="h-5 w-5" /> : <ChevronUp className="h-5 w-5" />}
-                    </button>
-                  </div>
-
-                  {previewJob && (
-                    <div className="mt-4 flex flex-wrap gap-3">
-                      {previewJob.property ? <Capsule>{previewJob.property}</Capsule> : null}
-                      {previewJob.workDone ? <Capsule>{previewJob.workDone}</Capsule> : null}
-                      <Capsule tone="green">{formatMoney(dayTotal)}</Capsule>
+                  {showEmployeeMenu && (
+                    <div className="absolute right-0 top-[64px] z-20 w-56 rounded-2xl border border-white/10 bg-[#0c1527] p-2 shadow-2xl">
+                      <button
+                        onClick={deleteSelectedEmployee}
+                        className="flex w-full items-center gap-3 rounded-xl px-4 py-3 text-left text-red-300 hover:bg-red-500/10"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                        Delete Employee
+                      </button>
                     </div>
                   )}
+                </div>
+              </div>
+            </div>
+          </div>
 
-                  {!day.collapsed && (
-                    <div className="mt-5 space-y-5">
-                      {day.jobs.map((job, index) => (
-                        <div key={job.id} className="rounded-[24px] border border-white/10 bg-white/[0.04] p-4">
-                          <div className="mb-4 flex items-center justify-between gap-3">
-                            <div className="text-lg font-bold text-white">Job {index + 1}</div>
-                            {day.jobs.length > 1 && !selectedEmployee.weekLocked ? (
-                              <button
-                                onClick={() => removeJob(day.id, job.id)}
-                                className="rounded-xl border border-rose-400/20 bg-rose-500/10 px-3 py-2 text-sm font-semibold text-rose-300"
-                              >
-                                Remove
-                              </button>
-                            ) : null}
+          <div className="rounded-[30px] border border-white/10 bg-gradient-to-br from-emerald-500/10 via-white/[0.04] to-amber-500/10 p-5 shadow-[0_20px_80px_rgba(0,0,0,0.35)] backdrop-blur-xl">
+            <div className="mb-5 flex items-center gap-3">
+              <div className="rounded-2xl bg-emerald-500/15 p-3 text-emerald-300">
+                <Wallet className="h-5 w-5" />
+              </div>
+              <div>
+                <h2 className="text-xl font-bold">Weekly Summary</h2>
+                <p className="text-sm text-gray-300">
+                  Full payout control for the selected employee.
+                </p>
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <div className="flex items-center justify-between rounded-2xl bg-white/5 px-4 py-4">
+                <span className="text-gray-200">Employee</span>
+                <span className="font-bold text-white">
+                  {selectedEmployee?.name || "No employee selected"}
+                </span>
+              </div>
+
+              <div className="flex items-center justify-between rounded-2xl bg-white/5 px-4 py-4">
+                <span className="text-gray-200">Final Payout</span>
+                <span className="font-bold text-white">
+                  {formatCurrency(selectedTotals?.finalPayout ?? 0)}
+                </span>
+              </div>
+
+              <div className="flex items-center justify-between rounded-2xl bg-white/5 px-4 py-4">
+                <span className="text-gray-200">Paid So Far</span>
+                <span className="font-bold text-white">
+                  {formatCurrency(selectedTotals?.paidAmount ?? 0)}
+                </span>
+              </div>
+
+              <div className="flex items-center justify-between rounded-2xl bg-amber-500/10 px-4 py-4">
+                <span className="text-base font-bold text-amber-200">
+                  Remaining
+                </span>
+                <span className="text-xl font-extrabold text-amber-300">
+                  {formatCurrency(selectedTotals?.remainingBalance ?? 0)}
+                </span>
+              </div>
+
+              <div className="flex items-center justify-between rounded-2xl bg-white/5 px-4 py-4">
+                <span className="text-gray-200">Status</span>
+                <span
+                  className={`rounded-full px-3 py-2 text-xs font-bold ${getPayoutStatusStyles(
+                    selectedTotals?.payoutStatus ?? "Unpaid"
+                  )}`}
+                >
+                  {selectedTotals?.payoutStatus ?? "Unpaid"}
+                </span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {selectedEmployee && (
+          <>
+            <section className="mb-8 grid gap-6 lg:grid-cols-[1fr_1fr_1fr_1fr]">
+              <div className="rounded-[28px] border border-white/10 bg-white/[0.05] p-5 shadow-[0_20px_60px_rgba(0,0,0,0.3)]">
+                <div className="text-xs uppercase tracking-[0.2em] text-gray-400">
+                  Selected Employee
+                </div>
+                <div className="mt-2 text-2xl font-extrabold text-white">
+                  {selectedEmployee.name}
+                </div>
+              </div>
+
+              <div className="rounded-[28px] border border-white/10 bg-white/[0.05] p-5 shadow-[0_20px_60px_rgba(0,0,0,0.3)]">
+                <div className="text-xs uppercase tracking-[0.2em] text-gray-400">
+                  Employee Phone
+                </div>
+                <div className="mt-2 text-xl font-bold text-white">
+                  {selectedEmployee.phone || "Not added"}
+                </div>
+              </div>
+
+              <div className="rounded-[28px] border border-white/10 bg-white/[0.05] p-5 shadow-[0_20px_60px_rgba(0,0,0,0.3)]">
+                <div className="text-xs uppercase tracking-[0.2em] text-gray-400">
+                  Payout Status
+                </div>
+                <div className="mt-2">
+                  <span
+                    className={`rounded-full px-3 py-2 text-xs font-bold ${getPayoutStatusStyles(
+                      selectedTotals?.payoutStatus ?? "Unpaid"
+                    )}`}
+                  >
+                    {selectedTotals?.payoutStatus ?? "Unpaid"}
+                  </span>
+                </div>
+              </div>
+
+              <div className="rounded-[28px] border border-white/10 bg-white/[0.05] p-5 shadow-[0_20px_60px_rgba(0,0,0,0.3)]">
+                <div className="text-xs uppercase tracking-[0.2em] text-gray-400">
+                  Week Status
+                </div>
+                <div className="mt-2">
+                  <span
+                    className={`rounded-full px-3 py-2 text-xs font-bold ${
+                      selectedEmployee.weekLocked
+                        ? "border border-red-400/20 bg-red-500/10 text-red-300"
+                        : "border border-emerald-400/20 bg-emerald-500/10 text-emerald-300"
+                    }`}
+                  >
+                    {selectedEmployee.weekLocked ? "Locked" : "Open"}
+                  </span>
+                </div>
+              </div>
+            </section>
+
+            <section className="mb-8 grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
+              <div className="rounded-[30px] border border-white/10 bg-white/[0.05] p-6 shadow-[0_20px_80px_rgba(0,0,0,0.35)] backdrop-blur-xl">
+                <div className="mb-4 flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <div className="rounded-2xl bg-amber-500/15 p-3 text-amber-300">
+                      <DollarSign className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <h2 className="text-xl font-bold">Payout & Closeout</h2>
+                      <p className="text-sm text-gray-300">
+                        Track paid amount, remaining balance, and lock the week.
+                      </p>
+                    </div>
+                  </div>
+
+                  <button
+                    onClick={() => toggleWeekLock(selectedEmployee.id)}
+                    className={`inline-flex items-center gap-2 rounded-2xl px-4 py-3 text-sm font-bold ${
+                      selectedEmployee.weekLocked
+                        ? "border border-emerald-400/20 bg-emerald-500/10 text-emerald-300"
+                        : "border border-red-400/20 bg-red-500/10 text-red-300"
+                    }`}
+                  >
+                    {selectedEmployee.weekLocked ? (
+                      <>
+                        <Unlock className="h-4 w-4" />
+                        Reopen Week
+                      </>
+                    ) : (
+                      <>
+                        <Lock className="h-4 w-4" />
+                        Lock Week
+                      </>
+                    )}
+                  </button>
+                </div>
+
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div>
+                    <label className="mb-2 block text-sm font-semibold text-gray-100">
+                      Advance Amount
+                    </label>
+                    <input
+                      type="number"
+                      inputMode="decimal"
+                      value={selectedEmployee.advance}
+                      onChange={(e) =>
+                        updateAdvance(selectedEmployee.id, {
+                          advance: e.target.value,
+                        })
+                      }
+                      disabled={selectedEmployee.weekLocked}
+                      placeholder="0.00"
+                      className="w-full rounded-2xl border border-white/10 bg-[#111a31] px-4 py-3 text-white placeholder:text-gray-400 outline-none disabled:cursor-not-allowed disabled:opacity-60 focus:border-amber-400"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="mb-2 block text-sm font-semibold text-gray-100">
+                      Paid Amount So Far
+                    </label>
+                    <input
+                      type="number"
+                      inputMode="decimal"
+                      value={selectedEmployee.paidAmount}
+                      onChange={(e) =>
+                        updatePaidAmount(selectedEmployee.id, e.target.value)
+                      }
+                      disabled={selectedEmployee.weekLocked}
+                      placeholder="0.00"
+                      className="w-full rounded-2xl border border-white/10 bg-[#111a31] px-4 py-3 text-white placeholder:text-gray-400 outline-none disabled:cursor-not-allowed disabled:opacity-60 focus:border-amber-400"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="mb-2 block text-sm font-semibold text-gray-100">
+                      Reason For Advance
+                    </label>
+                    <input
+                      value={selectedEmployee.advanceReason}
+                      onChange={(e) =>
+                        updateAdvance(selectedEmployee.id, {
+                          advanceReason: e.target.value,
+                        })
+                      }
+                      disabled={selectedEmployee.weekLocked}
+                      placeholder="Reason for advance"
+                      className="w-full rounded-2xl border border-white/10 bg-[#111a31] px-4 py-3 text-white placeholder:text-gray-400 outline-none disabled:cursor-not-allowed disabled:opacity-60 focus:border-amber-400"
+                    />
+                  </div>
+
+                  <div className="rounded-2xl border border-white/10 bg-[#111a31] p-4">
+                    <div className="text-xs uppercase tracking-[0.2em] text-gray-400">
+                      Remaining Balance
+                    </div>
+                    <div className="mt-2 text-2xl font-extrabold text-amber-300">
+                      {formatCurrency(selectedTotals?.remainingBalance ?? 0)}
+                    </div>
+                  </div>
+                </div>
+
+                {selectedEmployee.weekLocked && (
+                  <div className="mt-4 rounded-2xl border border-red-400/20 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+                    This week is locked. Unlock it to edit payroll, jobs, or photos.
+                  </div>
+                )}
+              </div>
+
+              <div className="rounded-[30px] border border-white/10 bg-gradient-to-br from-[#13284b] to-[#0b1324] p-6 shadow-[0_20px_80px_rgba(0,0,0,0.35)]">
+                <h2 className="text-xl font-bold">Executive Snapshot</h2>
+                <p className="mt-1 text-sm text-gray-300">
+                  Full payout visibility for the selected employee.
+                </p>
+
+                <div className="mt-5 grid gap-3">
+                  <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-4">
+                    <div className="text-xs uppercase tracking-[0.2em] text-gray-400">
+                      Gross Total
+                    </div>
+                    <div className="mt-1 text-2xl font-extrabold text-white">
+                      {formatCurrency(selectedTotals?.gross ?? 0)}
+                    </div>
+                  </div>
+
+                  <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-4">
+                    <div className="text-xs uppercase tracking-[0.2em] text-gray-400">
+                      Advance
+                    </div>
+                    <div className="mt-1 text-2xl font-extrabold text-red-300">
+                      {formatCurrency(selectedTotals?.advance ?? 0)}
+                    </div>
+                  </div>
+
+                  <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-4">
+                    <div className="text-xs uppercase tracking-[0.2em] text-gray-400">
+                      Final Payout
+                    </div>
+                    <div className="mt-1 text-2xl font-extrabold text-emerald-300">
+                      {formatCurrency(selectedTotals?.finalPayout ?? 0)}
+                    </div>
+                  </div>
+
+                  <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-4">
+                    <div className="text-xs uppercase tracking-[0.2em] text-gray-400">
+                      Paid So Far
+                    </div>
+                    <div className="mt-1 text-2xl font-extrabold text-white">
+                      {formatCurrency(selectedTotals?.paidAmount ?? 0)}
+                    </div>
+                  </div>
+
+                  <div className="rounded-2xl border border-amber-400/20 bg-amber-500/10 px-4 py-5">
+                    <div className="text-xs uppercase tracking-[0.2em] text-amber-200/80">
+                      Remaining Balance
+                    </div>
+                    <div className="mt-1 text-3xl font-extrabold text-amber-300">
+                      {formatCurrency(selectedTotals?.remainingBalance ?? 0)}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <section className="mb-8 rounded-[30px] border border-white/10 bg-white/[0.05] p-6 shadow-[0_20px_80px_rgba(0,0,0,0.35)] backdrop-blur-xl">
+              <div className="mb-5 flex items-center justify-between gap-4">
+                <div>
+                  <h2 className="text-2xl font-bold tracking-tight">
+                    {selectedEmployee.name}
+                  </h2>
+                  <p className="mt-1 text-sm text-gray-300">
+                    Track multiple jobs for the same day and same employee.
+                  </p>
+                </div>
+
+                <div className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold text-gray-200">
+                  {employees.length} Employee{employees.length !== 1 ? "s" : ""}
+                </div>
+              </div>
+
+              <div className="mb-6 grid gap-4 md:grid-cols-3">
+                <div>
+                  <label className="mb-2 block text-sm font-semibold text-gray-100">
+                    Phone
+                  </label>
+                  <input
+                    value={selectedEmployee.phone}
+                    onChange={(e) =>
+                      updateEmployeeMeta(selectedEmployee.id, {
+                        phone: e.target.value,
+                      })
+                    }
+                    disabled={selectedEmployee.weekLocked}
+                    placeholder="Employee phone"
+                    className="w-full rounded-2xl border border-white/10 bg-[#111a31] px-4 py-3 text-white placeholder:text-gray-400 outline-none disabled:cursor-not-allowed disabled:opacity-60 focus:border-amber-400"
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-2 block text-sm font-semibold text-gray-100">
+                    Default Rate
+                  </label>
+                  <input
+                    value={selectedEmployee.rate}
+                    onChange={(e) =>
+                      updateEmployeeMeta(selectedEmployee.id, {
+                        rate: e.target.value,
+                      })
+                    }
+                    disabled={selectedEmployee.weekLocked}
+                    placeholder="Hourly or day rate"
+                    className="w-full rounded-2xl border border-white/10 bg-[#111a31] px-4 py-3 text-white placeholder:text-gray-400 outline-none disabled:cursor-not-allowed disabled:opacity-60 focus:border-amber-400"
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-2 block text-sm font-semibold text-gray-100">
+                    Employee Notes
+                  </label>
+                  <input
+                    value={selectedEmployee.notes}
+                    onChange={(e) =>
+                      updateEmployeeMeta(selectedEmployee.id, {
+                        notes: e.target.value,
+                      })
+                    }
+                    disabled={selectedEmployee.weekLocked}
+                    placeholder="General employee notes"
+                    className="w-full rounded-2xl border border-white/10 bg-[#111a31] px-4 py-3 text-white placeholder:text-gray-400 outline-none disabled:cursor-not-allowed disabled:opacity-60 focus:border-amber-400"
+                  />
+                </div>
+              </div>
+
+              <div className="grid gap-4">
+                {DAYS.map((day) => {
+                  const dayRecord = selectedEmployee.days[day.key];
+                  const dayTotal = getDayTotal(dayRecord);
+                  const jobCount = dayRecord.entries.length;
+                  const preview = getDayPreview(dayRecord);
+
+                  return (
+                    <div
+                      key={day.key}
+                      className="overflow-hidden rounded-[26px] border border-white/10 bg-[#0b1427]/90 shadow-lg"
+                    >
+                      <button
+                        type="button"
+                        onClick={() =>
+                          toggleDayExpanded(selectedEmployee.id, day.key)
+                        }
+                        className="w-full px-4 py-4 text-left transition hover:bg-white/[0.03] md:px-5"
+                      >
+                        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                          <div className="flex flex-wrap items-center gap-3">
+                            <div className="rounded-full bg-amber-500/15 px-4 py-2 text-sm font-bold text-amber-300">
+                              {day.label}
+                            </div>
+
+                            <div className="rounded-full bg-white/5 px-4 py-2 text-sm font-semibold text-gray-100">
+                              {dayRecord.date || "No date"}
+                            </div>
+
+                            <div className="rounded-full bg-white/5 px-4 py-2 text-sm font-semibold text-gray-100">
+                              {jobCount} Job{jobCount !== 1 ? "s" : ""}
+                            </div>
+
+                            <div className="inline-flex items-center gap-2 rounded-full bg-white/5 px-4 py-2 text-sm text-gray-100">
+                              <Building2 className="h-4 w-4 text-amber-300" />
+                              {preview.property}
+                            </div>
+
+                            <div className="inline-flex items-center gap-2 rounded-full bg-white/5 px-4 py-2 text-sm text-gray-100">
+                              <Briefcase className="h-4 w-4 text-amber-300" />
+                              {preview.jobs}
+                            </div>
+
+                            {preview.extraCount > 0 && (
+                              <div className="rounded-full bg-white/5 px-4 py-2 text-sm font-semibold text-gray-100">
+                                +{preview.extraCount} more
+                              </div>
+                            )}
+
+                            {selectedEmployee.weekLocked && (
+                              <div className="inline-flex items-center gap-2 rounded-full border border-red-400/20 bg-red-500/10 px-4 py-2 text-xs font-bold text-red-300">
+                                <Lock className="h-3.5 w-3.5" />
+                                Locked
+                              </div>
+                            )}
                           </div>
 
-                          <div className="space-y-4">
-                            <div>
-                              <Label>Property</Label>
-                              <select
-                                value={job.property}
-                                disabled={selectedEmployee.weekLocked}
-                                onChange={(event) => updateJob(day.id, job.id, { property: event.target.value })}
-                                className="w-full rounded-2xl border border-white/10 bg-[#071533] px-4 py-4 text-lg text-white outline-none disabled:opacity-60"
-                              >
-                                <option value="">Select property</option>
-                                {PROPERTY_OPTIONS.map((property) => (
-                                  <option key={property} value={property}>
-                                    {property}
-                                  </option>
-                                ))}
-                              </select>
+                          <div className="flex flex-wrap items-center gap-2 lg:justify-end">
+                            <div className="inline-flex items-center gap-2 rounded-full bg-emerald-500/10 px-4 py-2 text-sm font-semibold text-emerald-300">
+                              <DollarSign className="h-4 w-4" />
+                              {formatCurrency(dayTotal)}
                             </div>
 
-                            <div>
-                              <Label>Work Done</Label>
-                              <select
-                                value={job.workDone}
-                                disabled={selectedEmployee.weekLocked}
-                                onChange={(event) => updateJob(day.id, job.id, { workDone: event.target.value })}
-                                className="w-full rounded-2xl border border-white/10 bg-[#071533] px-4 py-4 text-lg text-white outline-none disabled:opacity-60"
-                              >
-                                <option value="">Select work done</option>
-                                {WORK_OPTIONS.map((work) => (
-                                  <option key={work} value={work}>
-                                    {work}
-                                  </option>
-                                ))}
-                              </select>
-                            </div>
-
-                            <div>
-                              <Label>Pay</Label>
-                              <input
-                                type="number"
-                                inputMode="decimal"
-                                step="0.01"
-                                value={job.pay || ""}
-                                disabled={selectedEmployee.weekLocked}
-                                onChange={(event) => updateJob(day.id, job.id, { pay: parseMoney(event.target.value) })}
-                                placeholder="0.00"
-                                className="w-full rounded-2xl border border-white/10 bg-[#071533] px-4 py-4 text-lg text-white outline-none disabled:opacity-60"
-                              />
-                            </div>
-
-                            <div>
-                              <Label>Notes</Label>
-                              <textarea
-                                value={job.notes || ""}
-                                disabled={selectedEmployee.weekLocked}
-                                onChange={(event) => updateJob(day.id, job.id, { notes: event.target.value })}
-                                placeholder="Optional job notes"
-                                rows={3}
-                                className="w-full rounded-2xl border border-white/10 bg-[#071533] px-4 py-4 text-lg text-white outline-none disabled:opacity-60"
-                              />
+                            <div className="inline-flex items-center justify-center rounded-full bg-white/5 px-3 py-2 text-gray-200">
+                              {dayRecord.expanded ? (
+                                <ChevronUp className="h-4 w-4" />
+                              ) : (
+                                <ChevronDown className="h-4 w-4" />
+                              )}
                             </div>
                           </div>
                         </div>
-                      ))}
+                      </button>
 
-                      {!selectedEmployee.weekLocked ? (
-                        <button
-                          onClick={() => addJob(day.id)}
-                          className="flex min-h-[60px] w-full items-center justify-center gap-3 rounded-[22px] border border-white/10 bg-white/5 px-4 py-4 text-lg font-bold text-white"
-                        >
-                          <Plus className="h-5 w-5" />
-                          Add Job For {day.dayLabel}
-                        </button>
-                      ) : null}
+                      {dayRecord.expanded && (
+                        <div className="border-t border-white/10 px-4 py-5 md:px-5">
+                          <div className="mb-4 flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+                            <div className="w-full md:max-w-sm">
+                              <label className="mb-2 block text-sm font-semibold text-gray-100">
+                                Date
+                              </label>
+                              <div className="relative">
+                                <CalendarDays className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-amber-300" />
+                                <input
+                                  type="date"
+                                  value={dayRecord.date}
+                                  onChange={(e) =>
+                                    updateDay(selectedEmployee.id, day.key, {
+                                      date: e.target.value,
+                                    })
+                                  }
+                                  disabled={selectedEmployee.weekLocked}
+                                  className="w-full rounded-2xl border border-white/10 bg-[#111a31] px-10 py-3 text-white outline-none disabled:cursor-not-allowed disabled:opacity-60 focus:border-amber-400"
+                                />
+                              </div>
+                            </div>
+
+                            <button
+                              onClick={() =>
+                                addJobEntry(selectedEmployee.id, day.key)
+                              }
+                              disabled={selectedEmployee.weekLocked}
+                              className="inline-flex items-center gap-2 rounded-2xl bg-amber-500 px-5 py-3 font-bold text-black hover:bg-amber-400 disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                              <Plus className="h-4 w-4" />
+                              Add Job Entry
+                            </button>
+                          </div>
+
+                          <div className="space-y-4">
+                            {dayRecord.entries.map((entry, index) => (
+                              <div
+                                key={entry.id}
+                                className="rounded-[24px] border border-white/10 bg-[#111a31] p-4"
+                              >
+                                <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <div className="rounded-full bg-white/5 px-4 py-2 text-sm font-semibold text-gray-100">
+                                      Job Entry {index + 1}
+                                    </div>
+
+                                    <div
+                                      className={`rounded-full px-3 py-2 text-xs font-bold ${getStatusStyles(
+                                        entry.status
+                                      )}`}
+                                    >
+                                      {entry.status}
+                                    </div>
+
+                                    {entry.status === "Completed" && (
+                                      <div className="inline-flex items-center gap-1 rounded-full border border-emerald-400/20 bg-emerald-500/10 px-3 py-2 text-xs font-bold text-emerald-300">
+                                        <CheckCircle2 className="h-4 w-4" />
+                                        Completed
+                                      </div>
+                                    )}
+                                  </div>
+
+                                  <button
+                                    onClick={() =>
+                                      deleteJobEntry(
+                                        selectedEmployee.id,
+                                        day.key,
+                                        entry.id
+                                      )
+                                    }
+                                    disabled={selectedEmployee.weekLocked}
+                                    className="inline-flex items-center gap-2 rounded-xl border border-red-400/20 bg-red-500/10 px-3 py-2 text-sm font-semibold text-red-300 hover:bg-red-500/20 disabled:cursor-not-allowed disabled:opacity-60"
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                    Remove
+                                  </button>
+                                </div>
+
+                                <div className="grid gap-4 md:grid-cols-3">
+                                  <div className="md:col-span-1">
+                                    <label className="mb-2 block text-sm font-semibold text-gray-100">
+                                      Property
+                                    </label>
+                                    <select
+                                      value={entry.property}
+                                      onChange={(e) =>
+                                        updateJobEntry(
+                                          selectedEmployee.id,
+                                          day.key,
+                                          entry.id,
+                                          { property: e.target.value }
+                                        )
+                                      }
+                                      disabled={selectedEmployee.weekLocked}
+                                      className="w-full rounded-2xl border border-white/10 bg-[#0d162b] px-4 py-3 text-white outline-none disabled:cursor-not-allowed disabled:opacity-60 focus:border-amber-400"
+                                    >
+                                      <option value="">Select property</option>
+                                      {PROPERTY_OPTIONS.map((property) => (
+                                        <option key={property} value={property}>
+                                          {property}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  </div>
+
+                                  <div className="md:col-span-1">
+                                    <label className="mb-2 block text-sm font-semibold text-gray-100">
+                                      Pay
+                                    </label>
+                                    <input
+                                      type="number"
+                                      inputMode="decimal"
+                                      value={entry.pay}
+                                      onChange={(e) =>
+                                        updateJobEntry(
+                                          selectedEmployee.id,
+                                          day.key,
+                                          entry.id,
+                                          { pay: e.target.value }
+                                        )
+                                      }
+                                      disabled={selectedEmployee.weekLocked}
+                                      placeholder="0.00"
+                                      className="w-full rounded-2xl border border-white/10 bg-[#0d162b] px-4 py-3 text-white placeholder:text-gray-400 outline-none disabled:cursor-not-allowed disabled:opacity-60 focus:border-amber-400"
+                                    />
+                                  </div>
+
+                                  <div className="md:col-span-1">
+                                    <label className="mb-2 block text-sm font-semibold text-gray-100">
+                                      Status
+                                    </label>
+                                    <select
+                                      value={entry.status}
+                                      onChange={(e) =>
+                                        updateJobEntry(
+                                          selectedEmployee.id,
+                                          day.key,
+                                          entry.id,
+                                          {
+                                            status: e.target.value as JobStatus,
+                                          }
+                                        )
+                                      }
+                                      disabled={selectedEmployee.weekLocked}
+                                      className="w-full rounded-2xl border border-white/10 bg-[#0d162b] px-4 py-3 text-white outline-none disabled:cursor-not-allowed disabled:opacity-60 focus:border-amber-400"
+                                    >
+                                      <option value="Pending">Pending</option>
+                                      <option value="In Progress">
+                                        In Progress
+                                      </option>
+                                      <option value="Completed">
+                                        Completed
+                                      </option>
+                                    </select>
+                                  </div>
+                                </div>
+
+                                {entry.property === "Other" && (
+                                  <div className="mt-4">
+                                    <label className="mb-2 block text-sm font-semibold text-gray-100">
+                                      Custom Property
+                                    </label>
+                                    <input
+                                      value={entry.customProperty}
+                                      onChange={(e) =>
+                                        updateJobEntry(
+                                          selectedEmployee.id,
+                                          day.key,
+                                          entry.id,
+                                          { customProperty: e.target.value }
+                                        )
+                                      }
+                                      disabled={selectedEmployee.weekLocked}
+                                      placeholder="Type custom property"
+                                      className="w-full rounded-2xl border border-white/10 bg-[#0d162b] px-4 py-3 text-white placeholder:text-gray-400 outline-none disabled:cursor-not-allowed disabled:opacity-60 focus:border-amber-400"
+                                    />
+                                  </div>
+                                )}
+
+                                <div className="mt-4">
+                                  <label className="mb-2 block text-sm font-semibold text-gray-100">
+                                    Job Being Done
+                                  </label>
+                                  <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+                                    {JOB_OPTIONS.map((job) => {
+                                      const selected = entry.jobs.includes(job);
+
+                                      return (
+                                        <button
+                                          key={job}
+                                          type="button"
+                                          onClick={() =>
+                                            toggleJobSelection(
+                                              selectedEmployee.id,
+                                              day.key,
+                                              entry.id,
+                                              job
+                                            )
+                                          }
+                                          disabled={selectedEmployee.weekLocked}
+                                          className={`rounded-2xl border px-4 py-3 text-left text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-60 ${
+                                            selected
+                                              ? "border-amber-400 bg-amber-500/15 text-amber-300"
+                                              : "border-white/10 bg-[#0d162b] text-gray-100 hover:border-amber-400/60"
+                                          }`}
+                                        >
+                                          {job}
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+
+                                <div className="mt-4">
+                                  <label className="mb-2 block text-sm font-semibold text-gray-100">
+                                    Custom Job
+                                  </label>
+                                  <input
+                                    value={entry.customJob}
+                                    onChange={(e) =>
+                                      updateJobEntry(
+                                        selectedEmployee.id,
+                                        day.key,
+                                        entry.id,
+                                        { customJob: e.target.value }
+                                      )
+                                    }
+                                    disabled={selectedEmployee.weekLocked}
+                                    placeholder="Add your own custom job if needed"
+                                    className="w-full rounded-2xl border border-white/10 bg-[#0d162b] px-4 py-3 text-white placeholder:text-gray-400 outline-none disabled:cursor-not-allowed disabled:opacity-60 focus:border-amber-400"
+                                  />
+                                </div>
+
+                                <div className="mt-4">
+                                  <label className="mb-2 block text-sm font-semibold text-gray-100">
+                                    Notes
+                                  </label>
+                                  <textarea
+                                    value={entry.notes}
+                                    onChange={(e) =>
+                                      updateJobEntry(
+                                        selectedEmployee.id,
+                                        day.key,
+                                        entry.id,
+                                        { notes: e.target.value }
+                                      )
+                                    }
+                                    disabled={selectedEmployee.weekLocked}
+                                    placeholder="Extra details for this job entry"
+                                    rows={3}
+                                    className="w-full rounded-2xl border border-white/10 bg-[#0d162b] px-4 py-3 text-white placeholder:text-gray-400 outline-none disabled:cursor-not-allowed disabled:opacity-60 focus:border-amber-400"
+                                  />
+                                </div>
+
+                                <div className="mt-5 grid gap-4 lg:grid-cols-2">
+                                  <div className="rounded-2xl border border-white/10 bg-[#0d162b] p-4">
+                                    <label className="mb-2 block text-sm font-semibold text-gray-100">
+                                      Before Photos
+                                    </label>
+
+                                    <label className="flex cursor-pointer items-center justify-center gap-2 rounded-2xl border border-dashed border-white/15 bg-[#101a34] px-4 py-4 text-sm font-semibold text-gray-200 hover:border-amber-400/50">
+                                      <Upload className="h-4 w-4 text-amber-300" />
+                                      Upload Before Photos
+                                      <input
+                                        type="file"
+                                        accept="image/*"
+                                        multiple
+                                        className="hidden"
+                                        disabled={selectedEmployee.weekLocked}
+                                        onChange={(e) =>
+                                          handlePhotoUpload(
+                                            selectedEmployee.id,
+                                            day.key,
+                                            entry.id,
+                                            e.target.files,
+                                            "beforePhotos"
+                                          )
+                                        }
+                                      />
+                                    </label>
+
+                                    {entry.beforePhotos.length > 0 && (
+                                      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                                        {entry.beforePhotos.map((photo) => (
+                                          <div
+                                            key={photo.id}
+                                            className="overflow-hidden rounded-2xl border border-white/10 bg-[#0b1427]"
+                                          >
+                                            <div className="relative aspect-[4/3] w-full">
+                                              <img
+                                                src={photo.dataUrl}
+                                                alt={photo.name}
+                                                className="h-full w-full object-cover"
+                                              />
+                                            </div>
+
+                                            <div className="flex items-center justify-between gap-2 p-3">
+                                              <div className="truncate text-xs text-gray-300">
+                                                {photo.name}
+                                              </div>
+
+                                              <button
+                                                onClick={() =>
+                                                  removePhoto(
+                                                    selectedEmployee.id,
+                                                    day.key,
+                                                    entry.id,
+                                                    photo.id,
+                                                    "beforePhotos"
+                                                  )
+                                                }
+                                                disabled={selectedEmployee.weekLocked}
+                                                className="rounded-lg border border-red-400/20 bg-red-500/10 px-2 py-1 text-xs font-semibold text-red-300 hover:bg-red-500/20 disabled:cursor-not-allowed disabled:opacity-60"
+                                              >
+                                                Remove
+                                              </button>
+                                            </div>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    )}
+                                  </div>
+
+                                  <div className="rounded-2xl border border-white/10 bg-[#0d162b] p-4">
+                                    <label className="mb-2 block text-sm font-semibold text-gray-100">
+                                      After Photos
+                                    </label>
+
+                                    <label className="flex cursor-pointer items-center justify-center gap-2 rounded-2xl border border-dashed border-white/15 bg-[#101a34] px-4 py-4 text-sm font-semibold text-gray-200 hover:border-emerald-400/50">
+                                      <Upload className="h-4 w-4 text-emerald-300" />
+                                      Upload After Photos
+                                      <input
+                                        type="file"
+                                        accept="image/*"
+                                        multiple
+                                        className="hidden"
+                                        disabled={selectedEmployee.weekLocked}
+                                        onChange={(e) =>
+                                          handlePhotoUpload(
+                                            selectedEmployee.id,
+                                            day.key,
+                                            entry.id,
+                                            e.target.files,
+                                            "afterPhotos"
+                                          )
+                                        }
+                                      />
+                                    </label>
+
+                                    {entry.afterPhotos.length > 0 && (
+                                      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                                        {entry.afterPhotos.map((photo) => (
+                                          <div
+                                            key={photo.id}
+                                            className="overflow-hidden rounded-2xl border border-white/10 bg-[#0b1427]"
+                                          >
+                                            <div className="relative aspect-[4/3] w-full">
+                                              <img
+                                                src={photo.dataUrl}
+                                                alt={photo.name}
+                                                className="h-full w-full object-cover"
+                                              />
+                                            </div>
+
+                                            <div className="flex items-center justify-between gap-2 p-3">
+                                              <div className="truncate text-xs text-gray-300">
+                                                {photo.name}
+                                              </div>
+
+                                              <button
+                                                onClick={() =>
+                                                  removePhoto(
+                                                    selectedEmployee.id,
+                                                    day.key,
+                                                    entry.id,
+                                                    photo.id,
+                                                    "afterPhotos"
+                                                  )
+                                                }
+                                                disabled={selectedEmployee.weekLocked}
+                                                className="rounded-lg border border-red-400/20 bg-red-500/10 px-2 py-1 text-xs font-semibold text-red-300 hover:bg-red-500/20 disabled:cursor-not-allowed disabled:opacity-60"
+                                              >
+                                                Remove
+                                              </button>
+                                            </div>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+
+                                <div className="mt-4 flex flex-wrap gap-2">
+                                  <div className="inline-flex items-center gap-2 rounded-full bg-white/5 px-4 py-2 text-sm text-gray-100">
+                                    <Building2 className="h-4 w-4 text-amber-300" />
+                                    {getEntryPropertyText(entry)}
+                                  </div>
+
+                                  <div className="inline-flex items-center gap-2 rounded-full bg-white/5 px-4 py-2 text-sm text-gray-100">
+                                    <Briefcase className="h-4 w-4 text-amber-300" />
+                                    {getEntryJobText(entry)}
+                                  </div>
+
+                                  <div className="inline-flex items-center gap-2 rounded-full bg-emerald-500/10 px-4 py-2 text-sm font-semibold text-emerald-300">
+                                    <DollarSign className="h-4 w-4" />
+                                    {entry.pay
+                                      ? formatCurrency(parseMoney(entry.pay))
+                                      : "$0.00"}
+                                  </div>
+
+                                  <div className="inline-flex items-center gap-2 rounded-full bg-white/5 px-4 py-2 text-sm text-gray-100">
+                                    <Upload className="h-4 w-4 text-amber-300" />
+                                    {entry.beforePhotos.length} Before
+                                  </div>
+
+                                  <div className="inline-flex items-center gap-2 rounded-full bg-white/5 px-4 py-2 text-sm text-gray-100">
+                                    <Upload className="h-4 w-4 text-emerald-300" />
+                                    {entry.afterPhotos.length} After
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
                     </div>
-                  )}
+                  );
+                })}
+              </div>
+            </section>
+          </>
+        )}
+
+        {showAddModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
+            <div className="w-full max-w-xl rounded-[32px] border border-white/10 bg-[#0c1527] p-6 shadow-[0_30px_100px_rgba(0,0,0,0.55)]">
+              <div className="mb-6 flex items-center justify-between">
+                <div>
+                  <h3 className="text-2xl font-bold">Add New Employee</h3>
+                  <p className="mt-1 text-sm text-gray-300">
+                    Create a saved employee profile for your team.
+                  </p>
                 </div>
-              );
-            })}
-          </div>
-        </Card>
 
-        <Card className="mb-5 p-6">
-          <div className="mb-4 flex items-start gap-4">
-            <div className="mt-1 flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-emerald-500/15 text-emerald-300">
-              <Wallet className="h-7 w-7" />
-            </div>
-            <div>
-              <h3 className="text-[1.9rem] font-extrabold leading-none text-white">Weekly Summary</h3>
-              <p className="mt-2 text-base leading-6 text-white/70">Payout, advances, and status.</p>
-            </div>
-          </div>
-
-          <div className="space-y-4">
-            <div>
-              <Label>Advance Amount</Label>
-              <input
-                type="number"
-                inputMode="decimal"
-                step="0.01"
-                value={selectedEmployee.advanceAmount || ""}
-                onChange={(event) => updateSelectedEmployee({ advanceAmount: parseMoney(event.target.value) })}
-                placeholder="0.00"
-                className="w-full rounded-2xl border border-white/10 bg-[#071533] px-4 py-4 text-lg text-white outline-none"
-              />
-            </div>
-
-            <div>
-              <Label>Paid Amount So Far</Label>
-              <input
-                type="number"
-                inputMode="decimal"
-                step="0.01"
-                value={selectedEmployee.paidAmountSoFar || ""}
-                onChange={(event) => updateSelectedEmployee({ paidAmountSoFar: parseMoney(event.target.value) })}
-                placeholder="0.00"
-                className="w-full rounded-2xl border border-white/10 bg-[#071533] px-4 py-4 text-lg text-white outline-none"
-              />
-            </div>
-
-            <div>
-              <Label>Reason For Advance</Label>
-              <input
-                value={selectedEmployee.advanceReason}
-                onChange={(event) => updateSelectedEmployee({ advanceReason: event.target.value })}
-                placeholder="Why was the advance given?"
-                className="w-full rounded-2xl border border-white/10 bg-[#071533] px-4 py-4 text-lg text-white outline-none"
-              />
-            </div>
-
-            <div>
-              <Label>Status</Label>
-              <select
-                value={selectedEmployee.manualStatus}
-                onChange={(event) => updateSelectedEmployee({ manualStatus: event.target.value as EmployeeStatus })}
-                className="w-full rounded-2xl border border-white/10 bg-[#071533] px-4 py-4 text-lg font-semibold text-white outline-none"
-              >
-                <option value="Unpaid">Unpaid</option>
-                <option value="Partial">Partial</option>
-                <option value="Paid">Paid</option>
-                <option value="Advance Due">Advance Due</option>
-              </select>
-            </div>
-          </div>
-
-          <div className="mt-5 grid grid-cols-1 gap-4">
-            <div className="rounded-[24px] border border-white/10 bg-white/5 p-5">
-              <div className="text-sm uppercase tracking-[0.28em] text-white/50">Gross Total</div>
-              <div className="mt-2 text-2xl font-extrabold text-white">{formatMoney(selectedTotals.grossTotal)}</div>
-            </div>
-
-            <div className="rounded-[24px] border border-white/10 bg-white/5 p-5">
-              <div className="text-sm uppercase tracking-[0.28em] text-white/50">Advance</div>
-              <div className="mt-2 text-2xl font-extrabold text-rose-300">{formatMoney(selectedTotals.advance)}</div>
-            </div>
-
-            <div className="rounded-[24px] border border-white/10 bg-white/5 p-5">
-              <div className="text-sm uppercase tracking-[0.28em] text-white/50">Final Payout</div>
-              <div className="mt-2 text-2xl font-extrabold text-emerald-300">{formatMoney(selectedTotals.finalPayout)}</div>
-            </div>
-
-            <div className="rounded-[24px] border border-white/10 bg-white/5 p-5">
-              <div className="text-sm uppercase tracking-[0.28em] text-white/50">Paid So Far</div>
-              <div className="mt-2 text-2xl font-extrabold text-white">{formatMoney(selectedTotals.paidSoFar)}</div>
-            </div>
-
-            <div className="rounded-[24px] border border-amber-400/20 bg-amber-500/10 p-5">
-              <div className="text-sm uppercase tracking-[0.28em] text-amber-200/80">Remaining Balance</div>
-              <div className="mt-2 text-3xl font-black text-amber-300">{formatMoney(selectedTotals.remainingBalance)}</div>
-            </div>
-
-            <div className="rounded-[24px] border border-rose-400/20 bg-rose-500/10 p-5">
-              <div className="text-sm uppercase tracking-[0.28em] text-rose-200/80">Advance Still Owed</div>
-              <div className="mt-2 text-3xl font-black text-rose-300">{formatMoney(selectedTotals.advanceStillOwed)}</div>
-            </div>
-
-            <div className="rounded-[24px] border border-white/10 bg-white/5 p-5">
-              <div className="text-sm uppercase tracking-[0.28em] text-white/50">Suggested Status</div>
-              <div className="mt-2">
-                <Capsule tone={selectedTotals.suggestedStatus === "Advance Due" ? "red" : selectedTotals.suggestedStatus === "Paid" ? "green" : selectedTotals.suggestedStatus === "Partial" ? "gold" : "default"}>
-                  {selectedTotals.suggestedStatus}
-                </Capsule>
+                <button
+                  onClick={() => setShowAddModal(false)}
+                  className="rounded-2xl border border-white/10 bg-white/5 p-2 text-gray-200 hover:bg-white/10"
+                >
+                  <X className="h-5 w-5" />
+                </button>
               </div>
-            </div>
 
-            <div className="rounded-[24px] border border-white/10 bg-white/5 p-5">
-              <div className="text-sm uppercase tracking-[0.28em] text-white/50">Manual Status</div>
-              <div className="mt-2">
-                <Capsule tone={selectedEmployee.manualStatus === "Advance Due" ? "red" : selectedEmployee.manualStatus === "Paid" ? "green" : selectedEmployee.manualStatus === "Partial" ? "gold" : "default"}>
-                  {selectedEmployee.manualStatus}
-                </Capsule>
+              <div className="grid gap-4">
+                <div>
+                  <label className="mb-2 block text-sm font-semibold text-gray-100">
+                    Employee Name
+                  </label>
+                  <input
+                    value={newEmployeeName}
+                    onChange={(e) => setNewEmployeeName(e.target.value)}
+                    placeholder="Enter employee name"
+                    className="w-full rounded-2xl border border-white/10 bg-[#111a31] px-4 py-3 text-white placeholder:text-gray-400 outline-none focus:border-amber-400"
+                  />
+                </div>
+
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div>
+                    <label className="mb-2 block text-sm font-semibold text-gray-100">
+                      Phone
+                    </label>
+                    <input
+                      value={newEmployeePhone}
+                      onChange={(e) => setNewEmployeePhone(e.target.value)}
+                      placeholder="Employee phone"
+                      className="w-full rounded-2xl border border-white/10 bg-[#111a31] px-4 py-3 text-white placeholder:text-gray-400 outline-none focus:border-amber-400"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="mb-2 block text-sm font-semibold text-gray-100">
+                      Default Rate
+                    </label>
+                    <input
+                      value={newEmployeeRate}
+                      onChange={(e) => setNewEmployeeRate(e.target.value)}
+                      placeholder="Hourly or day rate"
+                      className="w-full rounded-2xl border border-white/10 bg-[#111a31] px-4 py-3 text-white placeholder:text-gray-400 outline-none focus:border-amber-400"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="mb-2 block text-sm font-semibold text-gray-100">
+                    Notes
+                  </label>
+                  <textarea
+                    value={newEmployeeNotes}
+                    onChange={(e) => setNewEmployeeNotes(e.target.value)}
+                    rows={3}
+                    placeholder="Optional notes"
+                    className="w-full rounded-2xl border border-white/10 bg-[#111a31] px-4 py-3 text-white placeholder:text-gray-400 outline-none focus:border-amber-400"
+                  />
+                </div>
+              </div>
+
+              <div className="mt-6 flex justify-end gap-3">
+                <button
+                  onClick={() => setShowAddModal(false)}
+                  className="rounded-2xl border border-white/10 bg-white/5 px-5 py-3 font-semibold text-white hover:bg-white/10"
+                >
+                  Cancel
+                </button>
+
+                <button
+                  onClick={addEmployee}
+                  className="rounded-2xl bg-amber-500 px-5 py-3 font-bold text-black hover:bg-amber-400"
+                >
+                  Save Employee
+                </button>
               </div>
             </div>
           </div>
-        </Card>
-
-        <Card className="p-6">
-          <div className="mb-4 flex items-start gap-4">
-            <div className="mt-1 flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-violet-500/15 text-violet-300">
-              <StickyNote className="h-7 w-7" />
-            </div>
-            <div>
-              <h3 className="text-[1.9rem] font-extrabold leading-none text-white">Executive Snapshot</h3>
-              <p className="mt-2 text-base leading-6 text-white/70">Quick read of the selected employee.</p>
-            </div>
-          </div>
-
-          <div className="space-y-4">
-            <div className="rounded-[24px] border border-white/10 bg-white/5 p-5">
-              <div className="text-sm uppercase tracking-[0.28em] text-white/50">Selected Employee</div>
-              <div className="mt-2 text-2xl font-extrabold text-white">{selectedEmployee.name}</div>
-            </div>
-
-            <div className="rounded-[24px] border border-white/10 bg-white/5 p-5">
-              <div className="text-sm uppercase tracking-[0.28em] text-white/50">Employee Phone</div>
-              <div className="mt-2 text-2xl font-extrabold text-white">{selectedEmployee.phone || "Not added"}</div>
-            </div>
-
-            <div className="rounded-[24px] border border-white/10 bg-white/5 p-5">
-              <div className="text-sm uppercase tracking-[0.28em] text-white/50">Default Rate</div>
-              <div className="mt-2 text-2xl font-extrabold text-white">{selectedEmployee.defaultRate || "Not added"}</div>
-            </div>
-
-            <div className="rounded-[24px] border border-white/10 bg-white/5 p-5">
-              <div className="text-sm uppercase tracking-[0.28em] text-white/50">Advance Reason</div>
-              <div className="mt-2 text-xl font-bold leading-8 text-white">{selectedEmployee.advanceReason || "Not added"}</div>
-            </div>
-
-            <div className="rounded-[24px] border border-white/10 bg-white/5 p-5">
-              <div className="text-sm uppercase tracking-[0.28em] text-white/50">Employee Notes</div>
-              <div className="mt-2 text-xl font-bold leading-8 text-white">{selectedEmployee.notes || "Not added"}</div>
-            </div>
-          </div>
-        </Card>
+        )}
       </div>
-    </div>
+    </main>
   );
 }
