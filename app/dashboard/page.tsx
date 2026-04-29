@@ -4,7 +4,7 @@ import { redirect } from 'next/navigation'
 export default async function DashboardPage() {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
-  if (!user) redirect('/login')
+  // login wall removed
   const { data: workers } = await supabase.from('workers').select('*').eq('owner_id', user.id).order('created_at', { ascending: false })
   const { data: payWeeks } = await supabase.from('pay_weeks').select('*').eq('owner_id', user.id).order('created_at', { ascending: false })
   const weekIds = (payWeeks || []).map((w) => w.id)
