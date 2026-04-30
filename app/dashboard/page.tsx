@@ -1,5 +1,5 @@
-import PayrollApp from "@/components/payroll-app";
+import { redirect } from "next/navigation";
 
 export default function DashboardPage() {
-  return <PayrollApp />;
+  redirect("/");
 }
