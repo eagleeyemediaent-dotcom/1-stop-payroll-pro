@@ -50,6 +50,7 @@ type Employee = {
   phone: string;
   defaultRate: number;
   notes: string;
+  borrowed?: number;
   active: boolean;
 };
 
@@ -200,7 +201,9 @@ export default function PayrollProEliteBlackGoldX() {
         const parsed = JSON.parse(raw) as AppState;
         setState({
           companyName: parsed.companyName || starterState.companyName,
-          employees: Array.isArray(parsed.employees) ? parsed.employees : starterState.employees,
+          employees: Array.isArray(parsed.employees)
+            ? parsed.employees.map((employee) => ({ ...employee, borrowed: safeNumber(employee.borrowed || 0) }))
+            : starterState.employees,
           jobs: Array.isArray(parsed.jobs) ? parsed.jobs : [],
           properties: Array.isArray(parsed.properties) ? parsed.properties : defaultProperties,
           jobTypeOptions: Array.isArray(parsed.jobTypeOptions) ? parsed.jobTypeOptions : defaultJobTypes,
@@ -250,25 +253,23 @@ export default function PayrollProEliteBlackGoldX() {
       .sort((a, b) => b.date.localeCompare(a.date));
   }, [activeTab, state.jobs, weekJobs, search, employeesById]);
 
-const totals = useMemo(() => {
-  const earned = weekJobs.reduce((sum, job) => sum + safeNumber(job.pay), 0);
-  const paid = weekJobs.reduce((sum, job) => sum + safeNumber(job.paidAmount), 0);
-  const borrowed = state.employees.reduce(
-    (sum, employee) => sum + (employee.borrowed || 0),
-    0
-  );
-  const owed = Math.max(earned - paid - borrowed, 0);
-  const jobsToday = state.jobs.filter((job) => job.date === todayISO()).length;
-  return { earned, paid, borrowed, owed, jobsToday };
-}, [weekJobs, state.jobs, state.employees]);
+  const totals = useMemo(() => {
+    const earned = weekJobs.reduce((sum, job) => sum + safeNumber(job.pay), 0);
+    const paid = weekJobs.reduce((sum, job) => sum + safeNumber(job.paidAmount), 0);
+    const borrowed = state.employees.reduce((sum, employee) => sum + safeNumber(employee.borrowed || 0), 0);
+    const owed = Math.max(earned - paid - borrowed, 0);
+    const jobsToday = state.jobs.filter((job) => job.date === todayISO()).length;
+    return { earned, paid, borrowed, owed, jobsToday };
+  }, [weekJobs, state.jobs, state.employees]);
+
   const employeeTotals = useMemo(() => {
     return state.employees.map((employee) => {
       const jobs = weekJobs.filter((job) => job.employeeId === employee.id);
       const earned = jobs.reduce((sum, job) => sum + job.pay, 0);
       const paid = jobs.reduce((sum, job) => sum + job.paidAmount, 0);
-      const borrowed = employee.borrowed || 0;
-const owed = Math.max(earned - paid - borrowed, 0);
-return { employee, jobs, earned, paid, borrowed, owed };
+      const borrowed = safeNumber(employee.borrowed || 0);
+      const owed = Math.max(earned - paid - borrowed, 0);
+      return { employee, jobs, earned, paid, borrowed, owed };
     });
   }, [state.employees, weekJobs]);
 
@@ -334,7 +335,7 @@ return { employee, jobs, earned, paid, borrowed, owed };
         }
         setState({
           companyName: parsed.companyName || starterState.companyName,
-          employees: parsed.employees,
+          employees: parsed.employees.map((employee) => ({ ...employee, borrowed: safeNumber(employee.borrowed || 0) })),
           jobs: parsed.jobs,
           properties: Array.isArray(parsed.properties) ? parsed.properties : defaultProperties,
           jobTypeOptions: Array.isArray(parsed.jobTypeOptions) ? parsed.jobTypeOptions : defaultJobTypes,
@@ -361,9 +362,10 @@ return { employee, jobs, earned, paid, borrowed, owed };
       <div className="mx-auto max-w-6xl px-3 pb-28 pt-4 sm:px-6 lg:px-8">
         <Header companyName={state.companyName} totals={totals} />
 
-        <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
           <StatCard label="Week Earned" value={money(totals.earned)} icon={<Wallet size={19} />} />
           <StatCard label="Paid Out" value={money(totals.paid)} icon={<ShieldCheck size={19} />} />
+          <StatCard label="Borrowed" value={money(totals.borrowed || 0)} icon={<Wallet size={19} />} />
           <StatCard label="Still Owed" value={money(totals.owed)} icon={<Lock size={19} />} highlight />
           <StatCard label="Jobs Today" value={String(totals.jobsToday)} icon={<BriefcaseBusiness size={19} />} />
         </div>
@@ -684,7 +686,7 @@ function Dashboard({
   onGoEmployees,
   onGoReports,
 }: {
-  employeeTotals: { employee: Employee; jobs: JobEntry[]; earned: number; paid: number; owed: number }[];
+  employeeTotals: { employee: Employee; jobs: JobEntry[]; earned: number; paid: number; borrowed: number; owed: number }[];
   filteredJobs: JobEntry[];
   employeesById: Map<string, Employee>;
   onAddJob: () => void;
@@ -719,9 +721,10 @@ function Dashboard({
                   <p className="font-black">{employee.name}</p>
                   <p className="font-black text-amber-300">{money(owed)}</p>
                 </div>
-                <div className="mt-2 grid grid-cols-2 gap-2 text-xs text-zinc-400">
+                <div className="mt-2 grid grid-cols-3 gap-2 text-xs text-zinc-400">
                   <span>Earned: {money(earned)}</span>
                   <span>Paid: {money(paid)}</span>
+                  <span>Borrowed: {money(employee.borrowed || 0)}</span>
                 </div>
               </div>
             ))}
@@ -766,7 +769,7 @@ function EmployeeCard({
   onSave,
 }: {
   employee: Employee;
-  totals?: { jobs: JobEntry[]; earned: number; paid: number; owed: number };
+  totals?: { jobs: JobEntry[]; earned: number; paid: number; borrowed: number; owed: number };
   expanded: boolean;
   onToggle: () => void;
   onDelete: () => void;
@@ -794,9 +797,10 @@ function EmployeeCard({
         </button>
       </div>
 
-      <div className="mt-4 grid grid-cols-3 gap-2 text-center">
+      <div className="mt-4 grid grid-cols-4 gap-2 text-center">
         <BalancePill label="Earned" value={money(totals?.earned || 0)} />
         <BalancePill label="Paid" value={money(totals?.paid || 0)} />
+        <BalancePill label="Borrowed" value={money(totals?.borrowed || 0)} />
         <BalancePill label="Owed" value={money(totals?.owed || 0)} gold />
       </div>
 
@@ -808,6 +812,7 @@ function EmployeeCard({
               <Field label="Phone"><input className="inputElite" value={draft.phone} onChange={(e) => setDraft({ ...draft, phone: e.target.value })} /></Field>
               <Field label="Default Rate"><input className="inputElite" type="number" value={draft.defaultRate} onChange={(e) => setDraft({ ...draft, defaultRate: safeNumber(e.target.value) })} /></Field>
               <Field label="Notes"><textarea className="inputElite min-h-20" value={draft.notes} onChange={(e) => setDraft({ ...draft, notes: e.target.value })} /></Field>
+              <Field label="Borrowed Advance"><input className="inputElite" type="number" value={draft.borrowed || 0} onChange={(e) => setDraft({ ...draft, borrowed: safeNumber(e.target.value) })} /></Field>
               <div className="flex gap-2">
                 <button className="goldButton flex-1" onClick={() => { onSave(draft); setEditing(false); }}><Check size={18} /> Save</button>
                 <button className="darkButton" onClick={() => setEditing(false)}><X size={18} /></button>
@@ -816,6 +821,16 @@ function EmployeeCard({
           ) : (
             <>
               <p className="text-sm text-zinc-400">{employee.notes || "No employee notes saved."}</p>
+              <Field label="Borrowed Advance">
+                <input
+                  className="inputElite"
+                  type="number"
+                  value={employee.borrowed || 0}
+                  onChange={(e) => onSave({ ...employee, borrowed: safeNumber(e.target.value) })}
+                  placeholder="0.00"
+                />
+              </Field>
+              <p className="text-xs font-semibold text-zinc-500">Cash advance borrowed before payday. It subtracts from the final owed amount.</p>
               <div className="flex gap-2">
                 <button className="darkButton flex-1" onClick={() => setEditing(true)}><MoreVertical size={18} /> Extra Info</button>
                 <button className="iconDanger" onClick={onDelete}><Trash2 size={18} /></button>
@@ -948,15 +963,16 @@ function JobRow({ job, employees, employee, onDelete, onUpdate }: { job: JobEntr
   );
 }
 
-function Reports({ totals, employeeTotals, jobs, employeesById, onCloseWeek, onExport }: { totals: { earned: number; paid: number; owed: number }; employeeTotals: { employee: Employee; earned: number; paid: number; owed: number }[]; jobs: JobEntry[]; employeesById: Map<string, Employee>; onCloseWeek: () => void; onExport: () => void }) {
+function Reports({ totals, employeeTotals, jobs, employeesById, onCloseWeek, onExport }: { totals: { earned: number; paid: number; borrowed?: number; owed: number }; employeeTotals: { employee: Employee; earned: number; paid: number; borrowed: number; owed: number }[]; jobs: JobEntry[]; employeesById: Map<string, Employee>; onCloseWeek: () => void; onExport: () => void }) {
   return (
     <section className="space-y-4">
       <SectionTop title="Reports" subtitle="Weekly summary, payroll closeout, and backup export.">
         <button className="goldButton" onClick={onExport}><Download size={18} /> Export</button>
       </SectionTop>
-      <div className="grid gap-3 sm:grid-cols-3">
+      <div className="grid gap-3 sm:grid-cols-4">
         <StatCard label="Earned" value={money(totals.earned)} icon={<Wallet size={19} />} />
         <StatCard label="Paid" value={money(totals.paid)} icon={<Check size={19} />} />
+        <StatCard label="Borrowed" value={money(totals.borrowed || 0)} icon={<Wallet size={19} />} />
         <StatCard label="Owed" value={money(totals.owed)} icon={<Lock size={19} />} highlight />
       </div>
       <div className="blackCard p-4">
@@ -973,7 +989,7 @@ function Reports({ totals, employeeTotals, jobs, employeesById, onCloseWeek, onE
         <div className="mt-3 overflow-x-auto">
           <table className="w-full min-w-[620px] text-left text-sm">
             <thead className="text-xs uppercase text-zinc-500">
-              <tr><th className="py-2">Employee</th><th>Earned</th><th>Paid</th><th>Owed</th></tr>
+              <tr><th className="py-2">Employee</th><th>Earned</th><th>Paid</th><th>Borrowed</th><th>Owed</th></tr>
             </thead>
             <tbody>
               {employeeTotals.map((row) => (
@@ -981,6 +997,7 @@ function Reports({ totals, employeeTotals, jobs, employeesById, onCloseWeek, onE
                   <td className="py-3 font-bold">{row.employee.name}</td>
                   <td>{money(row.earned)}</td>
                   <td>{money(row.paid)}</td>
+                  <td>{money(row.borrowed || 0)}</td>
                   <td className="font-black text-amber-300">{money(row.owed)}</td>
                 </tr>
               ))}
@@ -1018,7 +1035,7 @@ function MorePanel({ onExport, onImport, onReset }: { onExport: () => void; onIm
 }
 
 function EmployeeModal({ onClose, onSave }: { onClose: () => void; onSave: (employee: Employee) => void }) {
-  const [employee, setEmployee] = useState<Employee>({ id: uid(), name: "", phone: "", defaultRate: 0, notes: "", active: true });
+  const [employee, setEmployee] = useState<Employee>({ id: uid(), name: "", phone: "", defaultRate: 0, notes: "", borrowed: 0, active: true });
   return (
     <Modal title="Add Employee" onClose={onClose}>
       <div className="space-y-3">
