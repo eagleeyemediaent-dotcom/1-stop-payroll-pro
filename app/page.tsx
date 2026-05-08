@@ -33,6 +33,9 @@ import {
 
 const STORAGE_KEY = "oneStopPayrollProEliteBlackGoldX_v1";
 
+const appShellClass =
+  "min-h-screen bg-[radial-gradient(circle_at_top_left,rgba(251,191,36,0.10),transparent_34%),radial-gradient(circle_at_top_right,rgba(34,197,94,0.08),transparent_30%),linear-gradient(180deg,#02070a_0%,#030303_45%,#050505_100%)] text-zinc-100 selection:bg-amber-400 selection:text-black";
+
 const money = (value: number) =>
   new Intl.NumberFormat("en-US", {
     style: "currency",
@@ -400,7 +403,7 @@ export default function PayrollProEliteBlackGoldX() {
   }
 
   return (
-    <div className="min-h-screen bg-[#02070a] text-zinc-100 selection:bg-green-500 selection:text-black">
+    <div className={appShellClass}>
       <div className="mx-auto max-w-[520px] px-4 pb-28 pt-3">
         <AppMobileHeader companyName={state.companyName} activeTab={activeTab} setActiveTab={setActiveTab} />
 
@@ -412,15 +415,15 @@ export default function PayrollProEliteBlackGoldX() {
 
         <button
           onClick={() => setShowJobForm(true)}
-          className="mt-4 flex w-full items-center justify-center gap-3 rounded-2xl bg-gradient-to-r from-green-400 to-green-600 px-5 py-4 text-xl font-black text-white shadow-[0_18px_40px_rgba(34,197,94,0.25)] transition active:scale-[.99]"
+          className="mt-5 flex w-full items-center justify-center gap-3 rounded-[1.35rem] border border-amber-300/25 bg-gradient-to-r from-[#f8d46b] via-[#e5a72f] to-[#9d6510] px-5 py-4 text-xl font-black text-black shadow-[0_20px_45px_rgba(251,191,36,0.22)] transition active:scale-[.99]"
         >
           <Plus size={30} /> Add Job
         </button>
-        <p className="mt-3 text-center text-xs font-semibold text-zinc-500">Quickly add a new job, property, or unit.</p>
+        <p className="mt-3 text-center text-xs font-semibold text-amber-100/45">Quickly add a new job, property, or unit.</p>
 
         <div className="mt-6 flex items-center justify-between">
           <h2 className="text-sm font-black uppercase tracking-wide text-zinc-300">Week Summary</h2>
-          <p className="text-sm font-black text-green-400">✣ Clean Week</p>
+          <p className="rounded-full border border-amber-400/15 bg-amber-400/10 px-3 py-1 text-xs font-black text-amber-300">✣ Clean Week</p>
         </div>
 
         <div className="mt-3 grid grid-cols-2 gap-3">
@@ -430,7 +433,7 @@ export default function PayrollProEliteBlackGoldX() {
           <StatCard label="Still Owed" value={money(totals.owed)} icon={<Lock size={19} />} highlight />
         </div>
 
-        <div className="sticky top-0 z-20 -mx-4 mt-4 border-y border-white/10 bg-[#02070a]/95 px-4 py-3 backdrop-blur">
+        <div className="sticky top-[68px] z-20 -mx-4 mt-5 border-y border-amber-400/10 bg-[#02070a]/90 px-4 py-3 shadow-[0_18px_40px_rgba(0,0,0,0.35)] backdrop-blur-xl">
           <div className="flex flex-col gap-3">
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" size={18} />
@@ -619,60 +622,125 @@ export default function PayrollProEliteBlackGoldX() {
       )}
 
       <style jsx global>{`
-        .blackCard {
-          border: 1px solid rgba(251, 191, 36, 0.12);
-          background: linear-gradient(145deg, rgba(24, 24, 27, 0.9), rgba(9, 9, 11, 0.98));
-          border-radius: 1.5rem;
-          box-shadow: 0 18px 50px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255,255,255,0.04);
+        html {
+          background: #02070a;
         }
+
+        body {
+          background: #02070a;
+        }
+
+        .blackCard {
+          position: relative;
+          overflow: hidden;
+          border: 1px solid rgba(251, 191, 36, 0.14);
+          background:
+            linear-gradient(145deg, rgba(255,255,255,0.045), rgba(255,255,255,0.015)),
+            radial-gradient(circle at 15% 0%, rgba(251,191,36,0.10), transparent 30%),
+            linear-gradient(180deg, rgba(24, 24, 27, 0.92), rgba(5, 5, 6, 0.98));
+          border-radius: 1.65rem;
+          box-shadow:
+            0 20px 55px rgba(0, 0, 0, 0.46),
+            inset 0 1px 0 rgba(255,255,255,0.055);
+        }
+
+        .blackCard::before {
+          content: "";
+          pointer-events: none;
+          position: absolute;
+          inset: 0;
+          border-radius: inherit;
+          background: linear-gradient(135deg, rgba(255,255,255,0.06), transparent 38%);
+          opacity: .7;
+        }
+
         .goldButton {
           display: inline-flex;
           align-items: center;
           justify-content: center;
-          gap: 0.45rem;
-          border-radius: 1rem;
-          background: linear-gradient(135deg, #f8c65d, #b57914);
+          gap: 0.5rem;
+          border-radius: 1.15rem;
+          border: 1px solid rgba(255, 244, 190, 0.22);
+          background: linear-gradient(135deg, #ffe08a 0%, #f4b83e 45%, #9f6410 100%);
           color: #09090b;
-          font-weight: 900;
-          padding: 0.65rem 0.95rem;
-          box-shadow: 0 12px 30px rgba(180, 120, 20, 0.22);
-          transition: transform .15s ease, filter .15s ease;
+          font-weight: 950;
+          padding: 0.72rem 1rem;
+          box-shadow: 0 14px 34px rgba(251, 191, 36, 0.22), inset 0 1px 0 rgba(255,255,255,0.35);
+          transition: transform .15s ease, filter .15s ease, box-shadow .15s ease;
         }
-        .goldButton:active { transform: scale(.98); }
+
+        .goldButton:hover {
+          filter: brightness(1.05);
+          box-shadow: 0 18px 42px rgba(251, 191, 36, 0.28), inset 0 1px 0 rgba(255,255,255,0.38);
+        }
+
+        .goldButton:active {
+          transform: scale(.98);
+        }
+
         .darkButton {
           display: inline-flex;
           align-items: center;
           justify-content: center;
           gap: 0.45rem;
-          border-radius: 1rem;
-          border: 1px solid rgba(255,255,255,0.08);
-          background: rgba(24, 24, 27, 0.9);
+          border-radius: 1.1rem;
+          border: 1px solid rgba(251,191,36,0.12);
+          background: linear-gradient(180deg, rgba(39,39,42,0.92), rgba(9,9,11,0.96));
           color: #f4f4f5;
-          font-weight: 800;
-          padding: 0.65rem 0.95rem;
+          font-weight: 850;
+          padding: 0.68rem 0.95rem;
+          box-shadow: inset 0 1px 0 rgba(255,255,255,0.04);
         }
+
         .iconDanger {
           display: inline-flex;
           align-items: center;
           justify-content: center;
-          border-radius: 0.9rem;
+          border-radius: 1rem;
           border: 1px solid rgba(239, 68, 68, 0.25);
-          background: rgba(127, 29, 29, 0.15);
+          background: linear-gradient(180deg, rgba(127, 29, 29, 0.20), rgba(20, 5, 5, 0.35));
           color: #fca5a5;
-          padding: 0.55rem;
+          padding: 0.6rem;
         }
+
         .inputElite {
           width: 100%;
-          border-radius: 1rem;
-          border: 1px solid rgba(255,255,255,0.08);
-          background: rgba(9, 9, 11, 0.9);
+          border-radius: 1.15rem;
+          border: 1px solid rgba(251,191,36,0.12);
+          background: rgba(3, 6, 8, 0.92);
           color: #fafafa;
           outline: none;
-          padding: 0.75rem 0.85rem;
-          font-size: 0.9rem;
+          padding: 0.82rem 0.9rem;
+          font-size: 0.92rem;
+          box-shadow: inset 0 1px 0 rgba(255,255,255,0.035);
         }
-        .inputElite:focus { border-color: rgba(251,191,36,.55); box-shadow: 0 0 0 4px rgba(251,191,36,.12); }
-        .labelElite { color: #a1a1aa; font-size: .75rem; font-weight: 800; margin-bottom: .35rem; display:block; }
+
+        .inputElite::placeholder {
+          color: rgba(161,161,170,.62);
+        }
+
+        .inputElite:focus {
+          border-color: rgba(251,191,36,.58);
+          box-shadow: 0 0 0 4px rgba(251,191,36,.12), inset 0 1px 0 rgba(255,255,255,0.05);
+        }
+
+        .labelElite {
+          color: #b6b0a4;
+          font-size: .75rem;
+          font-weight: 900;
+          margin-bottom: .38rem;
+          display:block;
+          letter-spacing: .02em;
+        }
+
+        .premiumDivider {
+          height: 1px;
+          background: linear-gradient(90deg, transparent, rgba(251,191,36,.28), transparent);
+        }
+
+        button, input, select, textarea {
+          -webkit-tap-highlight-color: transparent;
+        }
       `}</style>
     </div>
   );
@@ -705,7 +773,7 @@ function AppMobileHeader({
 
   return (
     <>
-      <header className="sticky top-0 z-30 -mx-4 border-b border-white/10 bg-[#02070a]/95 px-4 pb-3 pt-3 backdrop-blur">
+      <header className="sticky top-0 z-30 -mx-4 border-b border-amber-400/10 bg-[#02070a]/92 px-4 pb-3 pt-3 shadow-[0_12px_35px_rgba(0,0,0,0.38)] backdrop-blur-xl">
         <div className="flex items-center justify-between">
           <div className="flex min-w-0 items-center gap-3">
             <button
@@ -873,12 +941,12 @@ function Header({ companyName, totals }: { companyName: string; totals: { earned
 
 function StatCard({ label, value, icon, highlight = false }: { label: string; value: string; icon: React.ReactNode; highlight?: boolean }) {
   return (
-    <div className={`blackCard p-4 ${highlight ? "border-amber-300/30" : ""}`}>
-      <div className="flex items-center justify-between">
-        <p className="text-xs font-black uppercase tracking-wider text-zinc-500">{label}</p>
-        <div className="rounded-xl border border-amber-400/20 bg-amber-400/10 p-2 text-amber-300">{icon}</div>
+    <div className={`blackCard p-4 ${highlight ? "border-amber-300/35 shadow-[0_18px_45px_rgba(251,191,36,0.10)]" : ""}`}>
+      <div className="relative z-10 flex items-center justify-between">
+        <p className="text-[11px] font-black uppercase tracking-[0.16em] text-zinc-500">{label}</p>
+        <div className="rounded-xl border border-amber-400/25 bg-amber-400/12 p-2 text-amber-300 shadow-[0_0_22px_rgba(251,191,36,0.10)]">{icon}</div>
       </div>
-      <p className="mt-3 text-2xl font-black tracking-tight">{value}</p>
+      <p className="relative z-10 mt-3 text-[1.7rem] font-black tracking-tight text-zinc-50">{value}</p>
     </div>
   );
 }
@@ -919,14 +987,18 @@ function Dashboard({
         </SectionTop>
         <div className="grid gap-3 sm:grid-cols-2">
           <button onClick={onGoEmployees} className="blackCard p-5 text-left transition active:scale-[.99]">
-            <UserPlus className="text-amber-400" />
-            <p className="mt-3 text-xl font-black">Employees</p>
-            <p className="text-sm text-zinc-500">Open worker cards and balances.</p>
+            <div className="relative z-10 flex h-12 w-12 items-center justify-center rounded-2xl border border-amber-400/20 bg-amber-400/10 text-amber-300">
+              <UserPlus />
+            </div>
+            <p className="relative z-10 mt-3 text-xl font-black">Employees</p>
+            <p className="relative z-10 text-sm text-zinc-500">Open worker cards and balances.</p>
           </button>
           <button onClick={onGoReports} className="blackCard p-5 text-left transition active:scale-[.99]">
-            <FileText className="text-amber-400" />
-            <p className="mt-3 text-xl font-black">Reports</p>
-            <p className="text-sm text-zinc-500">Weekly totals and export backup.</p>
+            <div className="relative z-10 flex h-12 w-12 items-center justify-center rounded-2xl border border-amber-400/20 bg-amber-400/10 text-amber-300">
+              <FileText />
+            </div>
+            <p className="relative z-10 mt-3 text-xl font-black">Reports</p>
+            <p className="relative z-10 text-sm text-zinc-500">Weekly totals and export backup.</p>
           </button>
         </div>
         <div className="blackCard p-4">
@@ -1476,12 +1548,12 @@ function BottomNav({ activeTab, setActiveTab }: { activeTab: ActiveTab; setActiv
     { tab: "more", label: "More", icon: <MoreVertical size={19} /> },
   ];
   return (
-    <nav className="fixed bottom-0 left-0 right-0 z-40 border-t border-amber-400/10 bg-[#070707]/95 px-2 py-2 backdrop-blur">
+    <nav className="fixed bottom-0 left-0 right-0 z-40 border-t border-amber-400/15 bg-[#050505]/95 px-2 py-2 shadow-[0_-18px_45px_rgba(0,0,0,0.55)] backdrop-blur-xl">
       <div className="mx-auto grid max-w-4xl grid-cols-6 gap-1">
         {items.map((item) => {
           const active = activeTab === item.tab;
           return (
-            <button key={item.tab} onClick={() => setActiveTab(item.tab)} className={`rounded-2xl px-1 py-2 text-[10px] font-black transition ${active ? "bg-amber-400 text-black" : "text-zinc-500 hover:bg-zinc-900 hover:text-zinc-200"}`}>
+            <button key={item.tab} onClick={() => setActiveTab(item.tab)} className={`rounded-2xl px-1 py-2 text-[10px] font-black transition ${active ? "bg-gradient-to-br from-amber-200 via-amber-400 to-amber-600 text-black shadow-[0_10px_25px_rgba(251,191,36,0.24)]" : "text-zinc-500 hover:bg-zinc-900 hover:text-zinc-200"}`}>
               <span className="mx-auto flex justify-center">{item.icon}</span>
               <span className="mt-1 block">{item.label}</span>
             </button>
