@@ -385,6 +385,14 @@ export default function PayrollProEliteBlackGoldX() {
       <div className="mx-auto max-w-6xl px-3 pb-28 pt-4 sm:px-6 lg:px-8">
         <Header companyName={state.companyName} totals={totals} />
 
+        <button
+          onClick={() => setShowJobForm(true)}
+          className="mt-4 flex w-full items-center justify-center gap-3 rounded-2xl bg-gradient-to-r from-emerald-500 to-green-500 px-5 py-4 text-lg font-black text-white shadow-[0_18px_40px_rgba(34,197,94,0.22)] transition active:scale-[.99] sm:text-xl"
+        >
+          <Plus size={26} /> Add Job
+        </button>
+        <p className="mt-2 text-center text-xs font-semibold text-zinc-500">Quickly add a new job, property, unit, pay, and photos.</p>
+
         <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
           <StatCard label="Week Earned" value={money(totals.earned)} icon={<Wallet size={19} />} />
           <StatCard label="Paid Out" value={money(totals.paid)} icon={<ShieldCheck size={19} />} />
@@ -417,9 +425,6 @@ export default function PayrollProEliteBlackGoldX() {
               />
             </div>
 
-            <button onClick={() => setShowJobForm(true)} className="goldButton">
-              <Plus size={18} /> Add Job
-            </button>
           </div>
           <p className="mt-2 text-xs text-zinc-500">
             Work week: <span className="text-amber-300">{week.start}</span> to <span className="text-amber-300">{week.end}</span>
