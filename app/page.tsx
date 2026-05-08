@@ -22,6 +22,9 @@ import {
   Check,
   RotateCcw,
   Lock,
+  Home,
+  Users,
+  ClipboardList,
 } from "lucide-react";
 
 // 1 STOP TURNOVER SPECIALIST PRO ELITE - BLACK GOLD X
@@ -399,7 +402,7 @@ export default function PayrollProEliteBlackGoldX() {
   return (
     <div className="min-h-screen bg-[#02070a] text-zinc-100 selection:bg-green-500 selection:text-black">
       <div className="mx-auto max-w-[520px] px-4 pb-28 pt-3">
-        <AppMobileHeader companyName={state.companyName} />
+        <AppMobileHeader companyName={state.companyName} activeTab={activeTab} setActiveTab={setActiveTab} />
 
         <WeekHero
           week={week}
@@ -675,21 +678,133 @@ export default function PayrollProEliteBlackGoldX() {
   );
 }
 
-function AppMobileHeader({ companyName }: { companyName: string }) {
+function AppMobileHeader({
+  companyName,
+  activeTab,
+  setActiveTab,
+}: {
+  companyName: string;
+  activeTab: ActiveTab;
+  setActiveTab: (tab: ActiveTab) => void;
+}) {
+  const [menuOpen, setMenuOpen] = useState(false);
+
+  const menuItems: { tab: ActiveTab; label: string; subtitle: string; icon: React.ReactNode }[] = [
+    { tab: "dashboard", label: "Home", subtitle: "Week summary and command center", icon: <Home size={20} /> },
+    { tab: "employees", label: "Workers", subtitle: "Employees, borrowed money, balances", icon: <Users size={20} /> },
+    { tab: "jobs", label: "Jobs", subtitle: "Saved jobs, notes, photos, pay", icon: <BriefcaseBusiness size={20} /> },
+    { tab: "properties", label: "Properties", subtitle: "Property dropdown list", icon: <Building2 size={20} /> },
+    { tab: "reports", label: "Reports", subtitle: "Payroll report and closeout", icon: <ClipboardList size={20} /> },
+    { tab: "more", label: "More", subtitle: "Backup, restore, and controls", icon: <MoreVertical size={20} /> },
+  ];
+
+  function goTo(tab: ActiveTab) {
+    setActiveTab(tab);
+    setMenuOpen(false);
+  }
+
   return (
-    <header className="flex items-center justify-between border-b border-white/10 pb-3">
-      <div className="flex items-center gap-3">
-        <button className="rounded-xl p-2 text-zinc-100"><span className="text-2xl leading-none">☰</span></button>
-        <div>
-          <h1 className="text-lg font-black leading-tight">1 Stop Payroll Pro</h1>
-          <p className="text-xs font-semibold text-zinc-400">Weekly Reset & Tracking</p>
+    <>
+      <header className="sticky top-0 z-30 -mx-4 border-b border-white/10 bg-[#02070a]/95 px-4 pb-3 pt-3 backdrop-blur">
+        <div className="flex items-center justify-between">
+          <div className="flex min-w-0 items-center gap-3">
+            <button
+              type="button"
+              aria-label="Open navigation menu"
+              onClick={() => setMenuOpen(true)}
+              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.04] text-zinc-100 shadow-lg transition active:scale-95"
+            >
+              <span className="text-2xl leading-none">☰</span>
+            </button>
+            <div className="min-w-0">
+              <h1 className="truncate text-lg font-black leading-tight">1 Stop Payroll Pro</h1>
+              <p className="truncate text-xs font-semibold text-zinc-400">Weekly Reset & Tracking</p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 text-zinc-100">
+            <button
+              type="button"
+              aria-label="Go to reports"
+              onClick={() => goTo("reports")}
+              className="flex h-10 w-10 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.04] transition active:scale-95"
+            >
+              <CalendarDays size={21} />
+            </button>
+            <button
+              type="button"
+              aria-label="Open more controls"
+              onClick={() => goTo("more")}
+              className="flex h-10 w-10 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.04] transition active:scale-95"
+            >
+              <MoreVertical size={21} />
+            </button>
+          </div>
         </div>
-      </div>
-      <div className="flex items-center gap-2 text-zinc-100">
-        <CalendarDays size={22} />
-        <MoreVertical size={22} />
-      </div>
-    </header>
+      </header>
+
+      {menuOpen && (
+        <div className="fixed inset-0 z-[60] bg-black/70 backdrop-blur-sm" onClick={() => setMenuOpen(false)}>
+          <aside
+            className="h-full w-[86%] max-w-[360px] overflow-y-auto border-r border-amber-400/15 bg-[#050607] p-4 shadow-2xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="mb-5 flex items-start justify-between gap-3 border-b border-white/10 pb-4">
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-[0.25em] text-amber-300">Navigation</p>
+                <h2 className="mt-1 text-xl font-black">1 Stop Payroll Pro</h2>
+                <p className="mt-1 text-xs font-semibold text-zinc-500">{companyName}</p>
+              </div>
+              <button
+                type="button"
+                aria-label="Close navigation menu"
+                onClick={() => setMenuOpen(false)}
+                className="flex h-10 w-10 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.04] text-zinc-100"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="space-y-2">
+              {menuItems.map((item) => {
+                const active = activeTab === item.tab;
+                return (
+                  <button
+                    key={item.tab}
+                    type="button"
+                    onClick={() => goTo(item.tab)}
+                    className={`flex w-full items-center gap-3 rounded-2xl border p-3 text-left transition active:scale-[.99] ${
+                      active
+                        ? "border-amber-400/35 bg-amber-400 text-black shadow-[0_12px_30px_rgba(251,191,36,0.22)]"
+                        : "border-white/10 bg-white/[0.035] text-zinc-100 hover:border-amber-400/25"
+                    }`}
+                  >
+                    <span className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl ${
+                      active ? "bg-black/10 text-black" : "border border-amber-400/15 bg-amber-400/10 text-amber-300"
+                    }`}>
+                      {item.icon}
+                    </span>
+                    <span className="min-w-0">
+                      <span className="block font-black">{item.label}</span>
+                      <span className={`mt-0.5 block text-xs font-semibold ${active ? "text-black/70" : "text-zinc-500"}`}>
+                        {item.subtitle}
+                      </span>
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="mt-5 rounded-3xl border border-amber-400/15 bg-amber-400/10 p-4">
+              <p className="text-sm font-black text-amber-200">Phase 1 Active</p>
+              <p className="mt-1 text-xs font-semibold leading-5 text-zinc-400">
+                Top hamburger menu is now connected to the same sections as the bottom tabs.
+              </p>
+            </div>
+          </aside>
+        </div>
+      )}
+    </>
   );
 }
 
