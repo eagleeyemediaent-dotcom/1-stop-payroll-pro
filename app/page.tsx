@@ -165,6 +165,22 @@ function getWeekRange(dateISO: string) {
   };
 }
 
+
+function addDaysISO(dateISO: string, days: number) {
+  const d = new Date(`${dateISO}T12:00:00`);
+  d.setDate(d.getDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
+function weekDisplay(startISO: string, endISO: string) {
+  const start = new Date(`${startISO}T12:00:00`);
+  const end = new Date(`${endISO}T12:00:00`);
+  const sameMonth = start.getMonth() === end.getMonth();
+  const startText = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" }).format(start);
+  const endText = new Intl.DateTimeFormat("en-US", sameMonth ? { day: "numeric", year: "numeric" } : { month: "short", day: "numeric", year: "numeric" }).format(end);
+  return `${startText} – ${endText}`;
+}
+
 function isWithinRange(date: string, start: string, end: string) {
   return date >= start && date <= end;
 }
@@ -381,40 +397,38 @@ export default function PayrollProEliteBlackGoldX() {
   }
 
   return (
-    <div className="min-h-screen bg-[#070707] text-zinc-100 selection:bg-amber-500 selection:text-black">
-      <div className="mx-auto max-w-6xl px-3 pb-28 pt-4 sm:px-6 lg:px-8">
-        <Header companyName={state.companyName} totals={totals} />
+    <div className="min-h-screen bg-[#02070a] text-zinc-100 selection:bg-green-500 selection:text-black">
+      <div className="mx-auto max-w-[520px] px-4 pb-28 pt-3">
+        <AppMobileHeader companyName={state.companyName} />
+
+        <WeekHero
+          week={week}
+          selectedWeek={selectedWeek}
+          setSelectedWeek={setSelectedWeek}
+        />
 
         <button
           onClick={() => setShowJobForm(true)}
-          className="mt-4 flex w-full items-center justify-center gap-3 rounded-2xl bg-gradient-to-r from-emerald-500 to-green-500 px-5 py-4 text-lg font-black text-white shadow-[0_18px_40px_rgba(34,197,94,0.22)] transition active:scale-[.99] sm:text-xl"
+          className="mt-4 flex w-full items-center justify-center gap-3 rounded-2xl bg-gradient-to-r from-green-400 to-green-600 px-5 py-4 text-xl font-black text-white shadow-[0_18px_40px_rgba(34,197,94,0.25)] transition active:scale-[.99]"
         >
-          <Plus size={26} /> Add Job
+          <Plus size={30} /> Add Job
         </button>
-        <p className="mt-2 text-center text-xs font-semibold text-zinc-500">Quickly add a new job, property, unit, pay, and photos.</p>
+        <p className="mt-3 text-center text-xs font-semibold text-zinc-500">Quickly add a new job, property, or unit.</p>
 
-        <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+        <div className="mt-6 flex items-center justify-between">
+          <h2 className="text-sm font-black uppercase tracking-wide text-zinc-300">Week Summary</h2>
+          <p className="text-sm font-black text-green-400">✣ Clean Week</p>
+        </div>
+
+        <div className="mt-3 grid grid-cols-2 gap-3">
           <StatCard label="Week Earned" value={money(totals.earned)} icon={<Wallet size={19} />} />
           <StatCard label="Paid Out" value={money(totals.paid)} icon={<ShieldCheck size={19} />} />
           <StatCard label="Borrowed" value={money(totals.borrowed || 0)} icon={<Wallet size={19} />} />
           <StatCard label="Still Owed" value={money(totals.owed)} icon={<Lock size={19} />} highlight />
-          <StatCard label="Jobs Today" value={String(totals.jobsToday)} icon={<BriefcaseBusiness size={19} />} />
         </div>
 
-        <div className="sticky top-0 z-20 -mx-3 mt-4 border-y border-amber-400/10 bg-[#070707]/90 px-3 py-3 backdrop-blur sm:mx-0 sm:rounded-3xl sm:border sm:px-4">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex items-center gap-2 rounded-2xl border border-zinc-800 bg-zinc-950 px-3 py-2">
-              <CalendarDays size={18} className="text-amber-400" />
-              <input
-                type="date"
-                value={selectedWeek}
-                onClick={(e) => e.currentTarget.showPicker?.()}
-                onFocus={(e) => e.currentTarget.showPicker?.()}
-                onChange={(e) => setSelectedWeek(e.target.value)}
-                className="w-full cursor-pointer bg-transparent text-sm font-semibold text-zinc-100 outline-none"
-              />
-            </div>
-
+        <div className="sticky top-0 z-20 -mx-4 mt-4 border-y border-white/10 bg-[#02070a]/95 px-4 py-3 backdrop-blur">
+          <div className="flex flex-col gap-3">
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" size={18} />
               <input
@@ -658,6 +672,65 @@ export default function PayrollProEliteBlackGoldX() {
         .labelElite { color: #a1a1aa; font-size: .75rem; font-weight: 800; margin-bottom: .35rem; display:block; }
       `}</style>
     </div>
+  );
+}
+
+function AppMobileHeader({ companyName }: { companyName: string }) {
+  return (
+    <header className="flex items-center justify-between border-b border-white/10 pb-3">
+      <div className="flex items-center gap-3">
+        <button className="rounded-xl p-2 text-zinc-100"><span className="text-2xl leading-none">☰</span></button>
+        <div>
+          <h1 className="text-lg font-black leading-tight">1 Stop Payroll Pro</h1>
+          <p className="text-xs font-semibold text-zinc-400">Weekly Reset & Tracking</p>
+        </div>
+      </div>
+      <div className="flex items-center gap-2 text-zinc-100">
+        <CalendarDays size={22} />
+        <MoreVertical size={22} />
+      </div>
+    </header>
+  );
+}
+
+function WeekHero({
+  week,
+  selectedWeek,
+  setSelectedWeek,
+}: {
+  week: { start: string; end: string };
+  selectedWeek: string;
+  setSelectedWeek: (value: string) => void;
+}) {
+  return (
+    <section className="mt-4 border-b border-white/10 pb-4">
+      <div className="flex items-center justify-between gap-3">
+        <button
+          className="flex h-12 w-12 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-white"
+          onClick={() => setSelectedWeek(addDaysISO(selectedWeek, -7))}
+        >
+          <ChevronDown className="rotate-90" size={24} />
+        </button>
+        <label className="flex flex-1 cursor-pointer items-center justify-center gap-2 rounded-2xl px-2 py-3 text-center">
+          <CalendarDays size={22} />
+          <span className="text-lg font-black">{weekDisplay(week.start, week.end)}</span>
+          <input
+            type="date"
+            value={selectedWeek}
+            onClick={(e) => e.currentTarget.showPicker?.()}
+            onFocus={(e) => e.currentTarget.showPicker?.()}
+            onChange={(e) => setSelectedWeek(e.target.value)}
+            className="sr-only"
+          />
+        </label>
+        <button
+          className="flex h-12 w-12 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-white"
+          onClick={() => setSelectedWeek(addDaysISO(selectedWeek, 7))}
+        >
+          <ChevronDown className="-rotate-90" size={24} />
+        </button>
+      </div>
+    </section>
   );
 }
 
