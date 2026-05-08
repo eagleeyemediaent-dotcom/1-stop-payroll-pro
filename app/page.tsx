@@ -51,6 +51,7 @@ type Employee = {
   defaultRate: number;
   notes: string;
   borrowed?: number;
+  borrowedByWeek?: Record<string, number>;
   active: boolean;
 };
 
@@ -59,6 +60,7 @@ type JobEntry = {
   employeeId: string;
   date: string;
   property: string;
+  unitNumber?: string;
   jobTypes: string[];
   customWork: string;
   pay: number;
@@ -126,6 +128,27 @@ const starterState: AppState = {
 function safeNumber(value: string | number): number {
   const n = typeof value === "number" ? value : Number(value);
   return Number.isFinite(n) ? n : 0;
+}
+
+
+
+function getBorrowedForWeek(employee: Employee, weekStart: string): number {
+  return safeNumber(employee.borrowedByWeek?.[weekStart] ?? 0);
+}
+
+function setBorrowedForWeek(employee: Employee, weekStart: string, amount: number): Employee {
+  return {
+    ...employee,
+    borrowedByWeek: {
+      ...(employee.borrowedByWeek || {}),
+      [weekStart]: safeNumber(amount),
+    },
+  };
+}
+
+function propertyWithUnit(job: Pick<JobEntry, "property" | "unitNumber">) {
+  const unit = (job.unitNumber || "").trim();
+  return unit ? `${job.property} — Unit ${unit}` : job.property;
 }
 
 function getWeekRange(dateISO: string) {
@@ -202,7 +225,7 @@ export default function PayrollProEliteBlackGoldX() {
         setState({
           companyName: parsed.companyName || starterState.companyName,
           employees: Array.isArray(parsed.employees)
-            ? parsed.employees.map((employee) => ({ ...employee, borrowed: safeNumber(employee.borrowed || 0) }))
+            ? parsed.employees.map((employee) => ({ ...employee, borrowed: safeNumber(employee.borrowed || 0), borrowedByWeek: employee.borrowedByWeek || {} }))
             : starterState.employees,
           jobs: Array.isArray(parsed.jobs) ? parsed.jobs : [],
           properties: Array.isArray(parsed.properties) ? parsed.properties : defaultProperties,
@@ -256,22 +279,22 @@ export default function PayrollProEliteBlackGoldX() {
   const totals = useMemo(() => {
     const earned = weekJobs.reduce((sum, job) => sum + safeNumber(job.pay), 0);
     const paid = weekJobs.reduce((sum, job) => sum + safeNumber(job.paidAmount), 0);
-    const borrowed = state.employees.reduce((sum, employee) => sum + safeNumber(employee.borrowed || 0), 0);
+    const borrowed = state.employees.reduce((sum, employee) => sum + getBorrowedForWeek(employee, week.start), 0);
     const owed = Math.max(earned - paid - borrowed, 0);
     const jobsToday = state.jobs.filter((job) => job.date === todayISO()).length;
     return { earned, paid, borrowed, owed, jobsToday };
-  }, [weekJobs, state.jobs, state.employees]);
+  }, [weekJobs, state.jobs, state.employees, week.start]);
 
   const employeeTotals = useMemo(() => {
     return state.employees.map((employee) => {
       const jobs = weekJobs.filter((job) => job.employeeId === employee.id);
       const earned = jobs.reduce((sum, job) => sum + job.pay, 0);
       const paid = jobs.reduce((sum, job) => sum + job.paidAmount, 0);
-      const borrowed = safeNumber(employee.borrowed || 0);
+      const borrowed = getBorrowedForWeek(employee, week.start);
       const owed = Math.max(earned - paid - borrowed, 0);
       return { employee, jobs, earned, paid, borrowed, owed };
     });
-  }, [state.employees, weekJobs]);
+  }, [state.employees, weekJobs, week.start]);
 
   function upsertEmployee(employee: Employee) {
     setState((prev) => {
@@ -335,7 +358,7 @@ export default function PayrollProEliteBlackGoldX() {
         }
         setState({
           companyName: parsed.companyName || starterState.companyName,
-          employees: parsed.employees.map((employee) => ({ ...employee, borrowed: safeNumber(employee.borrowed || 0) })),
+          employees: parsed.employees.map((employee) => ({ ...employee, borrowed: safeNumber(employee.borrowed || 0), borrowedByWeek: employee.borrowedByWeek || {} })),
           jobs: parsed.jobs,
           properties: Array.isArray(parsed.properties) ? parsed.properties : defaultProperties,
           jobTypeOptions: Array.isArray(parsed.jobTypeOptions) ? parsed.jobTypeOptions : defaultJobTypes,
@@ -435,6 +458,7 @@ export default function PayrollProEliteBlackGoldX() {
                       onToggle={() => setExpandedEmployeeId(expandedEmployeeId === employee.id ? null : employee.id)}
                       onDelete={() => setConfirmDelete({ type: "employee", id: employee.id })}
                       onSave={upsertEmployee}
+                      weekStart={week.start}
                     />
                   );
                 })}
@@ -648,7 +672,7 @@ function Header({ companyName, totals }: { companyName: string; totals: { earned
       </div>
       <div className="mt-5 h-px bg-gradient-to-r from-transparent via-amber-400/60 to-transparent" />
       <p className="mt-4 text-sm text-zinc-400">
-        Fast job entries, clean worker totals, safer delete controls, and backup-ready data.
+        Fast job entries, clean worker totals, automatic new-week totals, safer delete controls, and backup-ready data.
       </p>
     </header>
   );
@@ -751,7 +775,7 @@ function JobMini({ job, employee }: { job: JobEntry; employee?: Employee }) {
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="font-black">{employee?.name || "Unknown Employee"}</p>
-          <p className="text-xs text-zinc-500">{formatJobDate(job.date)} • {job.property}</p>
+          <p className="text-xs text-zinc-500">{formatJobDate(job.date)} • {propertyWithUnit(job)}</p>
         </div>
         <p className="font-black text-amber-300">{money(job.pay)}</p>
       </div>
@@ -767,6 +791,7 @@ function EmployeeCard({
   onToggle,
   onDelete,
   onSave,
+  weekStart,
 }: {
   employee: Employee;
   totals?: { jobs: JobEntry[]; earned: number; paid: number; borrowed: number; owed: number };
@@ -774,11 +799,14 @@ function EmployeeCard({
   onToggle: () => void;
   onDelete: () => void;
   onSave: (employee: Employee) => void;
+  weekStart: string;
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(employee);
 
   useEffect(() => setDraft(employee), [employee]);
+
+  const currentBorrowed = getBorrowedForWeek(employee, weekStart);
 
   return (
     <div className="blackCard p-4">
@@ -800,7 +828,7 @@ function EmployeeCard({
       <div className="mt-4 grid grid-cols-4 gap-2 text-center">
         <BalancePill label="Earned" value={money(totals?.earned || 0)} />
         <BalancePill label="Paid" value={money(totals?.paid || 0)} />
-        <BalancePill label="Borrowed" value={money(totals?.borrowed || 0)} />
+        <BalancePill label="Borrowed" value={money(currentBorrowed)} />
         <BalancePill label="Owed" value={money(totals?.owed || 0)} gold />
       </div>
 
@@ -810,9 +838,9 @@ function EmployeeCard({
             <div className="space-y-3">
               <Field label="Name"><input className="inputElite" value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} /></Field>
               <Field label="Phone"><input className="inputElite" value={draft.phone} onChange={(e) => setDraft({ ...draft, phone: e.target.value })} /></Field>
-              <Field label="Default Rate"><input className="inputElite" type="number" value={draft.defaultRate} onChange={(e) => setDraft({ ...draft, defaultRate: safeNumber(e.target.value) })} /></Field>
+              <Field label="Default Rate"><MoneyInput value={draft.defaultRate} onValueChange={(value) => setDraft({ ...draft, defaultRate: value })} /></Field>
               <Field label="Notes"><textarea className="inputElite min-h-20" value={draft.notes} onChange={(e) => setDraft({ ...draft, notes: e.target.value })} /></Field>
-              <Field label="Borrowed Advance"><input className="inputElite" type="number" value={draft.borrowed || 0} onChange={(e) => setDraft({ ...draft, borrowed: safeNumber(e.target.value) })} /></Field>
+              <Field label="Borrowed Advance"><MoneyInput value={getBorrowedForWeek(draft, weekStart)} onValueChange={(value) => setDraft(setBorrowedForWeek(draft, weekStart, value))} /></Field>
               <div className="flex gap-2">
                 <button className="goldButton flex-1" onClick={() => { onSave(draft); setEditing(false); }}><Check size={18} /> Save</button>
                 <button className="darkButton" onClick={() => setEditing(false)}><X size={18} /></button>
@@ -822,11 +850,9 @@ function EmployeeCard({
             <>
               <p className="text-sm text-zinc-400">{employee.notes || "No employee notes saved."}</p>
               <Field label="Borrowed Advance">
-                <input
-                  className="inputElite"
-                  type="number"
-                  value={employee.borrowed || 0}
-                  onChange={(e) => onSave({ ...employee, borrowed: safeNumber(e.target.value) })}
+                <MoneyInput
+                  value={currentBorrowed}
+                  onValueChange={(value) => onSave(setBorrowedForWeek(employee, weekStart, value))}
                   placeholder="0.00"
                 />
               </Field>
@@ -870,7 +896,7 @@ function JobRow({ job, employees, employee, onDelete, onUpdate }: { job: JobEntr
         <div className="flex items-start justify-between gap-3">
           <div>
             <p className="font-black">{employee?.name || "Unknown Employee"}</p>
-            <p className="text-xs text-zinc-500">{formatJobDate(job.date)} • {job.property}</p>
+            <p className="text-xs text-zinc-500">{formatJobDate(job.date)} • {propertyWithUnit(job)}</p>
           </div>
           <div className="text-right">
             <p className="font-black text-amber-300">{money(job.pay)}</p>
@@ -907,9 +933,10 @@ function JobRow({ job, employees, employee, onDelete, onUpdate }: { job: JobEntr
               </select>
             </Field>
             <Field label={`Edit Job Date — ${formatJobDate(job.date)}`}><input className="inputElite cursor-pointer" type="date" value={job.date} onClick={(e) => e.currentTarget.showPicker?.()} onFocus={(e) => e.currentTarget.showPicker?.()} onChange={(e) => onUpdate({ ...job, date: e.target.value })} /></Field>
-            <Field label="Pay"><input className="inputElite" type="number" value={job.pay} onChange={(e) => onUpdate({ ...job, pay: safeNumber(e.target.value), status: statusFrom(safeNumber(e.target.value), job.paidAmount) })} /></Field>
-            <Field label="Paid"><input className="inputElite" type="number" value={job.paidAmount} onChange={(e) => onUpdate({ ...job, paidAmount: safeNumber(e.target.value), status: statusFrom(job.pay, safeNumber(e.target.value)) })} /></Field>
+            <Field label="Pay"><MoneyInput value={job.pay} onValueChange={(value) => onUpdate({ ...job, pay: value, status: statusFrom(value, job.paidAmount) })} /></Field>
+            <Field label="Paid"><MoneyInput value={job.paidAmount} onValueChange={(value) => onUpdate({ ...job, paidAmount: value, status: statusFrom(job.pay, value) })} /></Field>
           </div>
+          <Field label="Unit # optional"><input className="inputElite" value={job.unitNumber || ""} onChange={(e) => onUpdate({ ...job, unitNumber: e.target.value })} placeholder="Example: 204" /></Field>
           <Field label="Edit Custom Work"><input className="inputElite" value={job.customWork} onChange={(e) => onUpdate({ ...job, customWork: e.target.value })} placeholder="Edit custom work description..." /></Field>
           <Field label="Job Photos">
             <div className="rounded-2xl border border-dashed border-zinc-800 bg-black/30 p-4">
@@ -1011,7 +1038,7 @@ function Reports({ totals, employeeTotals, jobs, employeesById, onCloseWeek, onE
           {jobs.map((job) => (
             <div key={job.id} className="rounded-2xl border border-zinc-800 bg-black/30 p-3 text-sm">
               <div className="flex justify-between gap-3"><b>{employeesById.get(job.employeeId)?.name || "Unknown"}</b><b className="text-amber-300">{money(job.pay)}</b></div>
-              <p className="text-zinc-500">{formatJobDate(job.date)} • {job.property}</p>
+              <p className="text-zinc-500">{formatJobDate(job.date)} • {propertyWithUnit(job)}</p>
             </div>
           ))}
           {jobs.length === 0 && <EmptyText text="No job report yet." />}
@@ -1053,6 +1080,7 @@ function JobModal({ employees, properties, jobTypeOptions, onAddProperty, onClos
   const [employeeId, setEmployeeId] = useState(employees[0]?.id || "");
   const [date, setDate] = useState(todayISO());
   const [property, setProperty] = useState(properties[0] || "");
+  const [unitNumber, setUnitNumber] = useState("");
   const [selectedTypes, setSelectedTypes] = useState<string[]>([]);
   const [customWork, setCustomWork] = useState("");
   const [pay, setPay] = useState(0);
@@ -1096,6 +1124,7 @@ function JobModal({ employees, properties, jobTypeOptions, onAddProperty, onClos
               <option value="__add_new_property__">+ Add New Property</option>
             </select>
           </Field>
+          <Field label="Unit # optional"><input className="inputElite" value={unitNumber} onChange={(e) => setUnitNumber(e.target.value)} placeholder="Example: 204" /></Field>
         </div>
         <Field label="Job Types - choose multiple">
           <div className="flex flex-wrap gap-2">
@@ -1106,8 +1135,8 @@ function JobModal({ employees, properties, jobTypeOptions, onAddProperty, onClos
         </Field>
         <Field label="Custom Work"><input className="inputElite" value={customWork} onChange={(e) => setCustomWork(e.target.value)} placeholder="Write your own work detail" /></Field>
         <div className="grid grid-cols-2 gap-3">
-          <Field label="Pay"><input className="inputElite" type="number" value={pay} onChange={(e) => setPay(safeNumber(e.target.value))} /></Field>
-          <Field label="Paid Now"><input className="inputElite" type="number" value={paidAmount} onChange={(e) => setPaidAmount(safeNumber(e.target.value))} /></Field>
+          <Field label="Pay"><MoneyInput value={pay} onValueChange={setPay} /></Field>
+          <Field label="Paid Now"><MoneyInput value={paidAmount} onValueChange={setPaidAmount} /></Field>
         </div>
         <Field label="Notes"><textarea className="inputElite min-h-20" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Notes, unit number, extra details..." /></Field>
         <div className="rounded-2xl border border-dashed border-zinc-800 bg-black/30 p-4 text-center text-sm text-zinc-500">
@@ -1149,13 +1178,52 @@ function JobModal({ employees, properties, jobTypeOptions, onAddProperty, onClos
           className="goldButton w-full"
           onClick={() => {
             if (!employeeId) return alert("Add an employee first.");
-            onSave({ id: uid(), employeeId, date, property, jobTypes: selectedTypes, customWork, pay, paidAmount, status: statusFrom(pay, paidAmount), notes, photos });
+            onSave({ id: uid(), employeeId, date, property, unitNumber: unitNumber.trim(), jobTypes: selectedTypes, customWork, pay, paidAmount, status: statusFrom(pay, paidAmount), notes, photos });
           }}
         >
           <Check size={18} /> Save Job
         </button>
       </div>
     </Modal>
+  );
+}
+
+
+function MoneyInput({
+  value,
+  onValueChange,
+  placeholder = "0.00",
+}: {
+  value: number;
+  onValueChange: (value: number) => void;
+  placeholder?: string;
+}) {
+  const [text, setText] = useState(value === 0 ? "" : String(value));
+
+  useEffect(() => {
+    setText(value === 0 ? "" : String(value));
+  }, [value]);
+
+  return (
+    <input
+      className="inputElite"
+      type="number"
+      inputMode="decimal"
+      value={text}
+      placeholder={placeholder}
+      onFocus={(e) => e.currentTarget.select()}
+      onChange={(e) => {
+        const next = e.target.value;
+        setText(next);
+        onValueChange(next === "" ? 0 : safeNumber(next));
+      }}
+      onBlur={() => {
+        if (text === "" || text === ".") {
+          setText("");
+          onValueChange(0);
+        }
+      }}
+    />
   );
 }
 
