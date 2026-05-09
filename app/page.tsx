@@ -25,6 +25,11 @@ import {
   Home,
   Users,
   ClipboardList,
+  CircleDollarSign,
+  ArrowDown,
+  CreditCard,
+  Minus,
+  Filter,
 } from "lucide-react";
 
 // 1 STOP TURNOVER SPECIALIST PRO ELITE - BLACK GOLD X
@@ -34,7 +39,14 @@ import {
 const STORAGE_KEY = "oneStopPayrollProEliteBlackGoldX_v1";
 
 const appShellClass =
-  "min-h-screen bg-[radial-gradient(circle_at_top_left,rgba(251,191,36,0.10),transparent_34%),radial-gradient(circle_at_top_right,rgba(34,197,94,0.08),transparent_30%),linear-gradient(180deg,#02070a_0%,#030303_45%,#050505_100%)] text-zinc-100 selection:bg-amber-400 selection:text-black";
+  "min-h-screen bg-[radial-gradient(circle_at_top_left,rgba(34,197,94,0.10),transparent_34%),radial-gradient(circle_at_top_right,rgba(59,130,246,0.08),transparent_30%),linear-gradient(180deg,#02070a_0%,#030303_45%,#050505_100%)] text-zinc-100 selection:bg-green-400 selection:text-black";
+
+const statStyles = {
+  earned: "from-emerald-500 to-green-600 text-white shadow-[0_0_24px_rgba(34,197,94,0.28)]",
+  paid: "from-blue-400 to-blue-600 text-white shadow-[0_0_24px_rgba(59,130,246,0.28)]",
+  borrowed: "from-violet-400 to-purple-600 text-white shadow-[0_0_24px_rgba(168,85,247,0.28)]",
+  owed: "from-amber-400 to-orange-500 text-white shadow-[0_0_24px_rgba(249,115,22,0.28)]",
+};
 
 const money = (value: number) =>
   new Intl.NumberFormat("en-US", {
@@ -415,25 +427,25 @@ export default function PayrollProEliteBlackGoldX() {
 
         <button
           onClick={() => setShowJobForm(true)}
-          className="mt-5 flex w-full items-center justify-center gap-3 rounded-[1.35rem] border border-amber-300/25 bg-gradient-to-r from-[#f8d46b] via-[#e5a72f] to-[#9d6510] px-5 py-4 text-xl font-black text-black shadow-[0_20px_45px_rgba(251,191,36,0.22)] transition active:scale-[.99]"
+          className="mt-5 flex w-full items-center justify-center gap-3 rounded-[1.15rem] border border-green-300/20 bg-gradient-to-r from-green-500 to-green-600 px-5 py-4 text-xl font-black text-white shadow-[0_20px_45px_rgba(34,197,94,0.24)] transition active:scale-[.99]"
         >
           <Plus size={30} /> Add Job
         </button>
-        <p className="mt-3 text-center text-xs font-semibold text-amber-100/45">Quickly add a new job, property, or unit.</p>
+        <p className="mt-3 text-center text-xs font-semibold text-zinc-500">Quickly add a new job, property, or unit.</p>
 
         <div className="mt-6 flex items-center justify-between">
           <h2 className="text-sm font-black uppercase tracking-wide text-zinc-300">Week Summary</h2>
-          <p className="rounded-full border border-amber-400/15 bg-amber-400/10 px-3 py-1 text-xs font-black text-amber-300">✣ Clean Week</p>
+          <p className="px-1 text-xs font-black text-green-400">✣ Clean Week</p>
         </div>
 
         <div className="mt-3 grid grid-cols-2 gap-3">
-          <StatCard label="Week Earned" value={money(totals.earned)} icon={<Wallet size={19} />} />
-          <StatCard label="Paid Out" value={money(totals.paid)} icon={<ShieldCheck size={19} />} />
-          <StatCard label="Borrowed" value={money(totals.borrowed || 0)} icon={<Wallet size={19} />} />
-          <StatCard label="Still Owed" value={money(totals.owed)} icon={<Lock size={19} />} highlight />
+          <StatCard label="Week Earned" value={money(totals.earned)} description="Total Earned This Week" icon={<CircleDollarSign size={20} />} variant="earned" />
+          <StatCard label="Paid Out" value={money(totals.paid)} description="Total Paid This Week" icon={<ArrowDown size={20} />} variant="paid" />
+          <StatCard label="Borrowed" value={money(totals.borrowed || 0)} description="Total Borrowed This Week" icon={<CreditCard size={20} />} variant="borrowed" />
+          <StatCard label="Still Owed" value={money(totals.owed)} description="What’s Left to Pay" icon={<Minus size={20} />} variant="owed" />
         </div>
 
-        <div className="sticky top-[68px] z-20 -mx-4 mt-5 border-y border-amber-400/10 bg-[#02070a]/90 px-4 py-3 shadow-[0_18px_40px_rgba(0,0,0,0.35)] backdrop-blur-xl">
+        <div className="sticky top-[68px] z-20 -mx-4 mt-5 border-y border-white/10 bg-[#02070a]/90 px-4 py-3 shadow-[0_18px_40px_rgba(0,0,0,0.35)] backdrop-blur-xl">
           <div className="flex flex-col gap-3">
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" size={18} />
@@ -441,13 +453,13 @@ export default function PayrollProEliteBlackGoldX() {
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Search employee, property, job..."
-                className="w-full rounded-2xl border border-zinc-800 bg-zinc-950 py-2 pl-10 pr-3 text-sm outline-none ring-amber-400/40 placeholder:text-zinc-500 focus:border-amber-400/60 focus:ring-4"
+                className="w-full rounded-2xl border border-zinc-800 bg-zinc-950 py-2 pl-10 pr-3 text-sm outline-none ring-amber-400/40 placeholder:text-zinc-500 focus:border-green-400/60 focus:ring-4"
               />
             </div>
 
           </div>
           <p className="mt-2 text-xs text-zinc-500">
-            Work week: <span className="text-amber-300">{week.start}</span> to <span className="text-amber-300">{week.end}</span>
+            Work week: <span className="text-green-400">{week.start}</span> to <span className="text-green-400">{week.end}</span>
           </p>
         </div>
 
@@ -622,26 +634,21 @@ export default function PayrollProEliteBlackGoldX() {
       )}
 
       <style jsx global>{`
-        html {
-          background: #02070a;
-        }
-
-        body {
+        html, body {
           background: #02070a;
         }
 
         .blackCard {
           position: relative;
           overflow: hidden;
-          border: 1px solid rgba(251, 191, 36, 0.14);
+          border: 1px solid rgba(148, 163, 184, 0.13);
           background:
-            linear-gradient(145deg, rgba(255,255,255,0.045), rgba(255,255,255,0.015)),
-            radial-gradient(circle at 15% 0%, rgba(251,191,36,0.10), transparent 30%),
-            linear-gradient(180deg, rgba(24, 24, 27, 0.92), rgba(5, 5, 6, 0.98));
-          border-radius: 1.65rem;
+            radial-gradient(circle at 0% 0%, rgba(34,197,94,0.055), transparent 35%),
+            linear-gradient(145deg, rgba(22, 31, 38, 0.92), rgba(7, 11, 14, 0.98));
+          border-radius: 0.95rem;
           box-shadow:
-            0 20px 55px rgba(0, 0, 0, 0.46),
-            inset 0 1px 0 rgba(255,255,255,0.055);
+            0 18px 45px rgba(0, 0, 0, 0.42),
+            inset 0 1px 0 rgba(255,255,255,0.045);
         }
 
         .blackCard::before {
@@ -650,8 +657,8 @@ export default function PayrollProEliteBlackGoldX() {
           position: absolute;
           inset: 0;
           border-radius: inherit;
-          background: linear-gradient(135deg, rgba(255,255,255,0.06), transparent 38%);
-          opacity: .7;
+          background: linear-gradient(135deg, rgba(255,255,255,0.045), transparent 40%);
+          opacity: .55;
         }
 
         .goldButton {
@@ -659,19 +666,19 @@ export default function PayrollProEliteBlackGoldX() {
           align-items: center;
           justify-content: center;
           gap: 0.5rem;
-          border-radius: 1.15rem;
-          border: 1px solid rgba(255, 244, 190, 0.22);
-          background: linear-gradient(135deg, #ffe08a 0%, #f4b83e 45%, #9f6410 100%);
-          color: #09090b;
+          border-radius: 0.95rem;
+          border: 1px solid rgba(74, 222, 128, 0.25);
+          background: linear-gradient(135deg, #4ade80 0%, #22c55e 50%, #16a34a 100%);
+          color: #ffffff;
           font-weight: 950;
           padding: 0.72rem 1rem;
-          box-shadow: 0 14px 34px rgba(251, 191, 36, 0.22), inset 0 1px 0 rgba(255,255,255,0.35);
+          box-shadow: 0 14px 34px rgba(34, 197, 94, 0.22), inset 0 1px 0 rgba(255,255,255,0.20);
           transition: transform .15s ease, filter .15s ease, box-shadow .15s ease;
         }
 
         .goldButton:hover {
           filter: brightness(1.05);
-          box-shadow: 0 18px 42px rgba(251, 191, 36, 0.28), inset 0 1px 0 rgba(255,255,255,0.38);
+          box-shadow: 0 18px 42px rgba(34, 197, 94, 0.28), inset 0 1px 0 rgba(255,255,255,0.25);
         }
 
         .goldButton:active {
@@ -683,9 +690,9 @@ export default function PayrollProEliteBlackGoldX() {
           align-items: center;
           justify-content: center;
           gap: 0.45rem;
-          border-radius: 1.1rem;
-          border: 1px solid rgba(251,191,36,0.12);
-          background: linear-gradient(180deg, rgba(39,39,42,0.92), rgba(9,9,11,0.96));
+          border-radius: 0.95rem;
+          border: 1px solid rgba(148,163,184,0.13);
+          background: linear-gradient(180deg, rgba(25,33,39,0.94), rgba(7,10,12,0.96));
           color: #f4f4f5;
           font-weight: 850;
           padding: 0.68rem 0.95rem;
@@ -696,7 +703,7 @@ export default function PayrollProEliteBlackGoldX() {
           display: inline-flex;
           align-items: center;
           justify-content: center;
-          border-radius: 1rem;
+          border-radius: 0.9rem;
           border: 1px solid rgba(239, 68, 68, 0.25);
           background: linear-gradient(180deg, rgba(127, 29, 29, 0.20), rgba(20, 5, 5, 0.35));
           color: #fca5a5;
@@ -705,9 +712,9 @@ export default function PayrollProEliteBlackGoldX() {
 
         .inputElite {
           width: 100%;
-          border-radius: 1.15rem;
-          border: 1px solid rgba(251,191,36,0.12);
-          background: rgba(3, 6, 8, 0.92);
+          border-radius: 0.95rem;
+          border: 1px solid rgba(148,163,184,0.14);
+          background: rgba(3, 8, 10, 0.92);
           color: #fafafa;
           outline: none;
           padding: 0.82rem 0.9rem;
@@ -720,12 +727,12 @@ export default function PayrollProEliteBlackGoldX() {
         }
 
         .inputElite:focus {
-          border-color: rgba(251,191,36,.58);
-          box-shadow: 0 0 0 4px rgba(251,191,36,.12), inset 0 1px 0 rgba(255,255,255,0.05);
+          border-color: rgba(34,197,94,.58);
+          box-shadow: 0 0 0 4px rgba(34,197,94,.12), inset 0 1px 0 rgba(255,255,255,0.05);
         }
 
         .labelElite {
-          color: #b6b0a4;
+          color: #a1a1aa;
           font-size: .75rem;
           font-weight: 900;
           margin-bottom: .38rem;
@@ -735,7 +742,7 @@ export default function PayrollProEliteBlackGoldX() {
 
         .premiumDivider {
           height: 1px;
-          background: linear-gradient(90deg, transparent, rgba(251,191,36,.28), transparent);
+          background: linear-gradient(90deg, transparent, rgba(34,197,94,.25), transparent);
         }
 
         button, input, select, textarea {
@@ -773,7 +780,7 @@ function AppMobileHeader({
 
   return (
     <>
-      <header className="sticky top-0 z-30 -mx-4 border-b border-amber-400/10 bg-[#02070a]/92 px-4 pb-3 pt-3 shadow-[0_12px_35px_rgba(0,0,0,0.38)] backdrop-blur-xl">
+      <header className="sticky top-0 z-30 -mx-4 border-b border-white/10 bg-[#02070a]/92 px-4 pb-3 pt-3 shadow-[0_12px_35px_rgba(0,0,0,0.38)] backdrop-blur-xl">
         <div className="flex items-center justify-between">
           <div className="flex min-w-0 items-center gap-3">
             <button
@@ -814,12 +821,12 @@ function AppMobileHeader({
       {menuOpen && (
         <div className="fixed inset-0 z-[60] bg-black/70 backdrop-blur-sm" onClick={() => setMenuOpen(false)}>
           <aside
-            className="h-full w-[86%] max-w-[360px] overflow-y-auto border-r border-amber-400/15 bg-[#050607] p-4 shadow-2xl"
+            className="h-full w-[86%] max-w-[360px] overflow-y-auto border-r border-white/10 bg-[#050607] p-4 shadow-2xl"
             onClick={(event) => event.stopPropagation()}
           >
             <div className="mb-5 flex items-start justify-between gap-3 border-b border-white/10 pb-4">
               <div>
-                <p className="text-[10px] font-black uppercase tracking-[0.25em] text-amber-300">Navigation</p>
+                <p className="text-[10px] font-black uppercase tracking-[0.25em] text-green-400">Navigation</p>
                 <h2 className="mt-1 text-xl font-black">1 Stop Payroll Pro</h2>
                 <p className="mt-1 text-xs font-semibold text-zinc-500">{companyName}</p>
               </div>
@@ -843,12 +850,12 @@ function AppMobileHeader({
                     onClick={() => goTo(item.tab)}
                     className={`flex w-full items-center gap-3 rounded-2xl border p-3 text-left transition active:scale-[.99] ${
                       active
-                        ? "border-amber-400/35 bg-amber-400 text-black shadow-[0_12px_30px_rgba(251,191,36,0.22)]"
-                        : "border-white/10 bg-white/[0.035] text-zinc-100 hover:border-amber-400/25"
+                        ? "border-green-400/35 bg-green-500 text-black shadow-[0_12px_30px_rgba(34,197,94,0.22)]"
+                        : "border-white/10 bg-white/[0.035] text-zinc-100 hover:border-green-400/25"
                     }`}
                   >
                     <span className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl ${
-                      active ? "bg-black/10 text-black" : "border border-amber-400/15 bg-amber-400/10 text-amber-300"
+                      active ? "bg-black/10 text-black" : "border border-white/10 bg-green-500/10 text-green-400"
                     }`}>
                       {item.icon}
                     </span>
@@ -863,8 +870,8 @@ function AppMobileHeader({
               })}
             </div>
 
-            <div className="mt-5 rounded-3xl border border-amber-400/15 bg-amber-400/10 p-4">
-              <p className="text-sm font-black text-amber-200">Phase 1 Active</p>
+            <div className="mt-5 rounded-3xl border border-white/10 bg-green-500/10 p-4">
+              <p className="text-sm font-black text-green-300">Phase 1 Active</p>
               <p className="mt-1 text-xs font-semibold leading-5 text-zinc-400">
                 Top hamburger menu is now connected to the same sections as the bottom tabs.
               </p>
@@ -926,9 +933,9 @@ function Header({ companyName, totals }: { companyName: string; totals: { earned
           <h1 className="mt-1 text-2xl font-black tracking-tight sm:text-4xl">{companyName}</h1>
           <p className="mt-1 text-sm font-semibold text-zinc-400">PRO ELITE Payroll + Field Operations</p>
         </div>
-        <div className="rounded-2xl border border-amber-400/20 bg-amber-400/10 px-3 py-2 text-right">
-          <p className="text-[10px] font-black uppercase tracking-widest text-amber-300">Owed</p>
-          <p className="text-xl font-black text-amber-200">{money(totals.owed)}</p>
+        <div className="rounded-2xl border border-white/10 bg-green-500/10 px-3 py-2 text-right">
+          <p className="text-[10px] font-black uppercase tracking-widest text-green-400">Owed</p>
+          <p className="text-xl font-black text-green-300">{money(totals.owed)}</p>
         </div>
       </div>
       <div className="mt-5 h-px bg-gradient-to-r from-transparent via-amber-400/60 to-transparent" />
@@ -939,14 +946,41 @@ function Header({ companyName, totals }: { companyName: string; totals: { earned
   );
 }
 
-function StatCard({ label, value, icon, highlight = false }: { label: string; value: string; icon: React.ReactNode; highlight?: boolean }) {
+function StatCard({
+  label,
+  value,
+  icon,
+  description,
+  variant = "earned",
+}: {
+  label: string;
+  value: string;
+  icon: React.ReactNode;
+  description?: string;
+  variant?: "earned" | "paid" | "borrowed" | "owed";
+}) {
+  const colorClass = statStyles[variant];
+  const labelColor =
+    variant === "earned"
+      ? "text-green-400"
+      : variant === "paid"
+        ? "text-blue-400"
+        : variant === "borrowed"
+          ? "text-purple-400"
+          : "text-orange-400";
+
   return (
-    <div className={`blackCard p-4 ${highlight ? "border-amber-300/35 shadow-[0_18px_45px_rgba(251,191,36,0.10)]" : ""}`}>
-      <div className="relative z-10 flex items-center justify-between">
-        <p className="text-[11px] font-black uppercase tracking-[0.16em] text-zinc-500">{label}</p>
-        <div className="rounded-xl border border-amber-400/25 bg-amber-400/12 p-2 text-amber-300 shadow-[0_0_22px_rgba(251,191,36,0.10)]">{icon}</div>
+    <div className="blackCard min-h-[118px] p-4">
+      <div className="relative z-10 flex items-start gap-3">
+        <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gradient-to-br ${colorClass}`}>
+          {icon}
+        </div>
+        <div className="min-w-0">
+          <p className={`text-[11px] font-black uppercase tracking-[0.12em] ${labelColor}`}>{label}</p>
+          <p className="mt-2 text-2xl font-black tracking-tight text-zinc-50">{value}</p>
+          {description && <p className="mt-1 text-xs font-semibold text-zinc-500">{description}</p>}
+        </div>
       </div>
-      <p className="relative z-10 mt-3 text-[1.7rem] font-black tracking-tight text-zinc-50">{value}</p>
     </div>
   );
 }
@@ -987,14 +1021,14 @@ function Dashboard({
         </SectionTop>
         <div className="grid gap-3 sm:grid-cols-2">
           <button onClick={onGoEmployees} className="blackCard p-5 text-left transition active:scale-[.99]">
-            <div className="relative z-10 flex h-12 w-12 items-center justify-center rounded-2xl border border-amber-400/20 bg-amber-400/10 text-amber-300">
+            <div className="relative z-10 flex h-12 w-12 items-center justify-center rounded-2xl border border-white/10 bg-green-500/10 text-green-400">
               <UserPlus />
             </div>
             <p className="relative z-10 mt-3 text-xl font-black">Employees</p>
             <p className="relative z-10 text-sm text-zinc-500">Open worker cards and balances.</p>
           </button>
           <button onClick={onGoReports} className="blackCard p-5 text-left transition active:scale-[.99]">
-            <div className="relative z-10 flex h-12 w-12 items-center justify-center rounded-2xl border border-amber-400/20 bg-amber-400/10 text-amber-300">
+            <div className="relative z-10 flex h-12 w-12 items-center justify-center rounded-2xl border border-white/10 bg-green-500/10 text-green-400">
               <FileText />
             </div>
             <p className="relative z-10 mt-3 text-xl font-black">Reports</p>
@@ -1008,7 +1042,7 @@ function Dashboard({
               <div key={employee.id} className="rounded-2xl border border-zinc-800 bg-black/30 p-3">
                 <div className="flex items-center justify-between gap-3">
                   <p className="font-black">{employee.name}</p>
-                  <p className="font-black text-amber-300">{money(owed)}</p>
+                  <p className="font-black text-green-400">{money(owed)}</p>
                 </div>
                 <div className="mt-2 grid grid-cols-3 gap-2 text-xs text-zinc-400">
                   <span>Earned: {money(earned)}</span>
@@ -1021,9 +1055,12 @@ function Dashboard({
           </div>
         </div>
       </div>
-      <div className="blackCard p-4">
-        <h3 className="font-black">Recent Jobs</h3>
-        <div className="mt-3 space-y-3">
+      <div className="space-y-3">
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-black uppercase tracking-wide text-zinc-300">Jobs This Week</h3>
+          <button className="darkButton !px-3 !py-2 text-xs"><Filter size={14} /> Filter</button>
+        </div>
+        <div className="blackCard divide-y divide-white/10 overflow-hidden">
           {filteredJobs.slice(0, 7).map((job) => (
             <JobMini key={job.id} job={job} employee={employeesById.get(job.employeeId)} />
           ))}
@@ -1036,15 +1073,25 @@ function Dashboard({
 
 function JobMini({ job, employee }: { job: JobEntry; employee?: Employee }) {
   return (
-    <div className="rounded-2xl border border-zinc-800 bg-black/30 p-3">
+    <div className="relative z-10 p-3">
       <div className="flex items-start justify-between gap-3">
-        <div>
-          <p className="font-black">{employee?.name || "Unknown Employee"}</p>
-          <p className="text-xs text-zinc-500">{formatJobDate(job.date)} • {propertyWithUnit(job)}</p>
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <span className="h-2 w-2 shrink-0 rounded-full bg-green-400 shadow-[0_0_12px_rgba(34,197,94,0.8)]" />
+            <p className="truncate font-black">{propertyWithUnit(job)}</p>
+          </div>
+          <p className="ml-4 text-xs text-zinc-500">{employee?.name || "Unknown Employee"} • {formatJobDate(job.date)}</p>
+          <div className="ml-4 mt-1 flex flex-wrap gap-1">
+            {job.jobTypes.slice(0, 2).map((type) => (
+              <span key={type} className="rounded-md border border-white/10 bg-black/20 px-2 py-0.5 text-[10px] font-semibold text-zinc-400">{type}</span>
+            ))}
+          </div>
         </div>
-        <p className="font-black text-amber-300">{money(job.pay)}</p>
+        <div className="shrink-0 text-right">
+          <p className="font-black text-green-400">{money(job.pay)}</p>
+          <p className="text-xs text-zinc-500">Unit: {job.unitNumber || "—"}</p>
+        </div>
       </div>
-      <p className="mt-2 line-clamp-1 text-sm text-zinc-400">{[...job.jobTypes, job.customWork].filter(Boolean).join(" • ") || "No work details"}</p>
     </div>
   );
 }
@@ -1077,7 +1124,7 @@ function EmployeeCard({
     <div className="blackCard p-4">
       <div className="flex items-start justify-between gap-3">
         <button onClick={onToggle} className="flex flex-1 items-start gap-3 text-left">
-          <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-amber-400/20 bg-amber-400/10 font-black text-amber-300">
+          <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-white/10 bg-green-500/10 font-black text-green-400">
             {employee.name.slice(0, 1).toUpperCase()}
           </div>
           <div>
@@ -1136,9 +1183,9 @@ function EmployeeCard({
 
 function BalancePill({ label, value, gold = false }: { label: string; value: string; gold?: boolean }) {
   return (
-    <div className={`rounded-2xl border p-2 ${gold ? "border-amber-400/25 bg-amber-400/10" : "border-zinc-800 bg-black/30"}`}>
+    <div className={`rounded-2xl border p-2 ${gold ? "border-green-400/25 bg-green-500/10" : "border-zinc-800 bg-black/30"}`}>
       <p className="text-[10px] font-black uppercase tracking-wider text-zinc-500">{label}</p>
-      <p className={`text-sm font-black ${gold ? "text-amber-300" : "text-zinc-100"}`}>{value}</p>
+      <p className={`text-sm font-black ${gold ? "text-green-400" : "text-zinc-100"}`}>{value}</p>
     </div>
   );
 }
@@ -1164,7 +1211,7 @@ function JobRow({ job, employees, employee, onDelete, onUpdate }: { job: JobEntr
             <p className="text-xs text-zinc-500">{formatJobDate(job.date)} • {propertyWithUnit(job)}</p>
           </div>
           <div className="text-right">
-            <p className="font-black text-amber-300">{money(job.pay)}</p>
+            <p className="font-black text-green-400">{money(job.pay)}</p>
             <p className="text-xs text-zinc-500">Owed {money(owed)}</p>
           </div>
         </div>
@@ -1174,7 +1221,7 @@ function JobRow({ job, employees, employee, onDelete, onUpdate }: { job: JobEntr
         {job.photos.length > 0 && (
           <div className="mt-3 flex flex-wrap gap-2">
             {job.photos.slice(0, 4).map((photo, index) => (
-              <img key={`${job.id}-thumb-${index}`} src={photo} alt={`Job photo ${index + 1}`} className="h-16 w-16 rounded-2xl border border-amber-400/20 object-cover" />
+              <img key={`${job.id}-thumb-${index}`} src={photo} alt={`Job photo ${index + 1}`} className="h-16 w-16 rounded-2xl border border-white/10 object-cover" />
             ))}
             {job.photos.length > 4 && <div className="flex h-16 w-16 items-center justify-center rounded-2xl border border-zinc-800 bg-black/40 text-xs font-black text-zinc-400">+{job.photos.length - 4}</div>}
           </div>
@@ -1223,7 +1270,7 @@ function JobRow({ job, employees, employee, onDelete, onUpdate }: { job: JobEntr
               {job.photos.length > 0 ? (
                 <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
                   {job.photos.map((photo, index) => (
-                    <div key={`${job.id}-photo-${index}`} className="relative overflow-hidden rounded-2xl border border-amber-400/20 bg-black/40">
+                    <div key={`${job.id}-photo-${index}`} className="relative overflow-hidden rounded-2xl border border-white/10 bg-black/40">
                       <img src={photo} alt={`Job photo ${index + 1}`} className="h-32 w-full object-cover" />
                       <button
                         type="button"
@@ -1246,7 +1293,7 @@ function JobRow({ job, employees, employee, onDelete, onUpdate }: { job: JobEntr
           </Field>
           <Field label="Edit Saved Job Notes"><textarea className="inputElite min-h-28" value={job.notes} onChange={(e) => onUpdate({ ...job, notes: e.target.value })} placeholder="Edit notes for this saved job..." /></Field>
           <div className="flex items-center justify-between gap-2">
-            <span className={`rounded-full px-3 py-1 text-xs font-black ${job.status === "paid" ? "bg-emerald-500/15 text-emerald-300" : job.status === "partial" ? "bg-amber-500/15 text-amber-300" : "bg-red-500/15 text-red-300"}`}>{job.status.toUpperCase()}</span>
+            <span className={`rounded-full px-3 py-1 text-xs font-black ${job.status === "paid" ? "bg-emerald-500/15 text-emerald-300" : job.status === "partial" ? "bg-amber-500/15 text-green-400" : "bg-red-500/15 text-red-300"}`}>{job.status.toUpperCase()}</span>
             <button className="iconDanger" onClick={onDelete}><Trash2 size={18} /></button>
           </div>
         </div>
@@ -1262,10 +1309,10 @@ function Reports({ totals, employeeTotals, jobs, employeesById, onCloseWeek, onE
         <button className="goldButton" onClick={onExport}><Download size={18} /> Export</button>
       </SectionTop>
       <div className="grid gap-3 sm:grid-cols-4">
-        <StatCard label="Earned" value={money(totals.earned)} icon={<Wallet size={19} />} />
-        <StatCard label="Paid" value={money(totals.paid)} icon={<Check size={19} />} />
-        <StatCard label="Borrowed" value={money(totals.borrowed || 0)} icon={<Wallet size={19} />} />
-        <StatCard label="Owed" value={money(totals.owed)} icon={<Lock size={19} />} highlight />
+        <StatCard label="Earned" value={money(totals.earned)} description="Total Earned" icon={<CircleDollarSign size={20} />} variant="earned" />
+        <StatCard label="Paid" value={money(totals.paid)} description="Total Paid" icon={<ArrowDown size={20} />} variant="paid" />
+        <StatCard label="Borrowed" value={money(totals.borrowed || 0)} description="Total Borrowed" icon={<CreditCard size={20} />} variant="borrowed" />
+        <StatCard label="Owed" value={money(totals.owed)} description="Still Owed" icon={<Minus size={20} />} variant="owed" />
       </div>
       <div className="blackCard p-4">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -1290,7 +1337,7 @@ function Reports({ totals, employeeTotals, jobs, employeesById, onCloseWeek, onE
                   <td>{money(row.earned)}</td>
                   <td>{money(row.paid)}</td>
                   <td>{money(row.borrowed || 0)}</td>
-                  <td className="font-black text-amber-300">{money(row.owed)}</td>
+                  <td className="font-black text-green-400">{money(row.owed)}</td>
                 </tr>
               ))}
             </tbody>
@@ -1302,7 +1349,7 @@ function Reports({ totals, employeeTotals, jobs, employeesById, onCloseWeek, onE
         <div className="mt-3 space-y-2">
           {jobs.map((job) => (
             <div key={job.id} className="rounded-2xl border border-zinc-800 bg-black/30 p-3 text-sm">
-              <div className="flex justify-between gap-3"><b>{employeesById.get(job.employeeId)?.name || "Unknown"}</b><b className="text-amber-300">{money(job.pay)}</b></div>
+              <div className="flex justify-between gap-3"><b>{employeesById.get(job.employeeId)?.name || "Unknown"}</b><b className="text-green-400">{money(job.pay)}</b></div>
               <p className="text-zinc-500">{formatJobDate(job.date)} • {propertyWithUnit(job)}</p>
             </div>
           ))}
@@ -1394,7 +1441,7 @@ function JobModal({ employees, properties, jobTypeOptions, onAddProperty, onClos
         <Field label="Job Types - choose multiple">
           <div className="flex flex-wrap gap-2">
             {jobTypeOptions.map((type) => (
-              <button key={type} type="button" onClick={() => toggleType(type)} className={`rounded-full border px-3 py-2 text-xs font-black ${selectedTypes.includes(type) ? "border-amber-400 bg-amber-400 text-black" : "border-zinc-800 bg-black/30 text-zinc-300"}`}>{type}</button>
+              <button key={type} type="button" onClick={() => toggleType(type)} className={`rounded-full border px-3 py-2 text-xs font-black ${selectedTypes.includes(type) ? "border-green-400 bg-green-500 text-black" : "border-zinc-800 bg-black/30 text-zinc-300"}`}>{type}</button>
             ))}
           </div>
         </Field>
@@ -1423,7 +1470,7 @@ function JobModal({ employees, properties, jobTypeOptions, onAddProperty, onClos
           {photos.length > 0 ? (
             <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
               {photos.map((photo, index) => (
-                <div key={`new-job-photo-${index}`} className="relative overflow-hidden rounded-2xl border border-amber-400/20 bg-black/40">
+                <div key={`new-job-photo-${index}`} className="relative overflow-hidden rounded-2xl border border-white/10 bg-black/40">
                   <img src={photo} alt={`New job photo ${index + 1}`} className="h-32 w-full object-cover" />
                   <button
                     type="button"
@@ -1540,20 +1587,20 @@ function EmptyText({ text }: { text: string }) {
 
 function BottomNav({ activeTab, setActiveTab }: { activeTab: ActiveTab; setActiveTab: (tab: ActiveTab) => void }) {
   const items: { tab: ActiveTab; label: string; icon: React.ReactNode }[] = [
-    { tab: "dashboard", label: "Home", icon: <BriefcaseBusiness size={19} /> },
+    { tab: "dashboard", label: "Dashboard", icon: <Building2 size={19} /> },
+    { tab: "jobs", label: "Jobs", icon: <BriefcaseBusiness size={19} /> },
     { tab: "employees", label: "Workers", icon: <UserPlus size={19} /> },
-    { tab: "jobs", label: "Jobs", icon: <Wallet size={19} /> },
     { tab: "properties", label: "Props", icon: <Building2 size={19} /> },
     { tab: "reports", label: "Reports", icon: <FileText size={19} /> },
     { tab: "more", label: "More", icon: <MoreVertical size={19} /> },
   ];
   return (
-    <nav className="fixed bottom-0 left-0 right-0 z-40 border-t border-amber-400/15 bg-[#050505]/95 px-2 py-2 shadow-[0_-18px_45px_rgba(0,0,0,0.55)] backdrop-blur-xl">
+    <nav className="fixed bottom-0 left-0 right-0 z-40 border-t border-white/10 bg-[#081014]/95 px-2 py-2 shadow-[0_-18px_45px_rgba(0,0,0,0.55)] backdrop-blur-xl">
       <div className="mx-auto grid max-w-4xl grid-cols-6 gap-1">
         {items.map((item) => {
           const active = activeTab === item.tab;
           return (
-            <button key={item.tab} onClick={() => setActiveTab(item.tab)} className={`rounded-2xl px-1 py-2 text-[10px] font-black transition ${active ? "bg-gradient-to-br from-amber-200 via-amber-400 to-amber-600 text-black shadow-[0_10px_25px_rgba(251,191,36,0.24)]" : "text-zinc-500 hover:bg-zinc-900 hover:text-zinc-200"}`}>
+            <button key={item.tab} onClick={() => setActiveTab(item.tab)} className={`rounded-2xl px-1 py-2 text-[10px] font-black transition ${active ? "text-green-400" : "text-zinc-500 hover:bg-zinc-900 hover:text-zinc-200"}`}>
               <span className="mx-auto flex justify-center">{item.icon}</span>
               <span className="mt-1 block">{item.label}</span>
             </button>
