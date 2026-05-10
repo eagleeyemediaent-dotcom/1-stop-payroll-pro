@@ -214,18 +214,6 @@ function formatJobDate(dateISO: string) {
   }).format(date);
 }
 
-function formatDayName(dateISO: string) {
-  if (!dateISO) return "No date";
-  const date = new Date(`${dateISO}T12:00:00`);
-  return new Intl.DateTimeFormat("en-US", { weekday: "long" }).format(date);
-}
-
-function formatShortDate(dateISO: string) {
-  if (!dateISO) return "";
-  const date = new Date(`${dateISO}T12:00:00`);
-  return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" }).format(date);
-}
-
 function statusFrom(pay: number, paidAmount: number): JobEntry["status"] {
   if (paidAmount <= 0) return "unpaid";
   if (paidAmount >= pay) return "paid";
@@ -1185,9 +1173,6 @@ function EmployeeCard({
           ) : (
             <>
               <p className="text-sm text-zinc-400">{employee.notes || "No employee notes saved."}</p>
-
-              <EmployeeWeeklyWorkList jobs={totals?.jobs || []} weekStart={weekStart} />
-
               <Field label="Borrowed Advance">
                 <MoneyInput
                   value={currentBorrowed}
@@ -1204,68 +1189,6 @@ function EmployeeCard({
           )}
         </div>
       )}
-    </div>
-  );
-}
-
-function EmployeeWeeklyWorkList({ jobs, weekStart }: { jobs: JobEntry[]; weekStart: string }) {
-  const days = Array.from({ length: 6 }, (_, index) => {
-    const date = addDaysISO(weekStart, index);
-    const dayJobs = jobs
-      .filter((job) => job.date === date)
-      .sort((a, b) => propertyWithUnit(a).localeCompare(propertyWithUnit(b)));
-
-    return {
-      date,
-      dayName: formatDayName(date),
-      shortDate: formatShortDate(date),
-      jobs: dayJobs,
-    };
-  });
-
-  const totalJobs = jobs.length;
-
-  return (
-    <div className="rounded-2xl border border-white/10 bg-black/25 p-3">
-      <div className="mb-3 flex items-center justify-between gap-3">
-        <p className="text-xs font-black uppercase tracking-[0.16em] text-green-400">Monday – Saturday Work</p>
-        <p className="text-xs font-semibold text-zinc-500">{totalJobs} job{totalJobs === 1 ? "" : "s"}</p>
-      </div>
-
-      <div className="space-y-2">
-        {days.map((day) => (
-          <div key={day.date} className="rounded-2xl border border-white/10 bg-[#05090b] p-3">
-            <div className="mb-2 flex items-center justify-between gap-3">
-              <p className="font-black text-zinc-100">
-                {day.dayName} <span className="text-xs font-semibold text-zinc-500">({day.shortDate})</span>
-              </p>
-              <p className="text-xs font-black text-zinc-500">{day.jobs.length} job{day.jobs.length === 1 ? "" : "s"}</p>
-            </div>
-
-            {day.jobs.length === 0 ? (
-              <p className="text-xs font-semibold text-zinc-600">No work entered for this day.</p>
-            ) : (
-              <div className="space-y-2">
-                {day.jobs.map((job) => {
-                  const workDone = [...job.jobTypes, job.customWork].filter(Boolean).join(" • ") || "Work details not entered";
-                  return (
-                    <div key={job.id} className="rounded-xl border border-white/10 bg-black/30 p-3">
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <p className="text-sm font-bold text-zinc-300">{propertyWithUnit(job)}</p>
-                          <p className="mt-1 text-xs leading-5 text-zinc-500">{workDone}</p>
-                          {job.notes && <p className="mt-1 text-xs leading-5 text-zinc-500">Notes: {job.notes}</p>}
-                        </div>
-                        <p className="shrink-0 font-black text-green-400">{money(job.pay)}</p>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        ))}
-      </div>
     </div>
   );
 }
