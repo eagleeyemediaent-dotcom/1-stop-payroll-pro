@@ -791,6 +791,13 @@ function AppMobileHeader({
             >
               <span className="text-2xl leading-none">☰</span>
             </button>
+
+            <img
+              src="/icon-192.png"
+              alt="1 Stop Turnover Specialist logo"
+              className="h-12 w-12 shrink-0 rounded-2xl border border-white/10 bg-black object-cover shadow-[0_0_24px_rgba(34,197,94,0.18)]"
+            />
+
             <div className="min-w-0">
               <h1 className="truncate text-lg font-black leading-tight">1 Stop Payroll Pro</h1>
               <p className="truncate text-xs font-semibold text-zinc-400">Weekly Reset & Tracking</p>
@@ -826,6 +833,11 @@ function AppMobileHeader({
           >
             <div className="mb-5 flex items-start justify-between gap-3 border-b border-white/10 pb-4">
               <div>
+                <img
+                  src="/icon-192.png"
+                  alt="1 Stop Turnover Specialist logo"
+                  className="mb-3 h-16 w-16 rounded-2xl border border-white/10 bg-black object-cover shadow-[0_0_28px_rgba(34,197,94,0.20)]"
+                />
                 <p className="text-[10px] font-black uppercase tracking-[0.25em] text-green-400">Navigation</p>
                 <h2 className="mt-1 text-xl font-black">1 Stop Payroll Pro</h2>
                 <p className="mt-1 text-xs font-semibold text-zinc-500">{companyName}</p>
