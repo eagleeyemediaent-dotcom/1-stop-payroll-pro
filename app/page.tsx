@@ -1103,6 +1103,26 @@ function JobMini({ job, employee }: { job: JobEntry; employee?: Employee }) {
   );
 }
 
+
+function jobsByDay(jobs: JobEntry[]) {
+  const days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+  const grouped = { Monday: [], Tuesday: [], Wednesday: [], Thursday: [], Friday: [], Saturday: [] };
+
+  jobs.forEach((job) => {
+    const d = new Date(`${job.date}T12:00:00`);
+    const day = d.toLocaleDateString("en-US", { weekday: "long" });
+
+    if (day in grouped) {
+      grouped[day].push(job);
+    }
+  });
+
+  return days.map((day) => ({
+    day,
+    jobs: grouped[day],
+  }));
+}
+
 function EmployeeCard({
   employee,
   totals,
@@ -1176,6 +1196,44 @@ function EmployeeCard({
                 />
               </Field>
               <p className="text-xs font-semibold text-zinc-500">Cash advance borrowed before payday. It subtracts from the final owed amount.</p>
+              <div className="mt-4 rounded-2xl border border-white/10 bg-black/30 p-3">
+                <p className="mb-3 text-sm font-black text-green-400">Weekly Work History</p>
+
+                <div className="space-y-3">
+                  {jobsByDay(totals?.jobs || []).map(({ day, jobs }) => (
+                    <div key={day} className="rounded-2xl border border-zinc-800 bg-black/20 p-3">
+                      <p className="text-xs font-black uppercase tracking-wider text-zinc-400">
+                        {day}
+                      </p>
+
+                      {jobs.length > 0 ? (
+                        <div className="mt-2 space-y-2">
+                          {jobs.map((job) => (
+                            <div key={job.id} className="rounded-xl border border-white/5 bg-black/30 p-2">
+                              <p className="font-bold text-zinc-100">
+                                {propertyWithUnit(job)}
+                              </p>
+
+                              <p className="text-xs text-zinc-400">
+                                {[...job.jobTypes, job.customWork]
+                                  .filter(Boolean)
+                                  .join(" • ")}
+                              </p>
+
+                              <p className="mt-1 text-sm font-black text-green-400">
+                                {money(job.pay)}
+                              </p>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="mt-2 text-xs text-zinc-500">No Jobs</p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+
               <div className="flex gap-2">
                 <button className="darkButton flex-1" onClick={() => setEditing(true)}><MoreVertical size={18} /> Extra Info</button>
                 <button className="iconDanger" onClick={onDelete}><Trash2 size={18} /></button>
