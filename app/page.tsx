@@ -314,7 +314,9 @@ export default function PayrollProEliteBlackGoldX() {
     const earned = weekJobs.reduce((sum, job) => sum + safeNumber(job.pay), 0);
     const paid = weekJobs.reduce((sum, job) => sum + safeNumber(job.paidAmount), 0);
     const borrowed = state.employees.reduce((sum, employee) => sum + getBorrowedForWeek(employee, week.start), 0);
-    const owed = Math.max(earned - paid - borrowed, 0);
+    // Dashboard "Still Owed" should show unpaid job balance only.
+    // Borrowed money stays visible in its own Borrowed card and does not hide unpaid jobs.
+    const owed = Math.max(earned - paid, 0);
     const jobsToday = state.jobs.filter((job) => job.date === todayISO()).length;
     return { earned, paid, borrowed, owed, jobsToday };
   }, [weekJobs, state.jobs, state.employees, week.start]);
