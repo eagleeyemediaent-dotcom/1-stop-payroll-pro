@@ -1,10 +1,3 @@
-Replace EVERYTHING inside:
-
-app/layout.tsx
-
-with this FULL file:
-
-```tsx
 import type { Metadata } from "next";
 import "./globals.css";
 
@@ -30,18 +23,3 @@ export default function RootLayout({
     </html>
   );
 }
-```
-
-THEN:
-
-1. Save file
-2. Redeploy in Vercel
-3. Delete gray app from phone
-4. Reopen deployment
-5. Press:
-
-Install App
-
-NOT shortcut.
-
-This forces Android to use your real gold icon instead of the gray V.
