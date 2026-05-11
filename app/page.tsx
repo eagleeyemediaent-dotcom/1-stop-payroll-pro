@@ -1106,7 +1106,14 @@ function JobMini({ job, employee }: { job: JobEntry; employee?: Employee }) {
 
 function jobsByDay(jobs: JobEntry[]) {
   const days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
-  const grouped = { Monday: [], Tuesday: [], Wednesday: [], Thursday: [], Friday: [], Saturday: [] };
+  const grouped: Record<string, JobEntry[]> = {
+    Monday: [],
+    Tuesday: [],
+    Wednesday: [],
+    Thursday: [],
+    Friday: [],
+    Saturday: [],
+  };
 
   jobs.forEach((job) => {
     const d = new Date(`${job.date}T12:00:00`);
@@ -1117,10 +1124,16 @@ function jobsByDay(jobs: JobEntry[]) {
     }
   });
 
-  return days.map((day) => ({
-    day,
-    jobs: grouped[day],
-  }));
+  return days.map((day) => {
+    const dayJobs = grouped[day].sort((a, b) => propertyWithUnit(a).localeCompare(propertyWithUnit(b)));
+    const total = dayJobs.reduce((sum, job) => sum + safeNumber(job.pay), 0);
+
+    return {
+      day,
+      jobs: dayJobs,
+      total,
+    };
+  });
 }
 
 function EmployeeCard({
@@ -1200,11 +1213,17 @@ function EmployeeCard({
                 <p className="mb-3 text-sm font-black text-green-400">Weekly Work History</p>
 
                 <div className="space-y-3">
-                  {jobsByDay(totals?.jobs || []).map(({ day, jobs }) => (
+                  {jobsByDay(totals?.jobs || []).map(({ day, jobs, total }) => (
                     <div key={day} className="rounded-2xl border border-zinc-800 bg-black/20 p-3">
-                      <p className="text-xs font-black uppercase tracking-wider text-zinc-400">
-                        {day}
-                      </p>
+                      <div className="flex items-center justify-between gap-3">
+                        <p className="text-xs font-black uppercase tracking-wider text-zinc-400">
+                          {day}
+                        </p>
+
+                        <p className="text-xs font-black text-green-400">
+                          {jobs.length} {jobs.length === 1 ? "Job" : "Jobs"} • {money(total)}
+                        </p>
+                      </div>
 
                       {jobs.length > 0 ? (
                         <div className="mt-2 space-y-2">
