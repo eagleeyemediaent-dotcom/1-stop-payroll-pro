@@ -882,12 +882,7 @@ function AppMobileHeader({
               })}
             </div>
 
-            <div className="mt-5 rounded-3xl border border-white/10 bg-green-500/10 p-4">
-              <p className="text-sm font-black text-green-300">Phase 1 Active</p>
-              <p className="mt-1 text-xs font-semibold leading-5 text-zinc-400">
-                Top hamburger menu is now connected to the same sections as the bottom tabs.
-              </p>
-            </div>
+
           </aside>
         </div>
       )}
