@@ -678,6 +678,15 @@ export default function PayrollProEliteBlackGoldX() {
           opacity: .55;
         }
 
+
+        .modalCard {
+          max-height: min(92dvh, 92vh);
+          overflow-y: auto !important;
+          overflow-x: hidden !important;
+          -webkit-overflow-scrolling: touch;
+          overscroll-behavior: contain;
+        }
+
         .goldButton {
           display: inline-flex;
           align-items: center;
@@ -1636,15 +1645,18 @@ function JobModal({ employees, properties, jobTypeOptions, onAddProperty, onClos
             <p className="mt-3">Take pictures from your phone camera or upload from your device.</p>
           )}
         </div>
-        <button
-          className="goldButton w-full"
-          onClick={() => {
-            if (!employeeId) return alert("Add an employee first.");
-            onSave({ id: uid(), employeeId, date, property, unitNumber: unitNumber.trim(), jobTypes: selectedTypes, customWork, pay, paidAmount, status: statusFrom(pay, paidAmount), notes, photos });
-          }}
-        >
-          <Check size={18} /> Save Job
-        </button>
+        <div className="sticky bottom-0 z-30 -mx-1 mt-4 border-t border-white/10 bg-[#071012]/95 px-1 py-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] backdrop-blur">
+          <button
+            className="goldButton w-full min-h-[52px] text-lg"
+            onClick={() => {
+              if (!employeeId) return alert("Add an employee first.");
+              if (!property.trim()) return alert("Choose or add a property first.");
+              onSave({ id: uid(), employeeId, date, property, unitNumber: unitNumber.trim(), jobTypes: selectedTypes, customWork, pay, paidAmount, status: statusFrom(pay, paidAmount), notes, photos });
+            }}
+          >
+            <Check size={20} /> Save Job
+          </button>
+        </div>
       </div>
     </Modal>
   );
@@ -1703,13 +1715,13 @@ function PropertyModal({ onClose, onSave }: { onClose: () => void; onSave: (prop
 
 function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 p-3 backdrop-blur sm:items-center">
-      <div className="blackCard max-h-[92vh] w-full max-w-2xl overflow-y-auto p-4">
-        <div className="mb-4 flex items-center justify-between gap-3 border-b border-zinc-800 pb-3">
+    <div className="fixed inset-0 z-50 flex items-end justify-center overflow-y-auto bg-black/70 p-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] backdrop-blur sm:items-center">
+      <div className="blackCard modalCard w-full max-w-2xl p-4">
+        <div className="sticky top-0 z-20 -mx-4 mb-4 flex items-center justify-between gap-3 border-b border-zinc-800 bg-[#071012]/95 px-4 pb-3 pt-1 backdrop-blur">
           <h3 className="text-xl font-black">{title}</h3>
           <button className="darkButton !p-2" onClick={onClose}><X size={18} /></button>
         </div>
-        {children}
+        <div className="relative z-10 pb-24">{children}</div>
       </div>
     </div>
   );
