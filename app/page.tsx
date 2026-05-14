@@ -778,6 +778,14 @@ export default function PayrollProEliteOperationsX() {
         .inputElite::placeholder { color: rgba(161,161,170,.62); }
         .inputElite:focus { border-color: rgba(34,197,94,.58); box-shadow: 0 0 0 4px rgba(34,197,94,.12), inset 0 1px 0 rgba(255,255,255,0.05); }
         .labelElite { color: #a1a1aa; font-size: .75rem; font-weight: 900; margin-bottom: .38rem; display:block; letter-spacing: .02em; }
+
+        @media print {
+          body * { visibility: hidden !important; }
+          .printArea, .printArea * { visibility: visible !important; }
+          .printArea { position: absolute !important; left: 0 !important; top: 0 !important; width: 100% !important; box-shadow: none !important; border: none !important; }
+          .noPrint, .noPrint * { display: none !important; visibility: hidden !important; }
+        }
+
         button, input, select, textarea { -webkit-tap-highlight-color: transparent; }
         @media print { body * { visibility: hidden; } .printArea, .printArea * { visibility: visible; } .printArea { position: absolute; left: 0; top: 0; width: 100%; background: white; color: black; padding: 24px; } .noPrint { display:none !important; } }
       `}</style>
@@ -874,7 +882,7 @@ function JobRow({ job, employees, employee, properties, jobTypeOptions, onDelete
   const [open, setOpen] = useState(false);
   const owed = Math.max(job.pay - job.paidAmount, 0);
   function toggleType(type: string) { const next = job.jobTypes.includes(type) ? job.jobTypes.filter((item) => item !== type) : [...job.jobTypes, type]; onUpdate({ ...job, jobTypes: next }); }
-  return <div className="blackCard p-4"><button onClick={() => setOpen(!open)} className="w-full text-left"><div className="flex items-start justify-between gap-3"><div><p className="font-black">{employee?.name || "Unknown Employee"}</p><p className="text-xs text-zinc-500">{formatJobDate(job.date)} • {propertyWithUnit(job)}</p></div><div className="text-right"><p className="font-black text-green-400">{money(job.pay)}</p><p className="text-xs text-zinc-500">Owed {money(owed)}</p></div></div><p className="mt-3 rounded-2xl border border-zinc-800 bg-black/30 px-3 py-2 text-sm text-zinc-300">{[...job.jobTypes, job.customWork].filter(Boolean).join(" • ") || "No work detail"}</p>{job.photos.length > 0 && <div className="mt-3 flex flex-wrap gap-2">{job.photos.slice(0, 4).map((photo, index) => <img key={`${job.id}-thumb-${index}`} src={photo} alt={`Job photo ${index + 1}`} className="h-16 w-16 rounded-2xl border border-white/10 object-cover" />)}{job.photos.length > 4 && <div className="flex h-16 w-16 items-center justify-center rounded-2xl border border-zinc-800 bg-black/40 text-xs font-black text-zinc-400">+{job.photos.length - 4}</div>}</div>}</button><div className="mt-3 flex gap-2"><button className="darkButton flex-1 !py-2 text-sm" onClick={() => setOpen(!open)}><Pencil size={16} /> Edit Here</button><button className="darkButton !py-2 text-sm" onClick={() => { if (!confirmAction("Confirm: mark this job paid?")) return; onUpdate({ ...job, paidAmount: job.pay, status: "paid" }); }}><Check size={16} /> Paid</button></div>{open && <div className="mt-4 space-y-3 border-t border-zinc-800 pt-4"><div className="grid grid-cols-2 gap-2"><Field label="Employee"><select className="inputElite" value={job.employeeId} onChange={(e) => onUpdate({ ...job, employeeId: e.target.value })}>{employees.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></Field><Field label={`Date — ${formatJobDate(job.date)}`}><input className="inputElite cursor-pointer" type="date" value={job.date} onClick={(e) => e.currentTarget.showPicker?.()} onFocus={(e) => e.currentTarget.showPicker?.()} onChange={(e) => onUpdate({ ...job, date: e.target.value })} /></Field><Field label="Property"><select className="inputElite" value={job.property} onChange={(e) => onUpdate({ ...job, property: e.target.value })}>{properties.map((property) => <option key={property} value={property}>{property}</option>)}</select></Field><Field label="Unit #"><input className="inputElite" value={job.unitNumber || ""} onChange={(e) => onUpdate({ ...job, unitNumber: e.target.value })} placeholder="Example: 204" /></Field><Field label="Pay"><MoneyInput value={job.pay} onValueChange={(value) => onUpdate({ ...job, pay: value, status: statusFrom(value, job.paidAmount) })} /></Field><Field label="Paid"><MoneyInput value={job.paidAmount} onValueChange={(value) => { if (value >= job.pay && job.pay > 0 && !confirmAction("Confirm: mark this job paid?")) return; onUpdate({ ...job, paidAmount: value, status: statusFrom(job.pay, value) }); }} /></Field></div><Field label="Work Type"><div className="grid grid-cols-2 gap-2">{jobTypeOptions.map((type) => <button type="button" key={type} onClick={() => toggleType(type)} className={`rounded-xl border px-3 py-2 text-left text-xs font-bold ${job.jobTypes.includes(type) ? "border-green-400/50 bg-green-500/20 text-green-300" : "border-zinc-800 bg-black/30 text-zinc-400"}`}>{job.jobTypes.includes(type) ? "✓ " : ""}{type}</button>)}</div></Field><Field label="Custom Work"><input className="inputElite" value={job.customWork} onChange={(e) => onUpdate({ ...job, customWork: e.target.value })} placeholder="Edit custom work description..." /></Field><Field label="Job Photos"><div className="rounded-2xl border border-dashed border-zinc-800 bg-black/30 p-4"><label className="goldButton w-full cursor-pointer"><Camera size={18} /> Add / Take Photo<input type="file" accept="image/*" multiple capture="environment" className="hidden" onChange={async (e) => { const newPhotos = await readPhotoFiles(e.target.files); if (newPhotos.length) onUpdate({ ...job, photos: [...job.photos, ...newPhotos] }); e.currentTarget.value = ""; }} /></label>{job.photos.length > 0 ? <div className="mt-4 grid grid-cols-2 gap-3">{job.photos.map((photo, index) => <div key={`${job.id}-photo-${index}`} className="relative overflow-hidden rounded-2xl border border-white/10 bg-black/40"><img src={photo} alt={`Job photo ${index + 1}`} className="h-32 w-full object-cover" /><button type="button" className="absolute right-2 top-2 rounded-full border border-red-400/30 bg-black/70 p-2 text-red-200" onClick={() => { const ok = window.confirm("Remove this photo from the job?"); if (!ok) return; onUpdate({ ...job, photos: job.photos.filter((_, photoIndex) => photoIndex !== index) }); }}><Trash2 size={15} /></button></div>)}</div> : <p className="mt-3 text-center text-sm font-semibold text-zinc-500">No photos attached yet.</p>}</div></Field><Field label="Notes"><textarea className="inputElite min-h-28" value={job.notes} onChange={(e) => onUpdate({ ...job, notes: e.target.value })} placeholder="Edit notes for this saved job..." /></Field><div className="flex items-center justify-between gap-2"><span className={`rounded-full px-3 py-1 text-xs font-black ${job.status === "paid" ? "bg-emerald-500/15 text-emerald-300" : job.status === "partial" ? "bg-amber-500/15 text-green-400" : "bg-red-500/15 text-red-300"}`}>{job.status.toUpperCase()}</span><button className="iconDanger" onClick={onDelete}><Trash2 size={18} /></button></div></div>}</div>;
+  return <div className="blackCard p-4"><button onClick={() => setOpen(!open)} className="w-full text-left"><div className="flex items-start justify-between gap-3"><div><p className="font-black">{employee?.name || "Unknown Employee"}</p><p className="text-xs text-zinc-500">{formatJobDate(job.date)} • {propertyWithUnit(job)}</p></div><div className="text-right"><p className="font-black text-green-400">{money(job.pay)}</p><p className="text-xs text-zinc-500">Owed {money(owed)}</p></div></div><p className="mt-3 rounded-2xl border border-zinc-800 bg-black/30 px-3 py-2 text-sm text-zinc-300">{[...job.jobTypes, job.customWork].filter(Boolean).join(" • ") || "No work detail"}</p>{job.photos.length > 0 && <div className="mt-3 flex flex-wrap gap-2">{job.photos.slice(0, 4).map((photo, index) => <img key={`${job.id}-thumb-${index}`} src={photo} alt={`Job photo ${index + 1}`} className="h-16 w-16 rounded-2xl border border-white/10 object-cover" />)}{job.photos.length > 4 && <div className="flex h-16 w-16 items-center justify-center rounded-2xl border border-zinc-800 bg-black/40 text-xs font-black text-zinc-400">+{job.photos.length - 4}</div>}</div>}</button><div className="mt-3 flex gap-2"><button className="darkButton flex-1 !py-2 text-sm" onClick={() => setOpen(!open)}><Pencil size={16} /> Edit Here</button><button className={`${job.status === "paid" ? "goldButton shadow-[0_0_28px_rgba(34,197,94,0.45)]" : "darkButton"} !py-2 text-sm`} onClick={() => { if (job.status === "paid") { alert("This job is already marked paid."); return; } if (!confirmAction("Confirm: mark this job paid?")) return; onUpdate({ ...job, paidAmount: job.pay, status: "paid" }); }}><Check size={16} /> {job.status === "paid" ? "Paid ✓" : "Paid"}</button></div>{open && <div className="mt-4 space-y-3 border-t border-zinc-800 pt-4"><div className="grid grid-cols-2 gap-2"><Field label="Employee"><select className="inputElite" value={job.employeeId} onChange={(e) => onUpdate({ ...job, employeeId: e.target.value })}>{employees.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></Field><Field label={`Date — ${formatJobDate(job.date)}`}><input className="inputElite cursor-pointer" type="date" value={job.date} onClick={(e) => e.currentTarget.showPicker?.()} onFocus={(e) => e.currentTarget.showPicker?.()} onChange={(e) => onUpdate({ ...job, date: e.target.value })} /></Field><Field label="Property"><select className="inputElite" value={job.property} onChange={(e) => onUpdate({ ...job, property: e.target.value })}>{properties.map((property) => <option key={property} value={property}>{property}</option>)}</select></Field><Field label="Unit #"><input className="inputElite" value={job.unitNumber || ""} onChange={(e) => onUpdate({ ...job, unitNumber: e.target.value })} placeholder="Example: 204" /></Field><Field label="Pay"><MoneyInput value={job.pay} onValueChange={(value) => onUpdate({ ...job, pay: value, status: statusFrom(value, job.paidAmount) })} /></Field><Field label="Paid"><MoneyInput value={job.paidAmount} onValueChange={(value) => { if (value >= job.pay && job.pay > 0 && !confirmAction("Confirm: mark this job paid?")) return; onUpdate({ ...job, paidAmount: value, status: statusFrom(job.pay, value) }); }} /></Field></div><Field label="Work Type"><div className="grid grid-cols-2 gap-2">{jobTypeOptions.map((type) => <button type="button" key={type} onClick={() => toggleType(type)} className={`rounded-xl border px-3 py-2 text-left text-xs font-bold ${job.jobTypes.includes(type) ? "border-green-400/50 bg-green-500/20 text-green-300" : "border-zinc-800 bg-black/30 text-zinc-400"}`}>{job.jobTypes.includes(type) ? "✓ " : ""}{type}</button>)}</div></Field><Field label="Custom Work"><input className="inputElite" value={job.customWork} onChange={(e) => onUpdate({ ...job, customWork: e.target.value })} placeholder="Edit custom work description..." /></Field><Field label="Job Photos"><div className="rounded-2xl border border-dashed border-zinc-800 bg-black/30 p-4"><label className="goldButton w-full cursor-pointer"><Camera size={18} /> Add / Take Photo<input type="file" accept="image/*" multiple capture="environment" className="hidden" onChange={async (e) => { const newPhotos = await readPhotoFiles(e.target.files); if (newPhotos.length) onUpdate({ ...job, photos: [...job.photos, ...newPhotos] }); e.currentTarget.value = ""; }} /></label>{job.photos.length > 0 ? <div className="mt-4 grid grid-cols-2 gap-3">{job.photos.map((photo, index) => <div key={`${job.id}-photo-${index}`} className="relative overflow-hidden rounded-2xl border border-white/10 bg-black/40"><img src={photo} alt={`Job photo ${index + 1}`} className="h-32 w-full object-cover" /><button type="button" className="absolute right-2 top-2 rounded-full border border-red-400/30 bg-black/70 p-2 text-red-200" onClick={() => { const ok = window.confirm("Remove this photo from the job?"); if (!ok) return; onUpdate({ ...job, photos: job.photos.filter((_, photoIndex) => photoIndex !== index) }); }}><Trash2 size={15} /></button></div>)}</div> : <p className="mt-3 text-center text-sm font-semibold text-zinc-500">No photos attached yet.</p>}</div></Field><Field label="Notes"><textarea className="inputElite min-h-28" value={job.notes} onChange={(e) => onUpdate({ ...job, notes: e.target.value })} placeholder="Edit notes for this saved job..." /></Field><div className="flex items-center justify-between gap-2"><span className={`rounded-full px-3 py-1 text-xs font-black ${job.status === "paid" ? "bg-emerald-500/15 text-emerald-300" : job.status === "partial" ? "bg-amber-500/15 text-green-400" : "bg-red-500/15 text-red-300"}`}>{job.status.toUpperCase()}</span><button className="iconDanger" onClick={onDelete}><Trash2 size={18} /></button></div></div>}</div>;
 }
 
 function MakeReadyBoard({ items, employees, employeesById, onAdd, onEdit, onDelete, onUpdate }: { items: MakeReadyItem[]; employees: Employee[]; employeesById: Map<string, Employee>; onAdd: () => void; onEdit: (item: MakeReadyItem) => void; onDelete: (id: string) => void; onUpdate: (item: MakeReadyItem) => void }) {
@@ -897,17 +905,145 @@ function InvoiceCard({ invoice, jobs, onEdit, onDelete, onUpdate }: { invoice: I
   const [preview, setPreview] = useState(false);
   const total = invoiceTotal(invoice);
   const open = Math.max(total - invoice.paidAmount, 0);
+  const isPaid = invoice.status === "paid" || open <= 0;
   const sourcePhotos = jobs.filter((job) => invoice.sourceJobIds?.includes(job.id)).flatMap((job) => job.photos || []);
   const beforePhotos = invoice.beforePhotos || [];
   const afterPhotos = [...(invoice.afterPhotos || []), ...sourcePhotos];
-  const statusClass = invoice.status === "paid" ? "bg-emerald-500/15 text-emerald-300" : invoice.status === "overdue" ? "bg-red-500/15 text-red-300" : invoice.status === "sent" ? "bg-blue-500/15 text-blue-300" : "bg-amber-500/15 text-green-400";
+  const statusClass = isPaid
+    ? "bg-emerald-500 text-black shadow-[0_0_24px_rgba(34,197,94,0.35)]"
+    : invoice.status === "overdue"
+      ? "bg-red-500/20 text-red-200"
+      : invoice.status === "sent"
+        ? "bg-blue-500/20 text-blue-200"
+        : "bg-amber-500/20 text-amber-200";
 
   function confirmMarkPaid() {
+    if (isPaid) {
+      alert(`Invoice ${invoice.invoiceNumber} is already marked paid.`);
+      return;
+    }
     if (!confirmAction(`Confirm: mark invoice ${invoice.invoiceNumber} paid?`)) return;
     onUpdate({ ...invoice, paidAmount: total, status: "paid" });
   }
 
-  return <div className="blackCard p-4"><div className="flex items-start justify-between gap-3"><div><p className="text-lg font-black">{invoice.invoiceNumber}</p><p className="text-xs text-zinc-500">{invoice.clientName || invoice.property} • {invoice.property}{invoice.unitNumber ? ` — Unit ${invoice.unitNumber}` : ""}</p>{invoice.clientEmail && <p className="mt-1 text-xs font-semibold text-green-400">{invoice.clientEmail}</p>}</div><div className="text-right"><p className="font-black text-green-400">{money(total)}</p><span className={`rounded-full px-3 py-1 text-[10px] font-black uppercase ${statusClass}`}>{invoice.status}</span></div></div><div className="mt-3 grid grid-cols-3 gap-2 text-center"><BalancePill label="Total" value={money(total)} /><BalancePill label="Paid" value={money(invoice.paidAmount)} /><BalancePill label="Open" value={money(open)} gold /></div><div className="mt-3 grid grid-cols-2 gap-2"><button className="darkButton" onClick={onEdit}><Pencil size={16} /> Edit</button><button className="darkButton" onClick={() => setPreview(!preview)}><Eye size={16} /> View</button><button className="goldButton" onClick={() => openInvoiceEmail(invoice)}><Mail size={16} /> Email</button><button className="iconDanger" onClick={onDelete}><Trash2 size={18} /> Delete</button></div>{preview && <div className="printArea mt-4 rounded-2xl border border-white/10 bg-white p-4 text-black"><div className="flex justify-between gap-3"><div><h2 className="text-xl font-black">1 Stop Turnover Specialist LLC</h2><p className="text-sm">Invoice {invoice.invoiceNumber}</p></div><div className="text-right"><p>Status: {invoice.status.toUpperCase()}</p><p>Date: {invoice.invoiceDate}</p><p>Due: {invoice.dueDate}</p></div></div><div className="mt-4"><p className="font-bold">Bill To: {invoice.clientName}</p>{invoice.clientEmail && <p>{invoice.clientEmail}</p>}<p>{invoice.property}{invoice.unitNumber ? ` — Unit ${invoice.unitNumber}` : ""}</p></div><table className="mt-4 w-full text-left text-sm"><thead><tr className="border-b"><th className="py-2">Description</th><th>Qty</th><th>Rate</th><th>Total</th></tr></thead><tbody>{invoice.lineItems.map((item) => <tr key={item.id} className="border-b"><td className="py-2">{item.description}</td><td>{item.qty}</td><td>{money(item.rate)}</td><td>{money(item.qty * item.rate)}</td></tr>)}</tbody></table><div className="mt-4 text-right"><p className="text-lg font-black">Total: {money(total)}</p><p>Paid: {money(invoice.paidAmount)}</p><p>Balance: {money(open)}</p></div>{invoice.notes && <p className="mt-4 text-sm">Notes: {invoice.notes}</p>}{(beforePhotos.length > 0 || afterPhotos.length > 0) && <div className="mt-4"><h3 className="font-black">Job Photos</h3>{beforePhotos.length > 0 && <PhotoPrintGrid title="Before Photos" photos={beforePhotos} />}{afterPhotos.length > 0 && <PhotoPrintGrid title="After / Job Photos" photos={afterPhotos} />}</div>}<div className="noPrint mt-4 grid grid-cols-2 gap-2"><button className="goldButton" onClick={() => window.print()}><Printer size={16} /> Print / Save PDF</button><button className="darkButton" onClick={confirmMarkPaid}><Check size={16} /> Mark Paid</button><button className="darkButton col-span-2" onClick={() => openInvoiceEmail(invoice)}><Mail size={16} /> Email Invoice</button></div></div>}</div>;
+  return (
+    <div className={`blackCard p-4 ${isPaid ? "ring-2 ring-green-400/35 shadow-[0_0_32px_rgba(34,197,94,0.16)]" : ""}`}>
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <p className="text-lg font-black">{invoice.invoiceNumber}</p>
+            {isPaid && <span className="rounded-full bg-green-400 px-2 py-0.5 text-[10px] font-black text-black">PAID ✓</span>}
+          </div>
+          <p className="text-xs text-zinc-500">{invoice.clientName || invoice.property} • {invoice.property}{invoice.unitNumber ? ` — Unit ${invoice.unitNumber}` : ""}</p>
+          {invoice.clientEmail && <p className="mt-1 text-xs font-semibold text-green-400">{invoice.clientEmail}</p>}
+        </div>
+        <div className="shrink-0 text-right">
+          <p className="font-black text-green-400">{money(total)}</p>
+          <span className={`rounded-full px-3 py-1 text-[10px] font-black uppercase ${statusClass}`}>{isPaid ? "paid" : invoice.status}</span>
+        </div>
+      </div>
+
+      <div className="mt-3 grid grid-cols-3 gap-2 text-center">
+        <BalancePill label="Total" value={money(total)} />
+        <BalancePill label="Paid" value={money(invoice.paidAmount)} gold={isPaid} />
+        <BalancePill label="Open" value={money(open)} gold={!isPaid} />
+      </div>
+
+      <div className="mt-3 grid grid-cols-2 gap-2">
+        <button className="darkButton" onClick={onEdit}><Pencil size={16} /> Edit</button>
+        <button className="darkButton" onClick={() => setPreview(!preview)}><Eye size={16} /> {preview ? "Hide" : "View"}</button>
+        <button className={`${isPaid ? "goldButton shadow-[0_0_28px_rgba(34,197,94,0.45)]" : "darkButton"}`} onClick={confirmMarkPaid}><Check size={16} /> {isPaid ? "Paid ✓" : "Mark Paid"}</button>
+        <button className="goldButton" onClick={() => openInvoiceEmail(invoice)}><Mail size={16} /> Email</button>
+        <button className="iconDanger col-span-2" onClick={onDelete}><Trash2 size={18} /> Delete</button>
+      </div>
+
+      {preview && (
+        <InvoicePreview invoice={invoice} total={total} open={open} beforePhotos={beforePhotos} afterPhotos={afterPhotos} onMarkPaid={confirmMarkPaid} />
+      )}
+    </div>
+  );
+}
+
+function InvoicePreview({ invoice, total, open, beforePhotos, afterPhotos, onMarkPaid }: { invoice: Invoice; total: number; open: number; beforePhotos: string[]; afterPhotos: string[]; onMarkPaid: () => void }) {
+  const isPaid = invoice.status === "paid" || open <= 0;
+  return (
+    <div className="printArea mt-4 overflow-hidden rounded-2xl border border-white/10 bg-white text-black shadow-2xl">
+      <div className="bg-zinc-950 p-4 text-white">
+        <div className="flex items-start justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <img src="/icon-192.png" alt="1 Stop Turnover Specialist LLC logo" className="h-16 w-16 rounded-2xl border border-white/15 bg-black object-cover" />
+            <div>
+              <h2 className="text-xl font-black leading-tight">1 Stop Turnover Specialist LLC</h2>
+              <p className="text-xs font-semibold text-zinc-400">Turnover • Painting • Repairs • Make Ready</p>
+            </div>
+          </div>
+          <div className="text-right">
+            <p className="text-2xl font-black text-green-400">INVOICE</p>
+            <p className="text-sm font-bold">{invoice.invoiceNumber}</p>
+            <span className={`mt-2 inline-flex rounded-full px-3 py-1 text-xs font-black ${isPaid ? "bg-green-400 text-black" : "bg-amber-400 text-black"}`}>{isPaid ? "PAID" : "BALANCE DUE"}</span>
+          </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3 border-b border-zinc-200 p-4 text-sm">
+        <div>
+          <p className="text-[11px] font-black uppercase tracking-wider text-zinc-500">Bill To</p>
+          <p className="mt-1 font-black">{invoice.clientName || "Client Name"}</p>
+          {invoice.clientEmail && <p>{invoice.clientEmail}</p>}
+          <p>{invoice.property}{invoice.unitNumber ? ` — Unit ${invoice.unitNumber}` : ""}</p>
+        </div>
+        <div className="text-right">
+          <p><b>Invoice Date:</b> {invoice.invoiceDate}</p>
+          <p><b>Due Date:</b> {invoice.dueDate}</p>
+          <p><b>Status:</b> {isPaid ? "PAID" : invoice.status.toUpperCase()}</p>
+        </div>
+      </div>
+
+      <div className="p-4">
+        <div className="overflow-hidden rounded-xl border border-zinc-200">
+          <div className="grid grid-cols-[1fr_52px_76px_86px] bg-zinc-100 px-3 py-2 text-xs font-black uppercase text-zinc-600">
+            <div>Description</div><div className="text-center">Qty</div><div className="text-right">Rate</div><div className="text-right">Amount</div>
+          </div>
+          {invoice.lineItems.map((item) => (
+            <div key={item.id} className="grid grid-cols-[1fr_52px_76px_86px] border-t border-zinc-200 px-3 py-3 text-sm">
+              <div className="pr-2 font-semibold">{item.description}</div>
+              <div className="text-center">{item.qty}</div>
+              <div className="text-right">{money(item.rate)}</div>
+              <div className="text-right font-bold">{money(item.qty * item.rate)}</div>
+            </div>
+          ))}
+        </div>
+
+        <div className="mt-4 flex justify-end">
+          <div className="w-full max-w-[260px] rounded-xl border border-zinc-200 bg-zinc-50 p-3 text-sm">
+            <div className="flex justify-between"><span>Total</span><b>{money(total)}</b></div>
+            <div className="mt-2 flex justify-between"><span>Paid</span><b>{money(invoice.paidAmount)}</b></div>
+            <div className="mt-2 flex justify-between border-t border-zinc-300 pt-2 text-lg"><span className="font-black">Balance</span><b className={open > 0 ? "text-red-600" : "text-green-700"}>{money(open)}</b></div>
+          </div>
+        </div>
+
+        {invoice.notes && <div className="mt-4 rounded-xl border border-zinc-200 bg-zinc-50 p-3 text-sm"><b>Notes / Terms:</b><p className="mt-1">{invoice.notes}</p></div>}
+
+        {(beforePhotos.length > 0 || afterPhotos.length > 0) && (
+          <div className="mt-4">
+            <h3 className="font-black">Job Photos</h3>
+            {beforePhotos.length > 0 && <PhotoPrintGrid title="Before Photos" photos={beforePhotos} />}
+            {afterPhotos.length > 0 && <PhotoPrintGrid title="After / Completed Photos" photos={afterPhotos} />}
+          </div>
+        )}
+
+        <div className="mt-5 border-t border-zinc-200 pt-3 text-center text-xs text-zinc-500">
+          Thank you for your business. God bless.
+        </div>
+      </div>
+
+      <div className="noPrint grid grid-cols-2 gap-2 border-t border-zinc-200 bg-zinc-100 p-3">
+        <button className="goldButton" onClick={() => window.print()}><Printer size={16} /> Print / Save PDF</button>
+        <button className={`${isPaid ? "goldButton shadow-[0_0_28px_rgba(34,197,94,0.45)]" : "darkButton"}`} onClick={onMarkPaid}><Check size={16} /> {isPaid ? "Paid ✓" : "Mark Paid"}</button>
+        <button className="darkButton col-span-2" onClick={() => openInvoiceEmail(invoice)}><Mail size={16} /> Email Invoice</button>
+      </div>
+    </div>
+  );
 }
 
 function PhotoPrintGrid({ title, photos }: { title: string; photos: string[] }) {
