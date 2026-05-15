@@ -41,8 +41,8 @@ import {
 } from "lucide-react";
 
 // 1 STOP TURNOVER SPECIALIST PRO ELITE - OPERATIONS X
-// PHASE 1 / WEEK 1 single-file replacement for app/page.tsx
-// Payment safety + unpaid visibility + photo upload choices
+// PHASE 2 single-file replacement for app/page.tsx
+// Jobs + Make Ready operations hub, while keeping Make Ready board intact
 
 const STORAGE_KEY = "oneStopPayrollProEliteBlackGoldX_v1";
 
@@ -431,6 +431,7 @@ export default function PayrollProEliteOperationsX() {
   const [state, setState] = useState<AppState>(starterState);
   const [hydrated, setHydrated] = useState(false);
   const [activeTab, setActiveTab] = useState<ActiveTab>("dashboard");
+  const [jobsView, setJobsView] = useState<"jobs" | "makeReady">("jobs");
   const [selectedWeek, setSelectedWeek] = useState(todayISO());
   const [search, setSearch] = useState("");
   const [expandedEmployeeId, setExpandedEmployeeId] = useState<string | null>(null);
@@ -779,10 +780,26 @@ export default function PayrollProEliteOperationsX() {
 
           {activeTab === "jobs" && (
             <section className="space-y-4">
-              <SectionTop title="Jobs This Week" subtitle="Only jobs inside the selected Monday–Saturday work week are shown here.">
-                <button onClick={() => setShowJobForm(true)} className="goldButton"><Plus size={18} /> Add Job</button>
+              <SectionTop title="Jobs + Make Ready" subtitle="One operations hub: payroll jobs and turnover units together.">
+                <button onClick={() => jobsView === "jobs" ? setShowJobForm(true) : (setEditingMakeReady(null), setShowMakeReadyForm(true))} className="goldButton"><Plus size={18} /> {jobsView === "jobs" ? "Add Job" : "Add Unit"}</button>
               </SectionTop>
-              <JobList jobs={filteredJobs} employees={state.employees} employeesById={employeesById} properties={state.properties} jobTypeOptions={state.jobTypeOptions} onDelete={(id) => setConfirmDelete({ type: "job", id })} onUpdate={updateJob} />
+
+              <div className="grid grid-cols-2 gap-2 rounded-[1.2rem] border border-white/10 bg-black/30 p-1">
+                <button type="button" onClick={() => setJobsView("jobs")} className={`rounded-2xl px-3 py-3 text-sm font-black transition ${jobsView === "jobs" ? "bg-green-500 text-black shadow-[0_10px_25px_rgba(34,197,94,0.22)]" : "text-zinc-400"}`}>
+                  <span className="flex items-center justify-center gap-2"><BriefcaseBusiness size={17} /> Payroll Jobs</span>
+                  <span className="mt-1 block text-[10px] font-black opacity-75">{filteredJobs.length} this week</span>
+                </button>
+                <button type="button" onClick={() => setJobsView("makeReady")} className={`rounded-2xl px-3 py-3 text-sm font-black transition ${jobsView === "makeReady" ? "bg-green-500 text-black shadow-[0_10px_25px_rgba(34,197,94,0.22)]" : "text-zinc-400"}`}>
+                  <span className="flex items-center justify-center gap-2"><ClipboardCheck size={17} /> Make Ready</span>
+                  <span className="mt-1 block text-[10px] font-black opacity-75">{filteredMakeReady.length} active units</span>
+                </button>
+              </div>
+
+              {jobsView === "jobs" ? (
+                <JobList jobs={filteredJobs} employees={state.employees} employeesById={employeesById} properties={state.properties} jobTypeOptions={state.jobTypeOptions} onDelete={(id) => setConfirmDelete({ type: "job", id })} onUpdate={updateJob} />
+              ) : (
+                <MakeReadyBoard compact items={filteredMakeReady} employees={state.employees} employeesById={employeesById} onAdd={() => { setEditingMakeReady(null); setShowMakeReadyForm(true); }} onEdit={(item) => { setEditingMakeReady(item); setShowMakeReadyForm(true); }} onDelete={(id) => setConfirmDelete({ type: "makeReady", id })} onUpdate={upsertMakeReady} />
+              )}
             </section>
           )}
 
@@ -872,7 +889,7 @@ function AppMobileHeader({ companyName, activeTab, setActiveTab }: { companyName
   const menuItems: { tab: ActiveTab; label: string; subtitle: string; icon: React.ReactNode }[] = [
     { tab: "dashboard", label: "Home", subtitle: "Command center", icon: <Home size={20} /> },
     { tab: "employees", label: "Workers", subtitle: "Employees and balances", icon: <Users size={20} /> },
-    { tab: "jobs", label: "Jobs", subtitle: "Selected week only", icon: <BriefcaseBusiness size={20} /> },
+    { tab: "jobs", label: "Jobs + Ready", subtitle: "Payroll and turnover hub", icon: <BriefcaseBusiness size={20} /> },
     { tab: "makeReady", label: "Make Ready", subtitle: "Turnover board", icon: <ClipboardCheck size={20} /> },
     { tab: "invoices", label: "Invoices", subtitle: "Create and track invoices", icon: <ReceiptText size={20} /> },
     { tab: "properties", label: "Properties", subtitle: "Property dropdown list", icon: <Building2 size={20} /> },
@@ -988,8 +1005,8 @@ Mark this job paid?
 Amount: ${money(value)}`)) return; onUpdate({ ...job, paidAmount: value, status: statusFrom(job.pay, value) }); }} placeholder="Enter Amount" /></Field></div><Field label="Work Type"><div className="grid grid-cols-2 gap-2">{jobTypeOptions.map((type) => <button type="button" key={type} onClick={() => toggleType(type)} className={`rounded-xl border px-3 py-2 text-left text-xs font-bold ${job.jobTypes.includes(type) ? "border-green-400/50 bg-green-500/20 text-green-300" : "border-zinc-800 bg-black/30 text-zinc-400"}`}>{job.jobTypes.includes(type) ? "✓ " : ""}{type}</button>)}</div></Field><Field label="Custom Work"><input className="inputElite" value={job.customWork} onChange={(e) => onUpdate({ ...job, customWork: e.target.value })} placeholder="Edit custom work description..." /></Field><Field label="Job Photos"><div className="rounded-2xl border border-dashed border-zinc-800 bg-black/30 p-4"><div className="grid grid-cols-2 gap-2"><label className="goldButton w-full cursor-pointer"><Camera size={18} /> Take Photo<input type="file" accept="image/*" multiple capture="environment" className="hidden" onChange={async (e) => { await addPhotos(e.target.files); e.currentTarget.value = ""; }} /></label><label className="darkButton w-full cursor-pointer"><ImageIcon size={18} /> Upload<input type="file" accept="image/*" multiple className="hidden" onChange={async (e) => { await addPhotos(e.target.files); e.currentTarget.value = ""; }} /></label></div>{(job.photos || []).length > 0 ? <div className="mt-4 grid grid-cols-2 gap-3">{(job.photos || []).map((photo, index) => <div key={`${job.id}-photo-${index}`} className="relative overflow-hidden rounded-2xl border border-white/10 bg-black/40"><img src={photo} alt={`Job photo ${index + 1}`} className="h-32 w-full object-cover" /><button type="button" className="absolute right-2 top-2 rounded-full border border-red-400/30 bg-black/70 p-2 text-red-200" onClick={() => { const ok = window.confirm("Remove this photo from the job?"); if (!ok) return; onUpdate({ ...job, photos: (job.photos || []).filter((_, photoIndex) => photoIndex !== index) }); }}><Trash2 size={15} /></button></div>)}</div> : <p className="mt-3 text-center text-sm font-semibold text-zinc-500">No photos attached yet.</p>}</div></Field><Field label="Notes"><textarea className="inputElite min-h-28" value={job.notes} onChange={(e) => onUpdate({ ...job, notes: e.target.value })} placeholder="Edit notes for this saved job..." /></Field><div className="flex items-center justify-between gap-2"><span className={`rounded-full border px-3 py-1 text-xs font-black ${jobStatusColor(normalizedStatus, owed)}`}>{normalizedStatus.toUpperCase()}</span><button className="iconDanger" onClick={onDelete}><Trash2 size={18} /></button></div></div>}</div>;
 }
 
-function MakeReadyBoard({ items, employees, employeesById, onAdd, onEdit, onDelete, onUpdate }: { items: MakeReadyItem[]; employees: Employee[]; employeesById: Map<string, Employee>; onAdd: () => void; onEdit: (item: MakeReadyItem) => void; onDelete: (id: string) => void; onUpdate: (item: MakeReadyItem) => void }) {
-  return <section className="space-y-4"><SectionTop title="Make Ready Board" subtitle="Track each unit from move-out to ready for move-in."><button onClick={onAdd} className="goldButton"><Plus size={18} /> Add Unit</button></SectionTop><div className="grid gap-3">{items.map((item) => <MakeReadyCard key={item.id} item={item} employee={employeesById.get(item.assignedEmployeeId)} employees={employees} onEdit={() => onEdit(item)} onDelete={() => onDelete(item.id)} onUpdate={onUpdate} />)}{items.length === 0 && <div className="blackCard p-6"><EmptyText text="No Make Ready units yet. Add your first turnover unit." /></div>}</div></section>;
+function MakeReadyBoard({ items, employees, employeesById, onAdd, onEdit, onDelete, onUpdate, compact = false }: { items: MakeReadyItem[]; employees: Employee[]; employeesById: Map<string, Employee>; onAdd: () => void; onEdit: (item: MakeReadyItem) => void; onDelete: (id: string) => void; onUpdate: (item: MakeReadyItem) => void; compact?: boolean }) {
+  return <section className="space-y-4">{!compact && <SectionTop title="Make Ready Board" subtitle="Track each unit from move-out to ready for move-in."><button onClick={onAdd} className="goldButton"><Plus size={18} /> Add Unit</button></SectionTop>} {compact && <div className="rounded-2xl border border-green-400/20 bg-green-500/10 p-3 text-sm font-semibold text-green-200">Make Ready is now available inside Jobs, while still keeping the original turnover board feel.</div>}<div className="grid gap-3">{items.map((item) => <MakeReadyCard key={item.id} item={item} employee={employeesById.get(item.assignedEmployeeId)} employees={employees} onEdit={() => onEdit(item)} onDelete={() => onDelete(item.id)} onUpdate={onUpdate} />)}{items.length === 0 && <div className="blackCard p-6"><EmptyText text="No Make Ready units yet. Add your first turnover unit." /></div>}</div></section>;
 }
 
 function MakeReadyCard({ item, employee, employees, onEdit, onDelete, onUpdate }: { item: MakeReadyItem; employee?: Employee; employees: Employee[]; onEdit: () => void; onDelete: () => void; onUpdate: (item: MakeReadyItem) => void }) {
@@ -1211,7 +1228,7 @@ function ConfirmModal({ title, message, onCancel, onConfirm }: { title: string; 
 function BottomNav({ activeTab, setActiveTab }: { activeTab: ActiveTab; setActiveTab: (tab: ActiveTab) => void }) {
   const tabs: { tab: ActiveTab; label: string; icon: React.ReactNode }[] = [
     { tab: "dashboard", label: "Home", icon: <Home size={20} /> },
-    { tab: "jobs", label: "Jobs", icon: <BriefcaseBusiness size={20} /> },
+    { tab: "jobs", label: "Ops", icon: <BriefcaseBusiness size={20} /> },
     { tab: "makeReady", label: "Ready", icon: <ClipboardCheck size={20} /> },
     { tab: "invoices", label: "Invoice", icon: <ReceiptText size={20} /> },
     { tab: "more", label: "More", icon: <MoreVertical size={20} /> },
