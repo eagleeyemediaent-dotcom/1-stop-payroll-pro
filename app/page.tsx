@@ -152,7 +152,7 @@ type AppState = {
   companyName: string;
 };
 
-type ActiveTab = "dashboard" | "ops" | "employees" | "jobs" | "makeReady" | "invoices" | "properties" | "reports" | "more";
+type ActiveTab = "dashboard" | "field" | "office" | "ops" | "employees" | "jobs" | "makeReady" | "invoices" | "properties" | "reports" | "more";
 
 const defaultProperties = [
   "Charles Place Apartments",
@@ -600,7 +600,7 @@ export default function PayrollProEliteOperationsX() {
   }
 
   function createInvoiceFromWeekJobs() {
-    if (!confirmAction("Create an invoice from all jobs in the selected week?")) return;
+    if (!confirmAction("Create an invoice from all jobs in the selected week?\n\nImportant: invoice charges are separate from employee pay. You can edit every charge amount before saving.")) return;
     if (weekJobs.length === 0) {
       alert("There are no jobs in the selected week to invoice.");
       return;
@@ -619,18 +619,105 @@ export default function PayrollProEliteOperationsX() {
       paidAmount: 0,
       beforePhotos: [],
       afterPhotos: weekJobs.flatMap((job) => job.photos || []),
-      notes: `Created from jobs for work week ${week.start} to ${week.end}.`,
+      notes: `Created from jobs for work week ${week.start} to ${week.end}. Invoice charges are separate from employee payroll.`,
       sourceJobIds: weekJobs.map((job) => job.id),
       lineItems: weekJobs.map((job) => ({
         id: uid(),
         description: `${formatJobDate(job.date)} — ${propertyWithUnit(job)} — ${[...job.jobTypes, job.customWork].filter(Boolean).join(" / ") || "Labor"}`,
         qty: 1,
-        rate: safeNumber(job.pay),
+        rate: 0,
       })),
     };
     setEditingInvoice(invoice);
     setShowInvoiceForm(true);
-    setActiveTab("invoices");
+    setActiveTab("office");
+    setOpsView("invoices");
+  }
+
+  function openInvoiceDraft(invoice: Invoice) {
+    setEditingInvoice(invoice);
+    setShowInvoiceForm(true);
+    setActiveTab("office");
+    setOpsView("invoices");
+  }
+
+  function createInvoiceFromJob(job: JobEntry) {
+    const chargeText = window.prompt(
+      `Create invoice for this job
+
+Employee pay: ${money(job.pay)}
+
+Enter the amount you are charging the company. This is separate from what you pay the employee.`
+    );
+    if (chargeText === null) return;
+    const chargeAmount = safeNumber(chargeText.replace(/[^0-9.-]/g, ""));
+    if (chargeAmount <= 0) {
+      alert("Please enter the company charge amount for the invoice.");
+      return;
+    }
+    const invoice: Invoice = {
+      id: uid(),
+      invoiceNumber: nextInvoiceNumber(state.invoices),
+      clientName: job.property,
+      clientEmail: "",
+      property: job.property,
+      unitNumber: job.unitNumber || "",
+      invoiceDate: todayISO(),
+      dueDate: addDaysISO(todayISO(), 14),
+      status: "draft",
+      paidAmount: 0,
+      beforePhotos: [],
+      afterPhotos: job.photos || [],
+      notes: `Created from one job. Employee pay was ${money(job.pay)} and is kept separate from this invoice.`,
+      sourceJobIds: [job.id],
+      lineItems: [{
+        id: uid(),
+        description: `${formatJobDate(job.date)} — ${propertyWithUnit(job)} — ${[...job.jobTypes, job.customWork].filter(Boolean).join(" / ") || "Labor"}`,
+        qty: 1,
+        rate: chargeAmount,
+      }],
+    };
+    openInvoiceDraft(invoice);
+  }
+
+  function createInvoiceFromMakeReady(item: MakeReadyItem) {
+    const chargeText = window.prompt(
+      `Create invoice for this Make Ready
+
+Unit: ${makeReadyTitle(item)}
+
+Enter the amount you are charging the company.`
+    );
+    if (chargeText === null) return;
+    const chargeAmount = safeNumber(chargeText.replace(/[^0-9.-]/g, ""));
+    if (chargeAmount <= 0) {
+      alert("Please enter the company charge amount for the invoice.");
+      return;
+    }
+    const completed = item.tasks.filter((task) => task.done).map((task) => task.label).join(" / ");
+    const invoice: Invoice = {
+      id: uid(),
+      invoiceNumber: nextInvoiceNumber(state.invoices),
+      clientName: item.property,
+      clientEmail: "",
+      property: item.property,
+      unitNumber: item.unitNumber || "",
+      invoiceDate: todayISO(),
+      dueDate: addDaysISO(todayISO(), 14),
+      status: "draft",
+      paidAmount: 0,
+      beforePhotos: [],
+      afterPhotos: [],
+      notes: `Created from Make Ready workflow. Charge amount is separate from employee payroll. ${item.notes || ""}`.trim(),
+      sourceMakeReadyId: item.id,
+      lineItems: [{
+        id: uid(),
+        description: `Make Ready — ${makeReadyTitle(item)}${completed ? ` — Completed: ${completed}` : ""}`,
+        qty: 1,
+        rate: chargeAmount,
+      }],
+    };
+    openInvoiceDraft(invoice);
   }
 
   function deleteConfirmed() {
@@ -761,7 +848,7 @@ export default function PayrollProEliteOperationsX() {
 
         <main className="mt-5">
           {activeTab === "dashboard" && (
-            <Dashboard employeeTotals={employeeTotals} filteredJobs={filteredJobs} employeesById={employeesById} makeReadyTotals={makeReadyTotals} totals={totals} onAddJob={() => setShowJobForm(true)} onGoEmployees={() => setActiveTab("employees")} onGoReports={() => setActiveTab("reports")} onGoMakeReady={() => { setActiveTab("ops"); setOpsView("makeReady"); }} onGoInvoices={() => { setActiveTab("ops"); setOpsView("invoices"); }} />
+            <Dashboard employeeTotals={employeeTotals} filteredJobs={filteredJobs} employeesById={employeesById} makeReadyTotals={makeReadyTotals} totals={totals} onAddJob={() => setShowJobForm(true)} onGoEmployees={() => setActiveTab("employees")} onGoReports={() => setActiveTab("reports")} onGoMakeReady={() => { setActiveTab("field"); setOpsView("makeReady"); }} onGoInvoices={() => { setActiveTab("office"); setOpsView("invoices"); }} />
           )}
 
           {activeTab === "employees" && (
@@ -778,47 +865,54 @@ export default function PayrollProEliteOperationsX() {
             </section>
           )}
 
-          {(activeTab === "ops" || activeTab === "jobs" || activeTab === "makeReady" || activeTab === "invoices") && (
+          {(activeTab === "field" || activeTab === "ops" || activeTab === "jobs" || activeTab === "makeReady") && (
             <section className="space-y-4">
-              <SectionTop title="Ops" subtitle="Jobs • Make Ready • Invoices in one workflow.">
+              <SectionTop title="Field" subtitle="Create jobs, track worker pay, upload photos, and manage make ready work.">
                 <button
                   onClick={() =>
-                    opsView === "jobs"
-                      ? setShowJobForm(true)
-                      : opsView === "makeReady"
-                        ? (setEditingMakeReady(null), setShowMakeReadyForm(true))
-                        : (setEditingInvoice(null), setShowInvoiceForm(true))
+                    opsView === "makeReady"
+                      ? (setEditingMakeReady(null), setShowMakeReadyForm(true))
+                      : setShowJobForm(true)
                   }
                   className="goldButton"
                 >
-                  <Plus size={18} /> {opsView === "jobs" ? "Add Job" : opsView === "makeReady" ? "Add Unit" : "New Invoice"}
+                  <Plus size={18} /> {opsView === "makeReady" ? "Add Unit" : "Add Job"}
                 </button>
               </SectionTop>
 
-              <div className="grid grid-cols-3 gap-1 rounded-[1.2rem] border border-white/10 bg-black/30 p-1">
-                <button type="button" onClick={() => setOpsView("jobs")} className={`rounded-2xl px-2 py-3 text-xs font-black transition ${opsView === "jobs" ? "bg-green-500 text-black shadow-[0_10px_25px_rgba(34,197,94,0.22)]" : "text-zinc-400"}`}>
+              <div className="rounded-2xl border border-blue-400/20 bg-blue-500/10 p-3 text-sm font-semibold text-blue-200">
+                Field is your job-cost side: worker pay, job details, units, photos, and what still needs to be done.
+              </div>
+
+              <div className="grid grid-cols-2 gap-1 rounded-[1.2rem] border border-white/10 bg-black/30 p-1">
+                <button type="button" onClick={() => setOpsView("jobs")} className={`rounded-2xl px-2 py-3 text-xs font-black transition ${opsView !== "makeReady" ? "bg-green-500 text-black shadow-[0_10px_25px_rgba(34,197,94,0.22)]" : "text-zinc-400"}`}>
                   <span className="flex items-center justify-center gap-1"><BriefcaseBusiness size={16} /> Jobs</span>
                   <span className="mt-1 block text-[10px] font-black opacity-75">{filteredJobs.length}</span>
                 </button>
                 <button type="button" onClick={() => setOpsView("makeReady")} className={`rounded-2xl px-2 py-3 text-xs font-black transition ${opsView === "makeReady" ? "bg-green-500 text-black shadow-[0_10px_25px_rgba(34,197,94,0.22)]" : "text-zinc-400"}`}>
-                  <span className="flex items-center justify-center gap-1"><ClipboardCheck size={16} /> Ready</span>
+                  <span className="flex items-center justify-center gap-1"><ClipboardCheck size={16} /> Make Ready</span>
                   <span className="mt-1 block text-[10px] font-black opacity-75">{filteredMakeReady.length}</span>
-                </button>
-                <button type="button" onClick={() => setOpsView("invoices")} className={`rounded-2xl px-2 py-3 text-xs font-black transition ${opsView === "invoices" ? "bg-green-500 text-black shadow-[0_10px_25px_rgba(34,197,94,0.22)]" : "text-zinc-400"}`}>
-                  <span className="flex items-center justify-center gap-1"><ReceiptText size={16} /> Invoice</span>
-                  <span className="mt-1 block text-[10px] font-black opacity-75">{filteredInvoices.length}</span>
                 </button>
               </div>
 
-              {opsView === "jobs" && (
-                <JobList jobs={filteredJobs} employees={state.employees} employeesById={employeesById} properties={state.properties} jobTypeOptions={state.jobTypeOptions} onDelete={(id) => setConfirmDelete({ type: "job", id })} onUpdate={updateJob} />
+              {opsView !== "makeReady" && (
+                <JobList jobs={filteredJobs} employees={state.employees} employeesById={employeesById} properties={state.properties} jobTypeOptions={state.jobTypeOptions} onDelete={(id) => setConfirmDelete({ type: "job", id })} onUpdate={updateJob} onCreateInvoice={createInvoiceFromJob} />
               )}
               {opsView === "makeReady" && (
-                <MakeReadyBoard compact items={filteredMakeReady} employees={state.employees} employeesById={employeesById} onAdd={() => { setEditingMakeReady(null); setShowMakeReadyForm(true); }} onEdit={(item) => { setEditingMakeReady(item); setShowMakeReadyForm(true); }} onDelete={(id) => setConfirmDelete({ type: "makeReady", id })} onUpdate={upsertMakeReady} />
+                <MakeReadyBoard compact items={filteredMakeReady} employees={state.employees} employeesById={employeesById} onAdd={() => { setEditingMakeReady(null); setShowMakeReadyForm(true); }} onEdit={(item) => { setEditingMakeReady(item); setShowMakeReadyForm(true); }} onDelete={(id) => setConfirmDelete({ type: "makeReady", id })} onUpdate={upsertMakeReady} onCreateInvoice={createInvoiceFromMakeReady} />
               )}
-              {opsView === "invoices" && (
-                <InvoicesPanel invoices={filteredInvoices} jobs={state.jobs} weekJobs={weekJobs} onAdd={() => { setEditingInvoice(null); setShowInvoiceForm(true); }} onCreateFromWeek={createInvoiceFromWeekJobs} onEdit={(invoice) => { setEditingInvoice(invoice); setShowInvoiceForm(true); }} onDelete={(id) => setConfirmDelete({ type: "invoice", id })} onUpdate={upsertInvoice} />
-              )}
+            </section>
+          )}
+
+          {(activeTab === "office" || activeTab === "invoices") && (
+            <section className="space-y-4">
+              <SectionTop title="Office" subtitle="Create invoices, set company charges, print, email, and track customer payments.">
+                <button onClick={() => { setEditingInvoice(null); setShowInvoiceForm(true); }} className="goldButton"><Plus size={18} /> New Invoice</button>
+              </SectionTop>
+              <div className="rounded-2xl border border-green-400/20 bg-green-500/10 p-3 text-sm font-semibold text-green-200">
+                Office is your billing side: what you charge the company is separate from what you pay the employee.
+              </div>
+              <InvoicesPanel invoices={filteredInvoices} jobs={state.jobs} weekJobs={weekJobs} onAdd={() => { setEditingInvoice(null); setShowInvoiceForm(true); }} onCreateFromWeek={createInvoiceFromWeekJobs} onEdit={(invoice) => { setEditingInvoice(invoice); setShowInvoiceForm(true); }} onDelete={(id) => setConfirmDelete({ type: "invoice", id })} onUpdate={upsertInvoice} />
             </section>
           )}
 
@@ -899,7 +993,8 @@ function AppMobileHeader({ companyName, activeTab, setActiveTab }: { companyName
   const [menuOpen, setMenuOpen] = useState(false);
   const menuItems: { tab: ActiveTab; label: string; subtitle: string; icon: React.ReactNode }[] = [
     { tab: "dashboard", label: "Home", subtitle: "Command center", icon: <Home size={20} /> },
-    { tab: "ops", label: "Ops", subtitle: "Jobs, make ready, invoices", icon: <BriefcaseBusiness size={20} /> },
+    { tab: "field", label: "Field", subtitle: "Jobs, pay, photos, make ready", icon: <BriefcaseBusiness size={20} /> },
+    { tab: "office", label: "Office", subtitle: "Invoices, charges, billing", icon: <ReceiptText size={20} /> },
     { tab: "employees", label: "Employees", subtitle: "Employees and balances", icon: <Users size={20} /> },
     { tab: "reports", label: "Reports", subtitle: "Payroll closeout", icon: <ClipboardList size={20} /> },
     { tab: "properties", label: "Properties", subtitle: "Property dropdown list", icon: <Building2 size={20} /> },
@@ -915,7 +1010,7 @@ function AppMobileHeader({ companyName, activeTab, setActiveTab }: { companyName
             <img src="/icon-192.png" alt="1 Stop Turnover Specialist logo" className="h-12 w-12 shrink-0 rounded-2xl border border-white/10 bg-black object-cover shadow-[0_0_24px_rgba(34,197,94,0.18)]" />
             <div className="min-w-0"><h1 className="truncate text-lg font-black leading-tight">1 Stop Ops Pro</h1><p className="truncate text-xs font-semibold text-zinc-400">Payroll • Make Ready • Invoices</p></div>
           </div>
-          <div className="flex items-center gap-2 text-zinc-100"><button type="button" aria-label="Go to invoices" onClick={() => goTo("ops")} className="flex h-10 w-10 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.04] transition active:scale-95"><ReceiptText size={21} /></button><button type="button" aria-label="Open more controls" onClick={() => goTo("more")} className="flex h-10 w-10 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.04] transition active:scale-95"><MoreVertical size={21} /></button></div>
+          <div className="flex items-center gap-2 text-zinc-100"><button type="button" aria-label="Go to office" onClick={() => goTo("office")} className="flex h-10 w-10 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.04] transition active:scale-95"><ReceiptText size={21} /></button><button type="button" aria-label="Open more controls" onClick={() => goTo("more")} className="flex h-10 w-10 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.04] transition active:scale-95"><MoreVertical size={21} /></button></div>
         </div>
       </header>
       {menuOpen && (
@@ -946,7 +1041,7 @@ function SectionTop({ title, subtitle, children }: { title: string; subtitle: st
 
 function Dashboard({ employeeTotals, filteredJobs, employeesById, makeReadyTotals, totals, onAddJob, onGoEmployees, onGoReports, onGoMakeReady, onGoInvoices }: { employeeTotals: { employee: Employee; jobs: JobEntry[]; earned: number; paid: number; borrowed: number; owed: number }[]; filteredJobs: JobEntry[]; employeesById: Map<string, Employee>; makeReadyTotals: { ready: number; inProgress: number; urgent: number; scheduled: number }; totals: { invoiceOpen: number }; onAddJob: () => void; onGoEmployees: () => void; onGoReports: () => void; onGoMakeReady: () => void; onGoInvoices: () => void }) {
   const topOwed = [...employeeTotals].sort((a, b) => b.owed - a.owed).slice(0, 4);
-  return <section className="grid gap-4"><div className="space-y-4"><SectionTop title="Command Center" subtitle="Your company week at a glance."><button onClick={onAddJob} className="goldButton"><Plus size={18} /> Quick Add</button></SectionTop><div className="grid grid-cols-2 gap-3"><QuickTile onClick={onGoEmployees} icon={<UserPlus />} title="Employees" subtitle="Worker balances" /><QuickTile onClick={onGoMakeReady} icon={<ClipboardCheck />} title="Make Ready" subtitle={`${makeReadyTotals.inProgress} in progress`} /><QuickTile onClick={onGoInvoices} icon={<ReceiptText />} title="Invoices" subtitle={`${money(totals.invoiceOpen)} open`} /><QuickTile onClick={onGoReports} icon={<FileText />} title="Reports" subtitle="Payroll closeout" /></div><div className="grid grid-cols-4 gap-2"><MiniMetric label="Ready" value={makeReadyTotals.ready} /><MiniMetric label="Progress" value={makeReadyTotals.inProgress} /><MiniMetric label="Urgent" value={makeReadyTotals.urgent} danger /><MiniMetric label="Waiting" value={makeReadyTotals.scheduled} /></div><div className="blackCard p-4"><h3 className="font-black">Balances by Employee</h3><div className="mt-3 space-y-3">{topOwed.map(({ employee, earned, paid, owed, borrowed }) => <div key={employee.id} className="rounded-2xl border border-zinc-800 bg-black/30 p-3"><div className="flex items-center justify-between gap-3"><p className="font-black">{employee.name}</p><p className={`${owed > 0 ? "text-red-300" : "text-green-400"} font-black`}>{money(owed)}</p></div><div className="mt-2 grid grid-cols-4 gap-2 text-[11px] text-zinc-400"><span>Earned {money(earned)}</span><span>Paid {money(paid)}</span><span>Borrowed {money(borrowed)}</span><span>Owed {money(owed)}</span></div></div>)}{topOwed.length === 0 && <EmptyText text="No employee payroll yet this week." />}</div></div></div><div className="space-y-3"><div className="flex items-center justify-between"><h3 className="text-sm font-black uppercase tracking-wide text-zinc-300">Jobs This Week</h3><span className="darkButton !px-3 !py-2 text-xs"><Filter size={14} /> Week Only</span></div><div className="blackCard divide-y divide-white/10 overflow-hidden">{filteredJobs.slice(0, 7).map((job) => <JobMini key={job.id} job={job} employee={employeesById.get(job.employeeId)} />)}{filteredJobs.length === 0 && <EmptyText text="No jobs found for this week." />}</div></div></section>;
+  return <section className="grid gap-4"><div className="space-y-4"><SectionTop title="Command Center" subtitle="Your company week at a glance."><button onClick={onAddJob} className="goldButton"><Plus size={18} /> Quick Add</button></SectionTop><div className="grid grid-cols-2 gap-3"><QuickTile onClick={onGoEmployees} icon={<UserPlus />} title="Employees" subtitle="Worker balances" /><QuickTile onClick={onGoMakeReady} icon={<ClipboardCheck />} title="Field" subtitle={`${makeReadyTotals.inProgress} make ready`} /><QuickTile onClick={onGoInvoices} icon={<ReceiptText />} title="Office" subtitle={`${money(totals.invoiceOpen)} open`} /><QuickTile onClick={onGoReports} icon={<FileText />} title="Reports" subtitle="Payroll closeout" /></div><div className="grid grid-cols-4 gap-2"><MiniMetric label="Ready" value={makeReadyTotals.ready} /><MiniMetric label="Progress" value={makeReadyTotals.inProgress} /><MiniMetric label="Urgent" value={makeReadyTotals.urgent} danger /><MiniMetric label="Waiting" value={makeReadyTotals.scheduled} /></div><div className="blackCard p-4"><h3 className="font-black">Balances by Employee</h3><div className="mt-3 space-y-3">{topOwed.map(({ employee, earned, paid, owed, borrowed }) => <div key={employee.id} className="rounded-2xl border border-zinc-800 bg-black/30 p-3"><div className="flex items-center justify-between gap-3"><p className="font-black">{employee.name}</p><p className={`${owed > 0 ? "text-red-300" : "text-green-400"} font-black`}>{money(owed)}</p></div><div className="mt-2 grid grid-cols-4 gap-2 text-[11px] text-zinc-400"><span>Earned {money(earned)}</span><span>Paid {money(paid)}</span><span>Borrowed {money(borrowed)}</span><span>Owed {money(owed)}</span></div></div>)}{topOwed.length === 0 && <EmptyText text="No employee payroll yet this week." />}</div></div></div><div className="space-y-3"><div className="flex items-center justify-between"><h3 className="text-sm font-black uppercase tracking-wide text-zinc-300">Jobs This Week</h3><span className="darkButton !px-3 !py-2 text-xs"><Filter size={14} /> Week Only</span></div><div className="blackCard divide-y divide-white/10 overflow-hidden">{filteredJobs.slice(0, 7).map((job) => <JobMini key={job.id} job={job} employee={employeesById.get(job.employeeId)} />)}{filteredJobs.length === 0 && <EmptyText text="No jobs found for this week." />}</div></div></section>;
 }
 
 function QuickTile({ onClick, icon, title, subtitle }: { onClick: () => void; icon: React.ReactNode; title: string; subtitle: string }) { return <button onClick={onClick} className="blackCard p-5 text-left transition active:scale-[.99]"><div className="relative z-10 flex h-12 w-12 items-center justify-center rounded-2xl border border-white/10 bg-green-500/10 text-green-400">{icon}</div><p className="relative z-10 mt-3 text-lg font-black">{title}</p><p className="relative z-10 text-xs text-zinc-500">{subtitle}</p></button>; }
@@ -979,11 +1074,11 @@ function EmployeeCard({ employee, totals, expanded, onToggle, onDelete, onSave, 
 function BalancePill({ label, value, gold = false, danger = false }: { label: string; value: string; gold?: boolean; danger?: boolean }) { return <div className={`rounded-2xl border p-2 ${danger ? "border-red-400/30 bg-red-500/10" : gold ? "border-green-400/25 bg-green-500/10" : "border-zinc-800 bg-black/30"}`}><p className="text-[10px] font-black uppercase tracking-wider text-zinc-500">{label}</p><p className={`text-sm font-black ${danger ? "text-red-300" : gold ? "text-green-400" : "text-zinc-100"}`}>{value}</p></div>; }
 
 
-function JobList({ jobs, employees, employeesById, properties, jobTypeOptions, onDelete, onUpdate }: { jobs: JobEntry[]; employees: Employee[]; employeesById: Map<string, Employee>; properties: string[]; jobTypeOptions: string[]; onDelete: (id: string) => void; onUpdate: (job: JobEntry) => void }) {
-  return <div className="space-y-3">{jobs.map((job) => <JobRow key={job.id} job={job} employees={employees} employee={employeesById.get(job.employeeId)} properties={properties} jobTypeOptions={jobTypeOptions} onDelete={() => onDelete(job.id)} onUpdate={onUpdate} />)}{jobs.length === 0 && <div className="blackCard p-6"><EmptyText text="No jobs found for this selected week." /></div>}</div>;
+function JobList({ jobs, employees, employeesById, properties, jobTypeOptions, onDelete, onUpdate, onCreateInvoice }: { jobs: JobEntry[]; employees: Employee[]; employeesById: Map<string, Employee>; properties: string[]; jobTypeOptions: string[]; onDelete: (id: string) => void; onUpdate: (job: JobEntry) => void; onCreateInvoice: (job: JobEntry) => void }) {
+  return <div className="space-y-3">{jobs.map((job) => <JobRow key={job.id} job={job} employees={employees} employee={employeesById.get(job.employeeId)} properties={properties} jobTypeOptions={jobTypeOptions} onDelete={() => onDelete(job.id)} onUpdate={onUpdate} onCreateInvoice={() => onCreateInvoice(job)} />)}{jobs.length === 0 && <div className="blackCard p-6"><EmptyText text="No jobs found for this selected week." /></div>}</div>;
 }
 
-function JobRow({ job, employees, employee, properties, jobTypeOptions, onDelete, onUpdate }: { job: JobEntry; employees: Employee[]; employee?: Employee; properties: string[]; jobTypeOptions: string[]; onDelete: () => void; onUpdate: (job: JobEntry) => void }) {
+function JobRow({ job, employees, employee, properties, jobTypeOptions, onDelete, onUpdate, onCreateInvoice }: { job: JobEntry; employees: Employee[]; employee?: Employee; properties: string[]; jobTypeOptions: string[]; onDelete: () => void; onUpdate: (job: JobEntry) => void; onCreateInvoice: () => void }) {
   const [open, setOpen] = useState(false);
   const owed = Math.max(safeNumber(job.pay) - safeNumber(job.paidAmount), 0);
   const isFullyPaid = owed <= 0 || job.status === "paid";
@@ -1014,22 +1109,22 @@ Mark this job paid?
 Amount: ${money(value)}`)) return; onUpdate({ ...job, paidAmount: value, status: statusFrom(job.pay, value) }); }} placeholder="Enter Amount" /></Field></div><Field label="Work Type"><div className="grid grid-cols-2 gap-2">{jobTypeOptions.map((type) => <button type="button" key={type} onClick={() => toggleType(type)} className={`rounded-xl border px-3 py-2 text-left text-xs font-bold ${job.jobTypes.includes(type) ? "border-green-400/50 bg-green-500/20 text-green-300" : "border-zinc-800 bg-black/30 text-zinc-400"}`}>{job.jobTypes.includes(type) ? "✓ " : ""}{type}</button>)}</div></Field><Field label="Custom Work"><input className="inputElite" value={job.customWork} onChange={(e) => onUpdate({ ...job, customWork: e.target.value })} placeholder="Edit custom work description..." /></Field><Field label="Job Photos"><div className="rounded-2xl border border-dashed border-zinc-800 bg-black/30 p-4"><div className="grid grid-cols-2 gap-2"><label className="goldButton w-full cursor-pointer"><Camera size={18} /> Take Photo<input type="file" accept="image/*" multiple capture="environment" className="hidden" onChange={async (e) => { await addPhotos(e.target.files); e.currentTarget.value = ""; }} /></label><label className="darkButton w-full cursor-pointer"><ImageIcon size={18} /> Upload<input type="file" accept="image/*" multiple className="hidden" onChange={async (e) => { await addPhotos(e.target.files); e.currentTarget.value = ""; }} /></label></div>{(job.photos || []).length > 0 ? <div className="mt-4 grid grid-cols-2 gap-3">{(job.photos || []).map((photo, index) => <div key={`${job.id}-photo-${index}`} className="relative overflow-hidden rounded-2xl border border-white/10 bg-black/40"><img src={photo} alt={`Job photo ${index + 1}`} className="h-32 w-full object-cover" /><button type="button" className="absolute right-2 top-2 rounded-full border border-red-400/30 bg-black/70 p-2 text-red-200" onClick={() => { const ok = window.confirm("Remove this photo from the job?"); if (!ok) return; onUpdate({ ...job, photos: (job.photos || []).filter((_, photoIndex) => photoIndex !== index) }); }}><Trash2 size={15} /></button></div>)}</div> : <p className="mt-3 text-center text-sm font-semibold text-zinc-500">No photos attached yet.</p>}</div></Field><Field label="Notes"><textarea className="inputElite min-h-28" value={job.notes} onChange={(e) => onUpdate({ ...job, notes: e.target.value })} placeholder="Edit notes for this saved job..." /></Field><div className="flex items-center justify-between gap-2"><span className={`rounded-full border px-3 py-1 text-xs font-black ${jobStatusColor(normalizedStatus, owed)}`}>{normalizedStatus.toUpperCase()}</span><button className="iconDanger" onClick={onDelete}><Trash2 size={18} /></button></div></div>}</div>;
 }
 
-function MakeReadyBoard({ items, employees, employeesById, onAdd, onEdit, onDelete, onUpdate, compact = false }: { items: MakeReadyItem[]; employees: Employee[]; employeesById: Map<string, Employee>; onAdd: () => void; onEdit: (item: MakeReadyItem) => void; onDelete: (id: string) => void; onUpdate: (item: MakeReadyItem) => void; compact?: boolean }) {
-  return <section className="space-y-4">{!compact && <SectionTop title="Make Ready Board" subtitle="Track each unit from move-out to ready for move-in."><button onClick={onAdd} className="goldButton"><Plus size={18} /> Add Unit</button></SectionTop>} {compact && <div className="rounded-2xl border border-green-400/20 bg-green-500/10 p-3 text-sm font-semibold text-green-200">Make Ready is now available inside Jobs, while still keeping the original turnover board feel.</div>}<div className="grid gap-3">{items.map((item) => <MakeReadyCard key={item.id} item={item} employee={employeesById.get(item.assignedEmployeeId)} employees={employees} onEdit={() => onEdit(item)} onDelete={() => onDelete(item.id)} onUpdate={onUpdate} />)}{items.length === 0 && <div className="blackCard p-6"><EmptyText text="No Make Ready units yet. Add your first turnover unit." /></div>}</div></section>;
+function MakeReadyBoard({ items, employees, employeesById, onAdd, onEdit, onDelete, onUpdate, onCreateInvoice, compact = false }: { items: MakeReadyItem[]; employees: Employee[]; employeesById: Map<string, Employee>; onAdd: () => void; onEdit: (item: MakeReadyItem) => void; onDelete: (id: string) => void; onUpdate: (item: MakeReadyItem) => void; onCreateInvoice: (item: MakeReadyItem) => void; compact?: boolean }) {
+  return <section className="space-y-4">{!compact && <SectionTop title="Make Ready Board" subtitle="Track each unit from move-out to ready for move-in."><button onClick={onAdd} className="goldButton"><Plus size={18} /> Add Unit</button></SectionTop>} {compact && <div className="rounded-2xl border border-green-400/20 bg-green-500/10 p-3 text-sm font-semibold text-green-200">Make Ready is now available inside Ops with one-tap invoice creation. Invoice charges stay separate from employee pay.</div>}<div className="grid gap-3">{items.map((item) => <MakeReadyCard key={item.id} item={item} employee={employeesById.get(item.assignedEmployeeId)} employees={employees} onEdit={() => onEdit(item)} onDelete={() => onDelete(item.id)} onUpdate={onUpdate} onCreateInvoice={() => onCreateInvoice(item)} />)}{items.length === 0 && <div className="blackCard p-6"><EmptyText text="No Make Ready units yet. Add your first turnover unit." /></div>}</div></section>;
 }
 
-function MakeReadyCard({ item, employee, employees, onEdit, onDelete, onUpdate }: { item: MakeReadyItem; employee?: Employee; employees: Employee[]; onEdit: () => void; onDelete: () => void; onUpdate: (item: MakeReadyItem) => void }) {
+function MakeReadyCard({ item, employee, employees, onEdit, onDelete, onUpdate, onCreateInvoice }: { item: MakeReadyItem; employee?: Employee; employees: Employee[]; onEdit: () => void; onDelete: () => void; onUpdate: (item: MakeReadyItem) => void; onCreateInvoice: () => void }) {
   const done = item.tasks.filter((task) => task.done).length;
   const total = item.tasks.length || 1;
   const percent = Math.round((done / total) * 100);
   const statusClasses = item.status === "ready" ? "bg-emerald-500/15 text-emerald-300" : item.priority === "urgent" ? "bg-red-500/15 text-red-300" : item.status === "in-progress" ? "bg-amber-500/15 text-amber-300" : "bg-blue-500/15 text-blue-300";
-  return <div className="blackCard p-4"><div className="flex items-start justify-between gap-3"><div><p className="text-lg font-black">{makeReadyTitle(item)}</p><p className="text-xs text-zinc-500">Assigned: {employee?.name || "Not assigned"} • Deadline: {item.deadline || "—"}</p></div><span className={`rounded-full px-3 py-1 text-[10px] font-black uppercase ${statusClasses}`}>{item.priority === "urgent" ? "Urgent" : item.status.replace("-", " ")}</span></div><div className="mt-3 h-3 overflow-hidden rounded-full border border-white/10 bg-black/40"><div className="h-full rounded-full bg-green-500" style={{ width: `${percent}%` }} /></div><p className="mt-1 text-xs font-bold text-zinc-500">{percent}% complete • Move-out {item.moveOutDate || "—"} • Move-in {item.moveInDate || "—"}</p><div className="mt-3 grid gap-2">{item.tasks.map((task) => <button type="button" key={task.id} onClick={() => { if (!task.done && !confirmAction(`Confirm: mark ${task.label} complete?`)) return; onUpdate({ ...item, tasks: item.tasks.map((row) => row.id === task.id ? { ...row, done: !row.done } : row) }); }} className={`flex items-center gap-2 rounded-xl border px-3 py-2 text-left text-sm font-bold ${task.done ? "border-green-400/25 bg-green-500/10 text-green-300" : "border-zinc-800 bg-black/30 text-zinc-400"}`}><span>{task.done ? "✅" : "⬜"}</span>{task.label}</button>)}</div><div className="mt-3 grid grid-cols-2 gap-2"><Field label="Status"><select className="inputElite" value={item.status} onChange={(e) => { const nextStatus = e.target.value as MakeReadyItem["status"]; if (nextStatus === "ready" && !confirmAction("Confirm: mark this unit ready?")) return; onUpdate({ ...item, status: nextStatus }); }}><option value="scheduled">Scheduled</option><option value="in-progress">In Progress</option><option value="waiting">Waiting</option><option value="ready">Ready</option></select></Field><Field label="Assigned"><select className="inputElite" value={item.assignedEmployeeId} onChange={(e) => onUpdate({ ...item, assignedEmployeeId: e.target.value })}><option value="">Not assigned</option>{employees.map((employee) => <option key={employee.id} value={employee.id}>{employee.name}</option>)}</select></Field></div>{item.notes && <p className="mt-3 rounded-2xl border border-white/10 bg-black/25 p-3 text-sm text-zinc-400">{item.notes}</p>}<div className="mt-3 flex gap-2"><button className="darkButton flex-1" onClick={onEdit}><Pencil size={16} /> Edit Unit</button><button className="iconDanger" onClick={onDelete}><Trash2 size={18} /></button></div></div>;
+  return <div className="blackCard p-4"><div className="flex items-start justify-between gap-3"><div><p className="text-lg font-black">{makeReadyTitle(item)}</p><p className="text-xs text-zinc-500">Assigned: {employee?.name || "Not assigned"} • Deadline: {item.deadline || "—"}</p></div><span className={`rounded-full px-3 py-1 text-[10px] font-black uppercase ${statusClasses}`}>{item.priority === "urgent" ? "Urgent" : item.status.replace("-", " ")}</span></div><div className="mt-3 h-3 overflow-hidden rounded-full border border-white/10 bg-black/40"><div className="h-full rounded-full bg-green-500" style={{ width: `${percent}%` }} /></div><p className="mt-1 text-xs font-bold text-zinc-500">{percent}% complete • Move-out {item.moveOutDate || "—"} • Move-in {item.moveInDate || "—"}</p><div className="mt-3 grid gap-2">{item.tasks.map((task) => <button type="button" key={task.id} onClick={() => { if (!task.done && !confirmAction(`Confirm: mark ${task.label} complete?`)) return; onUpdate({ ...item, tasks: item.tasks.map((row) => row.id === task.id ? { ...row, done: !row.done } : row) }); }} className={`flex items-center gap-2 rounded-xl border px-3 py-2 text-left text-sm font-bold ${task.done ? "border-green-400/25 bg-green-500/10 text-green-300" : "border-zinc-800 bg-black/30 text-zinc-400"}`}><span>{task.done ? "✅" : "⬜"}</span>{task.label}</button>)}</div><div className="mt-3 grid grid-cols-2 gap-2"><Field label="Status"><select className="inputElite" value={item.status} onChange={(e) => { const nextStatus = e.target.value as MakeReadyItem["status"]; if (nextStatus === "ready" && !confirmAction("Confirm: mark this unit ready?")) return; onUpdate({ ...item, status: nextStatus }); }}><option value="scheduled">Scheduled</option><option value="in-progress">In Progress</option><option value="waiting">Waiting</option><option value="ready">Ready</option></select></Field><Field label="Assigned"><select className="inputElite" value={item.assignedEmployeeId} onChange={(e) => onUpdate({ ...item, assignedEmployeeId: e.target.value })}><option value="">Not assigned</option>{employees.map((employee) => <option key={employee.id} value={employee.id}>{employee.name}</option>)}</select></Field></div>{item.notes && <p className="mt-3 rounded-2xl border border-white/10 bg-black/25 p-3 text-sm text-zinc-400">{item.notes}</p>}<div className="mt-3 grid grid-cols-2 gap-2"><button className="darkButton" onClick={onEdit}><Pencil size={16} /> Edit Unit</button><button className="goldButton" onClick={onCreateInvoice}><ReceiptText size={16} /> Create Invoice</button></div><div className="mt-2 flex justify-end"><button className="iconDanger" onClick={onDelete}><Trash2 size={18} /></button></div></div>;
 }
 
 function InvoicesPanel({ invoices, jobs, weekJobs, onAdd, onCreateFromWeek, onEdit, onDelete, onUpdate }: { invoices: Invoice[]; jobs: JobEntry[]; weekJobs: JobEntry[]; onAdd: () => void; onCreateFromWeek: () => void; onEdit: (invoice: Invoice) => void; onDelete: (id: string) => void; onUpdate: (invoice: Invoice) => void }) {
   const openBalance = invoices.reduce((sum, invoice) => sum + Math.max(invoiceTotal(invoice) - safeNumber(invoice.paidAmount), 0), 0);
   const paidCount = invoices.filter((invoice) => invoice.status === "paid" || Math.max(invoiceTotal(invoice) - safeNumber(invoice.paidAmount), 0) <= 0).length;
-  return <section className="space-y-4"><SectionTop title="Invoice Studio" subtitle="Design, preview, print PDF, email, and track payments from one place."><div className="flex flex-col gap-2"><button onClick={onAdd} className="goldButton"><Plus size={18} /> New Invoice</button><button onClick={onCreateFromWeek} className="darkButton"><Sparkles size={16} /> Invoice This Week</button></div></SectionTop><div className="grid grid-cols-3 gap-2"><MiniMetric label="Invoices" value={invoices.length} /><MiniMetric label="Paid" value={paidCount} /><div className="rounded-2xl border border-red-400/25 bg-red-500/10 p-3 text-center"><p className="text-lg font-black text-red-300">{money(openBalance)}</p><p className="text-[10px] font-black uppercase text-zinc-500">Open</p></div></div>{weekJobs.length > 0 && <div className="rounded-2xl border border-green-400/20 bg-green-500/10 p-3 text-sm font-semibold text-green-200">Selected week has {weekJobs.length} jobs ready to turn into a PDF-ready invoice.</div>}<div className="space-y-3">{invoices.map((invoice) => <InvoiceCard key={invoice.id} invoice={invoice} jobs={jobs} onEdit={() => onEdit(invoice)} onDelete={() => onDelete(invoice.id)} onUpdate={onUpdate} />)}{invoices.length === 0 && <div className="blackCard p-6"><EmptyText text="No invoices yet. Create one manually or from this week’s jobs." /></div>}</div></section>;
+  return <section className="space-y-4"><SectionTop title="Invoice Studio" subtitle="Design, preview, print PDF, email, and track payments from one place."><div className="flex flex-col gap-2"><button onClick={onAdd} className="goldButton"><Plus size={18} /> New Invoice</button><button onClick={onCreateFromWeek} className="darkButton"><Sparkles size={16} /> Invoice This Week</button></div></SectionTop><div className="grid grid-cols-3 gap-2"><MiniMetric label="Invoices" value={invoices.length} /><MiniMetric label="Paid" value={paidCount} /><div className="rounded-2xl border border-red-400/25 bg-red-500/10 p-3 text-center"><p className="text-lg font-black text-red-300">{money(openBalance)}</p><p className="text-[10px] font-black uppercase text-zinc-500">Open</p></div></div>{weekJobs.length > 0 && <div className="rounded-2xl border border-green-400/20 bg-green-500/10 p-3 text-sm font-semibold text-green-200">Selected week has {weekJobs.length} jobs ready to invoice. Enter the company charge amount separately from employee pay.</div>}<div className="space-y-3">{invoices.map((invoice) => <InvoiceCard key={invoice.id} invoice={invoice} jobs={jobs} onEdit={() => onEdit(invoice)} onDelete={() => onDelete(invoice.id)} onUpdate={onUpdate} />)}{invoices.length === 0 && <div className="blackCard p-6"><EmptyText text="No invoices yet. Create one manually or from this week’s jobs." /></div>}</div></section>;
 }
 
 function InvoiceCard({ invoice, jobs, onEdit, onDelete, onUpdate }: { invoice: Invoice; jobs: JobEntry[]; onEdit: () => void; onDelete: () => void; onUpdate: (invoice: Invoice) => void }) {
@@ -1253,9 +1348,9 @@ function ConfirmModal({ title, message, onCancel, onConfirm }: { title: string; 
 function BottomNav({ activeTab, setActiveTab }: { activeTab: ActiveTab; setActiveTab: (tab: ActiveTab) => void }) {
   const tabs: { tab: ActiveTab; label: string; icon: React.ReactNode }[] = [
     { tab: "dashboard", label: "Home", icon: <Home size={20} /> },
-    { tab: "ops", label: "Ops", icon: <BriefcaseBusiness size={20} /> },
+    { tab: "field", label: "Field", icon: <BriefcaseBusiness size={20} /> },
+    { tab: "office", label: "Office", icon: <ReceiptText size={20} /> },
     { tab: "employees", label: "Employees", icon: <Users size={20} /> },
-    { tab: "reports", label: "Reports", icon: <ClipboardList size={20} /> },
     { tab: "more", label: "More", icon: <MoreVertical size={20} /> },
   ];
   return <nav className="fixed bottom-0 left-0 right-0 z-40 border-t border-white/10 bg-[#02070a]/95 px-2 pb-3 pt-2 backdrop-blur-xl"><div className="mx-auto grid max-w-[540px] grid-cols-5 gap-1">{tabs.map((item) => { const active = activeTab === item.tab; return <button key={item.tab} onClick={() => setActiveTab(item.tab)} className={`flex flex-col items-center justify-center gap-1 rounded-2xl py-2 text-[11px] font-black transition active:scale-95 ${active ? "bg-green-500 text-black" : "text-zinc-500"}`}>{item.icon}<span>{item.label}</span></button>; })}</div></nav>;
