@@ -821,29 +821,41 @@ Enter the amount you are charging the company.`
 
         <WeekHero week={week} selectedWeek={selectedWeek} setSelectedWeek={setSelectedWeek} />
 
-        <button onClick={() => setShowJobForm(true)} className="mt-5 flex w-full items-center justify-center gap-3 rounded-[1.15rem] border border-green-300/20 bg-gradient-to-r from-green-500 to-green-600 px-5 py-4 text-xl font-black text-white shadow-[0_20px_45px_rgba(34,197,94,0.24)] transition active:scale-[.99]">
-          <Plus size={30} /> Add Job
-        </button>
-        <p className="mt-3 text-center text-xs font-semibold text-zinc-500">Payroll, turnovers, make ready, and invoices in one app.</p>
+        {activeTab === "dashboard" && (
+          <>
+            <button onClick={() => setShowJobForm(true)} className="mt-5 flex w-full items-center justify-center gap-3 rounded-[1.15rem] border border-green-300/20 bg-gradient-to-r from-green-500 to-green-600 px-5 py-4 text-xl font-black text-white shadow-[0_20px_45px_rgba(34,197,94,0.24)] transition active:scale-[.99]">
+              <Plus size={30} /> Add Job
+            </button>
+            <p className="mt-3 text-center text-xs font-semibold text-zinc-500">Payroll, turnovers, make ready, and invoices in one app.</p>
+          </>
+        )}
 
-        <div className="mt-6 flex items-center justify-between">
-          <h2 className="text-sm font-black uppercase tracking-wide text-zinc-300">Week Summary</h2>
-          <p className="px-1 text-xs font-black text-green-400">✣ {week.start} to {week.end}</p>
-        </div>
+        {(activeTab === "office" || activeTab === "invoices" || activeTab === "reports") && (
+          <>
+            <div className="mt-6 flex items-center justify-between">
+              <h2 className="text-sm font-black uppercase tracking-wide text-zinc-300">Office Week Summary</h2>
+              <p className="px-1 text-xs font-black text-green-400">✣ {week.start} to {week.end}</p>
+            </div>
 
-        <div className="mt-3 grid grid-cols-2 gap-3">
-          <StatCard label="Week Earned" value={money(totals.earned)} description="Selected Week Only" icon={<CircleDollarSign size={20} />} variant="earned" />
-          <StatCard label="Paid Out" value={money(totals.paid)} description="Paid This Week" icon={<ArrowDown size={20} />} variant="paid" />
-          <StatCard label="Borrowed" value={money(totals.borrowed || 0)} description="Borrowed This Week" icon={<CreditCard size={20} />} variant="borrowed" />
-          <StatCard label="Still Owed" value={money(totals.owed)} description="Left To Pay" icon={<Minus size={20} />} variant="owed" />
-        </div>
+            <div className="mt-3 grid grid-cols-2 gap-3">
+              <StatCard label="Payroll Cost" value={money(totals.earned)} description="Worker Pay This Week" icon={<CircleDollarSign size={20} />} variant="earned" />
+              <StatCard label="Paid Out" value={money(totals.paid)} description="Paid To Workers" icon={<ArrowDown size={20} />} variant="paid" />
+              <StatCard label="Borrowed" value={money(totals.borrowed || 0)} description="Employee Advances" icon={<CreditCard size={20} />} variant="borrowed" />
+              <StatCard label="Worker Owed" value={money(totals.owed)} description="Still Left To Pay" icon={<Minus size={20} />} variant="owed" />
+            </div>
+
+            <div className="mt-3 rounded-2xl border border-green-400/20 bg-green-500/10 p-3 text-xs font-semibold text-green-200">
+              Office shows the money side: payroll cost, employee balances, invoices, and company charges. Field stays clean for job entry and photos.
+            </div>
+          </>
+        )}
 
         <div className="sticky top-[68px] z-20 -mx-4 mt-5 border-y border-white/10 bg-[#02070a]/90 px-4 py-3 shadow-[0_18px_40px_rgba(0,0,0,0.35)] backdrop-blur-xl">
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" size={18} />
             <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search employee, property, job, invoice..." className="w-full rounded-2xl border border-zinc-800 bg-zinc-950 py-2 pl-10 pr-3 text-sm outline-none ring-amber-400/40 placeholder:text-zinc-500 focus:border-green-400/60 focus:ring-4" />
           </div>
-          <p className="mt-2 text-xs text-zinc-500">Ops hub keeps <span className="font-black text-green-400">jobs, make ready, and invoices</span> together. Historical jobs stay saved.</p>
+          <p className="mt-2 text-xs text-zinc-500">{activeTab === "field" ? <><span className="font-black text-green-400">Field mode:</span> jobs, worker pay, units, make ready, and photos.</> : activeTab === "office" || activeTab === "invoices" ? <><span className="font-black text-green-400">Office mode:</span> invoices, company charges, customer balances, and billing.</> : <>Historical jobs stay saved.</>}</p>
         </div>
 
         <main className="mt-5">
