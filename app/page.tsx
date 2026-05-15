@@ -41,8 +41,8 @@ import {
 } from "lucide-react";
 
 // 1 STOP TURNOVER SPECIALIST PRO ELITE - OPERATIONS X
-// PHASE 6 single-file replacement for app/page.tsx
-// Office/Field split + job invoice button + Preview PDF workflow before sending
+// PHASE 7 single-file replacement for app/page.tsx
+// Fixed invoice print/PDF + invoice filters: All, Outstanding, Paid
 
 const STORAGE_KEY = "oneStopPayrollProEliteBlackGoldX_v1";
 
@@ -372,6 +372,156 @@ function openInvoiceEmail(invoice: Invoice) {
   }
 
   window.location.href = `mailto:${to}?subject=${subject}&body=${body}`;
+}
+
+
+function escapePrintHtml(value: unknown) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+function invoiceStatusIsPaid(invoice: Invoice) {
+  const total = invoiceTotal(invoice);
+  return invoice.status === "paid" && total > 0 && safeNumber(invoice.paidAmount) >= total;
+}
+
+function printInvoiceDocument(invoice: Invoice, beforePhotos: string[] = [], afterPhotos: string[] = []) {
+  if (typeof window === "undefined") return;
+  const total = invoiceTotal(invoice);
+  const paid = safeNumber(invoice.paidAmount);
+  const balance = Math.max(total - paid, 0);
+  const isPaid = invoiceStatusIsPaid(invoice);
+  const lineRows = invoice.lineItems.map((item) => `
+    <tr>
+      <td>${escapePrintHtml(item.description)}</td>
+      <td class="center">${escapePrintHtml(item.qty)}</td>
+      <td class="right">${money(item.rate)}</td>
+      <td class="right strong">${money(safeNumber(item.qty) * safeNumber(item.rate))}</td>
+    </tr>
+  `).join("");
+  const photoSection = (title: string, photos: string[]) => photos.length ? `
+    <section class="photos">
+      <h3>${escapePrintHtml(title)}</h3>
+      <div class="photoGrid">
+        ${photos.map((photo, index) => `
+          <figure>
+            <img src="${photo}" alt="${escapePrintHtml(title)} ${index + 1}" />
+            <figcaption>${escapePrintHtml(title)} #${index + 1}</figcaption>
+          </figure>
+        `).join("")}
+      </div>
+    </section>
+  ` : "";
+
+  const html = `<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>${escapePrintHtml(invoice.invoiceNumber)} - 1 Stop Invoice</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; background: white; color: #111827; font-family: Arial, Helvetica, sans-serif; }
+    .invoice { width: 100%; max-width: 820px; margin: 0 auto; padding: 28px; }
+    .header { background: #020617; color: white; border-radius: 18px; padding: 22px; display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; }
+    .brand { display: flex; gap: 14px; align-items: center; }
+    .brand img { width: 72px; height: 72px; border-radius: 18px; object-fit: cover; background: black; }
+    h1, h2, h3, p { margin: 0; }
+    .company { font-size: 24px; font-weight: 900; }
+    .tagline { margin-top: 5px; color: #cbd5e1; font-size: 13px; font-weight: 700; }
+    .invoiceTitle { text-align: right; }
+    .invoiceTitle h2 { color: #22c55e; font-size: 32px; font-weight: 900; letter-spacing: .04em; }
+    .badge { display: inline-block; margin-top: 10px; padding: 7px 12px; border-radius: 999px; background: ${isPaid ? "#22c55e" : "#f59e0b"}; color: #020617; font-weight: 900; font-size: 12px; }
+    .meta { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-top: 22px; padding-bottom: 18px; border-bottom: 1px solid #e5e7eb; }
+    .label { color: #64748b; text-transform: uppercase; font-size: 11px; letter-spacing: .08em; font-weight: 900; margin-bottom: 6px; }
+    .right { text-align: right; }
+    .center { text-align: center; }
+    .strong { font-weight: 900; }
+    table { width: 100%; border-collapse: collapse; margin-top: 24px; border: 1px solid #e5e7eb; border-radius: 14px; overflow: hidden; }
+    th { background: #f1f5f9; color: #475569; font-size: 11px; text-transform: uppercase; letter-spacing: .08em; text-align: left; padding: 11px; }
+    td { border-top: 1px solid #e5e7eb; padding: 13px 11px; font-size: 13px; vertical-align: top; }
+    .totals { margin-top: 20px; margin-left: auto; width: 300px; border: 1px solid #e5e7eb; background: #f8fafc; border-radius: 14px; padding: 14px; }
+    .totals div { display: flex; justify-content: space-between; margin: 8px 0; }
+    .balance { border-top: 1px solid #cbd5e1; padding-top: 12px; font-size: 20px; font-weight: 900; }
+    .balance b { color: ${balance > 0 ? "#dc2626" : "#15803d"}; }
+    .notes { margin-top: 20px; border: 1px solid #e5e7eb; background: #f8fafc; border-radius: 14px; padding: 14px; font-size: 13px; }
+    .photos { margin-top: 22px; page-break-inside: avoid; }
+    .photos h3 { margin-bottom: 10px; font-size: 16px; font-weight: 900; }
+    .photoGrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+    figure { margin: 0; border: 1px solid #e5e7eb; border-radius: 14px; overflow: hidden; background: #f8fafc; page-break-inside: avoid; }
+    figure img { width: 100%; height: 220px; object-fit: cover; display: block; }
+    figcaption { padding: 7px 9px; color: #64748b; font-size: 11px; font-weight: 800; }
+    .footer { margin-top: 26px; padding-top: 12px; border-top: 1px solid #e5e7eb; color: #64748b; font-size: 12px; display: flex; justify-content: space-between; gap: 12px; }
+    @page { margin: 0.45in; }
+    @media print { .invoice { padding: 0; } body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
+  </style>
+</head>
+<body>
+  <main class="invoice">
+    <section class="header">
+      <div class="brand">
+        <img src="/icon-192.png" alt="1 Stop logo" />
+        <div>
+          <h1 class="company">1 Stop Turnover Specialist LLC</h1>
+          <p class="tagline">Turnover • Painting • Repairs • Make Ready</p>
+        </div>
+      </div>
+      <div class="invoiceTitle">
+        <h2>INVOICE</h2>
+        <p class="strong">${escapePrintHtml(invoice.invoiceNumber)}</p>
+        <span class="badge">${isPaid ? "PAID" : "BALANCE DUE"}</span>
+      </div>
+    </section>
+
+    <section class="meta">
+      <div>
+        <p class="label">Bill To</p>
+        <p class="strong">${escapePrintHtml(invoice.clientName || "Client Name")}</p>
+        ${invoice.clientEmail ? `<p>${escapePrintHtml(invoice.clientEmail)}</p>` : ""}
+        <p>${escapePrintHtml(invoice.property)}${invoice.unitNumber ? ` — Unit ${escapePrintHtml(invoice.unitNumber)}` : ""}</p>
+      </div>
+      <div class="right">
+        <p><b>Invoice Date:</b> ${escapePrintHtml(invoice.invoiceDate)}</p>
+        <p><b>Due Date:</b> ${escapePrintHtml(invoice.dueDate)}</p>
+        <p><b>Status:</b> ${isPaid ? "PAID" : escapePrintHtml(invoice.status.toUpperCase())}</p>
+      </div>
+    </section>
+
+    <table>
+      <thead><tr><th>Description</th><th class="center">Qty</th><th class="right">Rate</th><th class="right">Amount</th></tr></thead>
+      <tbody>${lineRows || `<tr><td colspan="4">No line items added.</td></tr>`}</tbody>
+    </table>
+
+    <section class="totals">
+      <div><span>Total</span><b>${money(total)}</b></div>
+      <div><span>Paid</span><b>${money(paid)}</b></div>
+      <div class="balance"><span>Balance</span><b>${money(balance)}</b></div>
+    </section>
+
+    ${invoice.notes ? `<section class="notes"><b>Notes / Terms:</b><p>${escapePrintHtml(invoice.notes).replace(/\n/g, "<br />")}</p></section>` : ""}
+    ${photoSection("Before Photos", beforePhotos)}
+    ${photoSection("After / Completed Photos", afterPhotos)}
+
+    <section class="footer">
+      <span>Thank you for your business.</span>
+      <span>1 Stop Turnover Specialist LLC</span>
+    </section>
+  </main>
+  <script>window.onload = function(){ setTimeout(function(){ window.print(); }, 300); };</script>
+</body>
+</html>`;
+
+  const printWindow = window.open("", "_blank", "width=900,height=1100");
+  if (!printWindow) {
+    alert("Please allow pop-ups so the invoice PDF preview can open for printing/saving.");
+    return;
+  }
+  printWindow.document.open();
+  printWindow.document.write(html);
+  printWindow.document.close();
 }
 
 async function compressPhotoFile(file: File): Promise<string> {
@@ -1134,9 +1284,57 @@ function MakeReadyCard({ item, employee, employees, onEdit, onDelete, onUpdate, 
 }
 
 function InvoicesPanel({ invoices, jobs, weekJobs, onAdd, onCreateFromWeek, onEdit, onDelete, onUpdate }: { invoices: Invoice[]; jobs: JobEntry[]; weekJobs: JobEntry[]; onAdd: () => void; onCreateFromWeek: () => void; onEdit: (invoice: Invoice) => void; onDelete: (id: string) => void; onUpdate: (invoice: Invoice) => void }) {
+  const [invoiceFilter, setInvoiceFilter] = useState<"all" | "outstanding" | "paid">("all");
+  const invoiceIsPaid = (invoice: Invoice) => invoiceStatusIsPaid(invoice);
+  const outstandingInvoices = invoices.filter((invoice) => !invoiceIsPaid(invoice));
+  const paidInvoices = invoices.filter((invoice) => invoiceIsPaid(invoice));
+  const visibleInvoices = invoiceFilter === "paid" ? paidInvoices : invoiceFilter === "outstanding" ? outstandingInvoices : invoices;
   const openBalance = invoices.reduce((sum, invoice) => sum + Math.max(invoiceTotal(invoice) - safeNumber(invoice.paidAmount), 0), 0);
-  const paidCount = invoices.filter((invoice) => invoice.status === "paid" && invoiceTotal(invoice) > 0 && safeNumber(invoice.paidAmount) >= invoiceTotal(invoice)).length;
-  return <section className="space-y-4"><SectionTop title="Invoice Studio" subtitle="Design, preview, print PDF, email, and track payments from one place."><div className="flex flex-col gap-2"><button onClick={onAdd} className="goldButton"><Plus size={18} /> New Invoice</button><button onClick={onCreateFromWeek} className="darkButton"><Sparkles size={16} /> Invoice This Week</button></div></SectionTop><div className="grid grid-cols-3 gap-2"><MiniMetric label="Invoices" value={invoices.length} /><MiniMetric label="Paid" value={paidCount} /><div className="rounded-2xl border border-red-400/25 bg-red-500/10 p-3 text-center"><p className="text-lg font-black text-red-300">{money(openBalance)}</p><p className="text-[10px] font-black uppercase text-zinc-500">Open</p></div></div>{weekJobs.length > 0 && <div className="rounded-2xl border border-green-400/20 bg-green-500/10 p-3 text-sm font-semibold text-green-200">Selected week has {weekJobs.length} jobs ready to invoice. Enter the company charge amount separately from employee pay.</div>}<div className="space-y-3">{invoices.map((invoice) => <InvoiceCard key={invoice.id} invoice={invoice} jobs={jobs} onEdit={() => onEdit(invoice)} onDelete={() => onDelete(invoice.id)} onUpdate={onUpdate} />)}{invoices.length === 0 && <div className="blackCard p-6"><EmptyText text="No invoices yet. Create one manually or from this week’s jobs." /></div>}</div></section>;
+  const paidCount = paidInvoices.length;
+
+  const filterButtons = [
+    { id: "all" as const, label: "All Invoices", count: invoices.length },
+    { id: "outstanding" as const, label: "Outstanding", count: outstandingInvoices.length },
+    { id: "paid" as const, label: "Paid", count: paidInvoices.length },
+  ];
+
+  return (
+    <section className="space-y-4">
+      <SectionTop title="Invoices" subtitle="View all invoices, outstanding balances, paid invoices, preview PDF, print, email, and track payments.">
+        <div className="flex flex-col gap-2">
+          <button onClick={onAdd} className="goldButton"><Plus size={18} /> New Invoice</button>
+          <button onClick={onCreateFromWeek} className="darkButton"><Sparkles size={16} /> Invoice This Week</button>
+        </div>
+      </SectionTop>
+
+      <div className="grid grid-cols-3 gap-2">
+        <MiniMetric label="Invoices" value={invoices.length} />
+        <MiniMetric label="Paid" value={paidCount} />
+        <div className="rounded-2xl border border-red-400/25 bg-red-500/10 p-3 text-center"><p className="text-lg font-black text-red-300">{money(openBalance)}</p><p className="text-[10px] font-black uppercase text-zinc-500">Open</p></div>
+      </div>
+
+      <div className="grid grid-cols-3 gap-1 rounded-[1.2rem] border border-white/10 bg-black/30 p-1">
+        {filterButtons.map((button) => (
+          <button
+            key={button.id}
+            type="button"
+            onClick={() => setInvoiceFilter(button.id)}
+            className={`rounded-2xl px-2 py-3 text-xs font-black transition ${invoiceFilter === button.id ? "bg-green-500 text-black shadow-[0_10px_25px_rgba(34,197,94,0.22)]" : "text-zinc-400"}`}
+          >
+            <span className="block">{button.label}</span>
+            <span className="mt-1 block text-[10px] font-black opacity-75">{button.count}</span>
+          </button>
+        ))}
+      </div>
+
+      {weekJobs.length > 0 && <div className="rounded-2xl border border-green-400/20 bg-green-500/10 p-3 text-sm font-semibold text-green-200">Selected week has {weekJobs.length} jobs ready to invoice. Enter the company charge amount separately from employee pay.</div>}
+
+      <div className="space-y-3">
+        {visibleInvoices.map((invoice) => <InvoiceCard key={invoice.id} invoice={invoice} jobs={jobs} onEdit={() => onEdit(invoice)} onDelete={() => onDelete(invoice.id)} onUpdate={onUpdate} />)}
+        {visibleInvoices.length === 0 && <div className="blackCard p-6"><EmptyText text={invoiceFilter === "paid" ? "No paid invoices yet." : invoiceFilter === "outstanding" ? "No outstanding invoices right now." : "No invoices yet. Create one manually or from this week’s jobs."} /></div>}
+      </div>
+    </section>
+  );
 }
 
 function InvoiceCard({ invoice, jobs, onEdit, onDelete, onUpdate }: { invoice: Invoice; jobs: JobEntry[]; onEdit: () => void; onDelete: () => void; onUpdate: (invoice: Invoice) => void }) {
@@ -1191,7 +1389,7 @@ function InvoiceCard({ invoice, jobs, onEdit, onDelete, onUpdate }: { invoice: I
         <button className="darkButton" onClick={onEdit}><Pencil size={16} /> Edit</button>
         <button className="darkButton" onClick={() => setPreview(!preview)}><Eye size={16} /> {preview ? "Hide Preview" : "Preview PDF"}</button>
         <button className={`${isPaid ? "goldButton shadow-[0_0_28px_rgba(34,197,94,0.45)]" : "darkButton"}`} onClick={confirmMarkPaid}><Check size={16} /> {isPaid ? "Paid ✓" : "Mark Paid"}</button>
-        <button className="darkButton" onClick={() => { setPreview(true); setTimeout(() => window.print(), 250); }}><Printer size={16} /> Print / Save PDF</button>
+        <button className="darkButton" onClick={() => { setPreview(true); printInvoiceDocument(invoice, beforePhotos, afterPhotos); }}><Printer size={16} /> Print / Save PDF</button>
         <button className="goldButton" onClick={() => { setPreview(true); setTimeout(() => openInvoiceEmail(invoice), 200); }}><Mail size={16} /> Email</button>
         <button className="iconDanger" onClick={onDelete}><Trash2 size={18} /> Delete</button>
       </div>
@@ -1290,7 +1488,7 @@ function InvoicePreview({ invoice, total, open, beforePhotos, afterPhotos, onMar
       </div>
 
       <div className="noPrint border-t border-zinc-200 bg-zinc-100 p-3"><p className="mb-2 text-center text-xs font-bold text-zinc-600">Review this invoice before sending. Use Print / Save PDF when it looks correct.</p><div className="grid grid-cols-2 gap-2">
-        <button className="goldButton" onClick={() => window.print()}><Printer size={16} /> Print / Save PDF</button>
+        <button className="goldButton" onClick={() => printInvoiceDocument(invoice, beforePhotos, afterPhotos)}><Printer size={16} /> Print / Save PDF</button>
         <button className={`${isPaid ? "goldButton shadow-[0_0_28px_rgba(34,197,94,0.45)]" : "darkButton"}`} onClick={onMarkPaid}><Check size={16} /> {isPaid ? "Paid ✓" : "Mark Paid"}</button>
         <button className="darkButton col-span-2" onClick={() => openInvoiceEmail(invoice)}><Mail size={16} /> Email Invoice</button>
         </div>
@@ -1337,7 +1535,7 @@ function MakeReadyModal({ employees, properties, initial, onClose, onSave }: { e
 function InvoiceModal({ invoices, properties, initial, onClose, onSave }: { invoices: Invoice[]; properties: string[]; initial: Invoice | null; onClose: () => void; onSave: (invoice: Invoice) => void }) {
   const [invoice, setInvoice] = useState<Invoice>(initial || { id: uid(), invoiceNumber: nextInvoiceNumber(invoices), clientName: "", clientEmail: "", property: properties[0] || "", unitNumber: "", invoiceDate: todayISO(), dueDate: addDaysISO(todayISO(), 14), status: "draft", lineItems: [{ id: uid(), description: "Labor and materials", qty: 1, rate: 0 }], notes: "Thank you for your business. God bless.", paidAmount: 0, beforePhotos: [], afterPhotos: [] });
   const total = invoiceTotal(invoice);
-  return <Modal title={initial ? "Edit Invoice" : "New Invoice"} onClose={onClose}><div className="space-y-3"><div className="grid grid-cols-2 gap-3"><Field label="Invoice #"><input className="inputElite" value={invoice.invoiceNumber} onChange={(e) => setInvoice({ ...invoice, invoiceNumber: e.target.value })} /></Field><Field label="Status"><select className="inputElite" value={invoice.status} onChange={(e) => setInvoice({ ...invoice, status: e.target.value as Invoice["status"] })}><option value="draft">Draft</option><option value="sent">Sent</option><option value="paid">Paid</option><option value="overdue">Overdue</option></select></Field><Field label="Client"><input className="inputElite" value={invoice.clientName} onChange={(e) => setInvoice({ ...invoice, clientName: e.target.value })} placeholder="Example: Wingate Companies" /></Field><Field label="Client Email"><input className="inputElite" type="email" value={invoice.clientEmail || ""} onChange={(e) => setInvoice({ ...invoice, clientEmail: e.target.value })} placeholder="manager@email.com" /></Field><Field label="Property"><select className="inputElite" value={invoice.property} onChange={(e) => setInvoice({ ...invoice, property: e.target.value })}>{properties.map((property) => <option key={property} value={property}>{property}</option>)}</select></Field><Field label="Unit #"><input className="inputElite" value={invoice.unitNumber} onChange={(e) => setInvoice({ ...invoice, unitNumber: e.target.value })} /></Field><Field label="Invoice Date"><input className="inputElite" type="date" value={invoice.invoiceDate} onChange={(e) => setInvoice({ ...invoice, invoiceDate: e.target.value })} /></Field><Field label="Due Date"><input className="inputElite" type="date" value={invoice.dueDate} onChange={(e) => setInvoice({ ...invoice, dueDate: e.target.value })} /></Field><Field label="Paid Amount"><MoneyInput value={invoice.paidAmount} onValueChange={(value) => { const cleanValue = safeNumber(value); if (cleanValue >= total && total > 0) { if (!confirmAction("Confirm: mark this invoice paid?")) return; setInvoice({ ...invoice, paidAmount: cleanValue, status: "paid" }); return; } setInvoice({ ...invoice, paidAmount: cleanValue, status: invoice.status === "paid" ? "sent" : invoice.status }); }} /></Field></div><Field label="Line Items"><div className="space-y-3">{invoice.lineItems.map((line) => <div key={line.id} className="rounded-2xl border border-zinc-800 bg-black/25 p-3"><Field label="Description"><input className="inputElite" value={line.description} onChange={(e) => setInvoice({ ...invoice, lineItems: invoice.lineItems.map((item) => item.id === line.id ? { ...item, description: e.target.value } : item) })} /></Field><div className="mt-2 grid grid-cols-[1fr_1fr_auto] gap-2"><Field label="Qty"><input className="inputElite" type="number" value={line.qty} onChange={(e) => setInvoice({ ...invoice, lineItems: invoice.lineItems.map((item) => item.id === line.id ? { ...item, qty: safeNumber(e.target.value) } : item) })} /></Field><Field label="Rate"><MoneyInput value={line.rate} onValueChange={(value) => setInvoice({ ...invoice, lineItems: invoice.lineItems.map((item) => item.id === line.id ? { ...item, rate: value } : item) })} /></Field><button className="iconDanger self-end" onClick={() => { if (!confirmAction("Remove this line item from the invoice?")) return; setInvoice({ ...invoice, lineItems: invoice.lineItems.filter((item) => item.id !== line.id) }); }}><Trash2 size={16} /></button></div></div>)}<button className="darkButton w-full" onClick={() => setInvoice({ ...invoice, lineItems: [...invoice.lineItems, { id: uid(), description: "New line item", qty: 1, rate: 0 }] })}><Plus size={16} /> Add Line Item</button></div></Field><div className="rounded-2xl border border-green-400/20 bg-green-500/10 p-3 text-right"><p className="text-xs font-black uppercase text-green-400">Invoice Total</p><p className="text-2xl font-black">{money(total)}</p><p className="mt-1 text-xs font-semibold text-zinc-400">Phase 4 designer will use this amount on the PDF-ready preview.</p></div><div className="rounded-2xl border border-blue-400/20 bg-blue-500/10 p-3 text-xs font-semibold text-blue-100"><b>Preview PDF Tip:</b> Add before/after photos here, then tap Preview PDF on the invoice card to review the professional layout before printing, saving as PDF, or emailing.</div><Field label="Before Photos"><InvoicePhotoPicker photos={invoice.beforePhotos || []} label="Add Before Photos" onChange={(photos) => setInvoice({ ...invoice, beforePhotos: photos })} /></Field><Field label="After / Completed Job Photos"><InvoicePhotoPicker photos={invoice.afterPhotos || []} label="Add After Photos" onChange={(photos) => setInvoice({ ...invoice, afterPhotos: photos })} /></Field><Field label="Notes / Terms"><textarea className="inputElite min-h-24" value={invoice.notes} onChange={(e) => setInvoice({ ...invoice, notes: e.target.value })} /></Field><div className="grid grid-cols-2 gap-2"><button className="goldButton" onClick={() => { const cleanTotal = invoiceTotal(invoice); const cleanPaid = safeNumber(invoice.paidAmount); const cleanStatus = invoice.status === "paid" && !(cleanTotal > 0 && cleanPaid >= cleanTotal) ? "sent" : invoice.status; onSave({ ...invoice, paidAmount: cleanPaid, status: cleanStatus }); }}><Check size={18} /> Save Invoice</button><button className="darkButton" onClick={() => { const cleanTotal = invoiceTotal(invoice); const cleanPaid = safeNumber(invoice.paidAmount); if (invoice.status === "paid" && !(cleanTotal > 0 && cleanPaid >= cleanTotal)) setInvoice({ ...invoice, status: "sent" }); window.print(); }}><Eye size={18} /> Preview PDF</button><button className="darkButton col-span-2" onClick={() => openInvoiceEmail({ ...invoice, status: invoice.status === "paid" && !(invoiceTotal(invoice) > 0 && safeNumber(invoice.paidAmount) >= invoiceTotal(invoice)) ? "sent" : invoice.status })}><Mail size={18} /> Email After Preview</button></div></div></Modal>;
+  return <Modal title={initial ? "Edit Invoice" : "New Invoice"} onClose={onClose}><div className="space-y-3"><div className="grid grid-cols-2 gap-3"><Field label="Invoice #"><input className="inputElite" value={invoice.invoiceNumber} onChange={(e) => setInvoice({ ...invoice, invoiceNumber: e.target.value })} /></Field><Field label="Status"><select className="inputElite" value={invoice.status} onChange={(e) => setInvoice({ ...invoice, status: e.target.value as Invoice["status"] })}><option value="draft">Draft</option><option value="sent">Sent</option><option value="paid">Paid</option><option value="overdue">Overdue</option></select></Field><Field label="Client"><input className="inputElite" value={invoice.clientName} onChange={(e) => setInvoice({ ...invoice, clientName: e.target.value })} placeholder="Example: Wingate Companies" /></Field><Field label="Client Email"><input className="inputElite" type="email" value={invoice.clientEmail || ""} onChange={(e) => setInvoice({ ...invoice, clientEmail: e.target.value })} placeholder="manager@email.com" /></Field><Field label="Property"><select className="inputElite" value={invoice.property} onChange={(e) => setInvoice({ ...invoice, property: e.target.value })}>{properties.map((property) => <option key={property} value={property}>{property}</option>)}</select></Field><Field label="Unit #"><input className="inputElite" value={invoice.unitNumber} onChange={(e) => setInvoice({ ...invoice, unitNumber: e.target.value })} /></Field><Field label="Invoice Date"><input className="inputElite" type="date" value={invoice.invoiceDate} onChange={(e) => setInvoice({ ...invoice, invoiceDate: e.target.value })} /></Field><Field label="Due Date"><input className="inputElite" type="date" value={invoice.dueDate} onChange={(e) => setInvoice({ ...invoice, dueDate: e.target.value })} /></Field><Field label="Paid Amount"><MoneyInput value={invoice.paidAmount} onValueChange={(value) => { const cleanValue = safeNumber(value); if (cleanValue >= total && total > 0) { if (!confirmAction("Confirm: mark this invoice paid?")) return; setInvoice({ ...invoice, paidAmount: cleanValue, status: "paid" }); return; } setInvoice({ ...invoice, paidAmount: cleanValue, status: invoice.status === "paid" ? "sent" : invoice.status }); }} /></Field></div><Field label="Line Items"><div className="space-y-3">{invoice.lineItems.map((line) => <div key={line.id} className="rounded-2xl border border-zinc-800 bg-black/25 p-3"><Field label="Description"><input className="inputElite" value={line.description} onChange={(e) => setInvoice({ ...invoice, lineItems: invoice.lineItems.map((item) => item.id === line.id ? { ...item, description: e.target.value } : item) })} /></Field><div className="mt-2 grid grid-cols-[1fr_1fr_auto] gap-2"><Field label="Qty"><input className="inputElite" type="number" value={line.qty} onChange={(e) => setInvoice({ ...invoice, lineItems: invoice.lineItems.map((item) => item.id === line.id ? { ...item, qty: safeNumber(e.target.value) } : item) })} /></Field><Field label="Rate"><MoneyInput value={line.rate} onValueChange={(value) => setInvoice({ ...invoice, lineItems: invoice.lineItems.map((item) => item.id === line.id ? { ...item, rate: value } : item) })} /></Field><button className="iconDanger self-end" onClick={() => { if (!confirmAction("Remove this line item from the invoice?")) return; setInvoice({ ...invoice, lineItems: invoice.lineItems.filter((item) => item.id !== line.id) }); }}><Trash2 size={16} /></button></div></div>)}<button className="darkButton w-full" onClick={() => setInvoice({ ...invoice, lineItems: [...invoice.lineItems, { id: uid(), description: "New line item", qty: 1, rate: 0 }] })}><Plus size={16} /> Add Line Item</button></div></Field><div className="rounded-2xl border border-green-400/20 bg-green-500/10 p-3 text-right"><p className="text-xs font-black uppercase text-green-400">Invoice Total</p><p className="text-2xl font-black">{money(total)}</p><p className="mt-1 text-xs font-semibold text-zinc-400">Phase 4 designer will use this amount on the PDF-ready preview.</p></div><div className="rounded-2xl border border-blue-400/20 bg-blue-500/10 p-3 text-xs font-semibold text-blue-100"><b>Preview PDF Tip:</b> Add before/after photos here, then tap Preview PDF on the invoice card to review the professional layout before printing, saving as PDF, or emailing.</div><Field label="Before Photos"><InvoicePhotoPicker photos={invoice.beforePhotos || []} label="Add Before Photos" onChange={(photos) => setInvoice({ ...invoice, beforePhotos: photos })} /></Field><Field label="After / Completed Job Photos"><InvoicePhotoPicker photos={invoice.afterPhotos || []} label="Add After Photos" onChange={(photos) => setInvoice({ ...invoice, afterPhotos: photos })} /></Field><Field label="Notes / Terms"><textarea className="inputElite min-h-24" value={invoice.notes} onChange={(e) => setInvoice({ ...invoice, notes: e.target.value })} /></Field><div className="grid grid-cols-2 gap-2"><button className="goldButton" onClick={() => { const cleanTotal = invoiceTotal(invoice); const cleanPaid = safeNumber(invoice.paidAmount); const cleanStatus = invoice.status === "paid" && !(cleanTotal > 0 && cleanPaid >= cleanTotal) ? "sent" : invoice.status; onSave({ ...invoice, paidAmount: cleanPaid, status: cleanStatus }); }}><Check size={18} /> Save Invoice</button><button className="darkButton" onClick={() => { const cleanTotal = invoiceTotal(invoice); const cleanPaid = safeNumber(invoice.paidAmount); const cleanInvoice = { ...invoice, status: invoice.status === "paid" && !(cleanTotal > 0 && cleanPaid >= cleanTotal) ? "sent" as Invoice["status"] : invoice.status, paidAmount: cleanPaid }; setInvoice(cleanInvoice); printInvoiceDocument(cleanInvoice, cleanInvoice.beforePhotos || [], cleanInvoice.afterPhotos || []); }}><Eye size={18} /> Preview PDF</button><button className="darkButton col-span-2" onClick={() => openInvoiceEmail({ ...invoice, status: invoice.status === "paid" && !(invoiceTotal(invoice) > 0 && safeNumber(invoice.paidAmount) >= invoiceTotal(invoice)) ? "sent" : invoice.status })}><Mail size={18} /> Email After Preview</button></div></div></Modal>;
 }
 
 function InvoicePhotoPicker({ photos, label, onChange }: { photos: string[]; label: string; onChange: (photos: string[]) => void }) {
