@@ -152,7 +152,7 @@ type AppState = {
   companyName: string;
 };
 
-type ActiveTab = "dashboard" | "employees" | "jobs" | "makeReady" | "invoices" | "properties" | "reports" | "more";
+type ActiveTab = "dashboard" | "ops" | "employees" | "jobs" | "makeReady" | "invoices" | "properties" | "reports" | "more";
 
 const defaultProperties = [
   "Charles Place Apartments",
@@ -431,7 +431,7 @@ export default function PayrollProEliteOperationsX() {
   const [state, setState] = useState<AppState>(starterState);
   const [hydrated, setHydrated] = useState(false);
   const [activeTab, setActiveTab] = useState<ActiveTab>("dashboard");
-  const [jobsView, setJobsView] = useState<"jobs" | "makeReady">("jobs");
+  const [opsView, setOpsView] = useState<"jobs" | "makeReady" | "invoices">("jobs");
   const [selectedWeek, setSelectedWeek] = useState(todayISO());
   const [search, setSearch] = useState("");
   const [expandedEmployeeId, setExpandedEmployeeId] = useState<string | null>(null);
@@ -756,12 +756,12 @@ export default function PayrollProEliteOperationsX() {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" size={18} />
             <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search employee, property, job, invoice..." className="w-full rounded-2xl border border-zinc-800 bg-zinc-950 py-2 pl-10 pr-3 text-sm outline-none ring-amber-400/40 placeholder:text-zinc-500 focus:border-green-400/60 focus:ring-4" />
           </div>
-          <p className="mt-2 text-xs text-zinc-500">Jobs tab now shows <span className="font-black text-green-400">selected week only</span>. Historical jobs stay saved.</p>
+          <p className="mt-2 text-xs text-zinc-500">Ops hub keeps <span className="font-black text-green-400">jobs, make ready, and invoices</span> together. Historical jobs stay saved.</p>
         </div>
 
         <main className="mt-5">
           {activeTab === "dashboard" && (
-            <Dashboard employeeTotals={employeeTotals} filteredJobs={filteredJobs} employeesById={employeesById} makeReadyTotals={makeReadyTotals} totals={totals} onAddJob={() => setShowJobForm(true)} onGoEmployees={() => setActiveTab("employees")} onGoReports={() => setActiveTab("reports")} onGoMakeReady={() => setActiveTab("makeReady")} onGoInvoices={() => setActiveTab("invoices")} />
+            <Dashboard employeeTotals={employeeTotals} filteredJobs={filteredJobs} employeesById={employeesById} makeReadyTotals={makeReadyTotals} totals={totals} onAddJob={() => setShowJobForm(true)} onGoEmployees={() => setActiveTab("employees")} onGoReports={() => setActiveTab("reports")} onGoMakeReady={() => { setActiveTab("ops"); setOpsView("makeReady"); }} onGoInvoices={() => { setActiveTab("ops"); setOpsView("invoices"); }} />
           )}
 
           {activeTab === "employees" && (
@@ -778,37 +778,48 @@ export default function PayrollProEliteOperationsX() {
             </section>
           )}
 
-          {activeTab === "jobs" && (
+          {(activeTab === "ops" || activeTab === "jobs" || activeTab === "makeReady" || activeTab === "invoices") && (
             <section className="space-y-4">
-              <SectionTop title="Jobs + Make Ready" subtitle="One operations hub: payroll jobs and turnover units together.">
-                <button onClick={() => jobsView === "jobs" ? setShowJobForm(true) : (setEditingMakeReady(null), setShowMakeReadyForm(true))} className="goldButton"><Plus size={18} /> {jobsView === "jobs" ? "Add Job" : "Add Unit"}</button>
+              <SectionTop title="Ops" subtitle="Jobs • Make Ready • Invoices in one workflow.">
+                <button
+                  onClick={() =>
+                    opsView === "jobs"
+                      ? setShowJobForm(true)
+                      : opsView === "makeReady"
+                        ? (setEditingMakeReady(null), setShowMakeReadyForm(true))
+                        : (setEditingInvoice(null), setShowInvoiceForm(true))
+                  }
+                  className="goldButton"
+                >
+                  <Plus size={18} /> {opsView === "jobs" ? "Add Job" : opsView === "makeReady" ? "Add Unit" : "New Invoice"}
+                </button>
               </SectionTop>
 
-              <div className="grid grid-cols-2 gap-2 rounded-[1.2rem] border border-white/10 bg-black/30 p-1">
-                <button type="button" onClick={() => setJobsView("jobs")} className={`rounded-2xl px-3 py-3 text-sm font-black transition ${jobsView === "jobs" ? "bg-green-500 text-black shadow-[0_10px_25px_rgba(34,197,94,0.22)]" : "text-zinc-400"}`}>
-                  <span className="flex items-center justify-center gap-2"><BriefcaseBusiness size={17} /> Payroll Jobs</span>
-                  <span className="mt-1 block text-[10px] font-black opacity-75">{filteredJobs.length} this week</span>
+              <div className="grid grid-cols-3 gap-1 rounded-[1.2rem] border border-white/10 bg-black/30 p-1">
+                <button type="button" onClick={() => setOpsView("jobs")} className={`rounded-2xl px-2 py-3 text-xs font-black transition ${opsView === "jobs" ? "bg-green-500 text-black shadow-[0_10px_25px_rgba(34,197,94,0.22)]" : "text-zinc-400"}`}>
+                  <span className="flex items-center justify-center gap-1"><BriefcaseBusiness size={16} /> Jobs</span>
+                  <span className="mt-1 block text-[10px] font-black opacity-75">{filteredJobs.length}</span>
                 </button>
-                <button type="button" onClick={() => setJobsView("makeReady")} className={`rounded-2xl px-3 py-3 text-sm font-black transition ${jobsView === "makeReady" ? "bg-green-500 text-black shadow-[0_10px_25px_rgba(34,197,94,0.22)]" : "text-zinc-400"}`}>
-                  <span className="flex items-center justify-center gap-2"><ClipboardCheck size={17} /> Make Ready</span>
-                  <span className="mt-1 block text-[10px] font-black opacity-75">{filteredMakeReady.length} active units</span>
+                <button type="button" onClick={() => setOpsView("makeReady")} className={`rounded-2xl px-2 py-3 text-xs font-black transition ${opsView === "makeReady" ? "bg-green-500 text-black shadow-[0_10px_25px_rgba(34,197,94,0.22)]" : "text-zinc-400"}`}>
+                  <span className="flex items-center justify-center gap-1"><ClipboardCheck size={16} /> Ready</span>
+                  <span className="mt-1 block text-[10px] font-black opacity-75">{filteredMakeReady.length}</span>
+                </button>
+                <button type="button" onClick={() => setOpsView("invoices")} className={`rounded-2xl px-2 py-3 text-xs font-black transition ${opsView === "invoices" ? "bg-green-500 text-black shadow-[0_10px_25px_rgba(34,197,94,0.22)]" : "text-zinc-400"}`}>
+                  <span className="flex items-center justify-center gap-1"><ReceiptText size={16} /> Invoice</span>
+                  <span className="mt-1 block text-[10px] font-black opacity-75">{filteredInvoices.length}</span>
                 </button>
               </div>
 
-              {jobsView === "jobs" ? (
+              {opsView === "jobs" && (
                 <JobList jobs={filteredJobs} employees={state.employees} employeesById={employeesById} properties={state.properties} jobTypeOptions={state.jobTypeOptions} onDelete={(id) => setConfirmDelete({ type: "job", id })} onUpdate={updateJob} />
-              ) : (
+              )}
+              {opsView === "makeReady" && (
                 <MakeReadyBoard compact items={filteredMakeReady} employees={state.employees} employeesById={employeesById} onAdd={() => { setEditingMakeReady(null); setShowMakeReadyForm(true); }} onEdit={(item) => { setEditingMakeReady(item); setShowMakeReadyForm(true); }} onDelete={(id) => setConfirmDelete({ type: "makeReady", id })} onUpdate={upsertMakeReady} />
               )}
+              {opsView === "invoices" && (
+                <InvoicesPanel invoices={filteredInvoices} jobs={state.jobs} weekJobs={weekJobs} onAdd={() => { setEditingInvoice(null); setShowInvoiceForm(true); }} onCreateFromWeek={createInvoiceFromWeekJobs} onEdit={(invoice) => { setEditingInvoice(invoice); setShowInvoiceForm(true); }} onDelete={(id) => setConfirmDelete({ type: "invoice", id })} onUpdate={upsertInvoice} />
+              )}
             </section>
-          )}
-
-          {activeTab === "makeReady" && (
-            <MakeReadyBoard items={filteredMakeReady} employees={state.employees} employeesById={employeesById} onAdd={() => { setEditingMakeReady(null); setShowMakeReadyForm(true); }} onEdit={(item) => { setEditingMakeReady(item); setShowMakeReadyForm(true); }} onDelete={(id) => setConfirmDelete({ type: "makeReady", id })} onUpdate={upsertMakeReady} />
-          )}
-
-          {activeTab === "invoices" && (
-            <InvoicesPanel invoices={filteredInvoices} jobs={state.jobs} weekJobs={weekJobs} onAdd={() => { setEditingInvoice(null); setShowInvoiceForm(true); }} onCreateFromWeek={createInvoiceFromWeekJobs} onEdit={(invoice) => { setEditingInvoice(invoice); setShowInvoiceForm(true); }} onDelete={(id) => setConfirmDelete({ type: "invoice", id })} onUpdate={upsertInvoice} />
           )}
 
           {activeTab === "properties" && (
@@ -888,12 +899,10 @@ function AppMobileHeader({ companyName, activeTab, setActiveTab }: { companyName
   const [menuOpen, setMenuOpen] = useState(false);
   const menuItems: { tab: ActiveTab; label: string; subtitle: string; icon: React.ReactNode }[] = [
     { tab: "dashboard", label: "Home", subtitle: "Command center", icon: <Home size={20} /> },
-    { tab: "employees", label: "Workers", subtitle: "Employees and balances", icon: <Users size={20} /> },
-    { tab: "jobs", label: "Jobs + Ready", subtitle: "Payroll and turnover hub", icon: <BriefcaseBusiness size={20} /> },
-    { tab: "makeReady", label: "Make Ready", subtitle: "Turnover board", icon: <ClipboardCheck size={20} /> },
-    { tab: "invoices", label: "Invoices", subtitle: "Create and track invoices", icon: <ReceiptText size={20} /> },
-    { tab: "properties", label: "Properties", subtitle: "Property dropdown list", icon: <Building2 size={20} /> },
+    { tab: "ops", label: "Ops", subtitle: "Jobs, make ready, invoices", icon: <BriefcaseBusiness size={20} /> },
+    { tab: "employees", label: "Employees", subtitle: "Employees and balances", icon: <Users size={20} /> },
     { tab: "reports", label: "Reports", subtitle: "Payroll closeout", icon: <ClipboardList size={20} /> },
+    { tab: "properties", label: "Properties", subtitle: "Property dropdown list", icon: <Building2 size={20} /> },
     { tab: "more", label: "More", subtitle: "Backup and restore", icon: <MoreVertical size={20} /> },
   ];
   function goTo(tab: ActiveTab) { setActiveTab(tab); setMenuOpen(false); }
@@ -906,7 +915,7 @@ function AppMobileHeader({ companyName, activeTab, setActiveTab }: { companyName
             <img src="/icon-192.png" alt="1 Stop Turnover Specialist logo" className="h-12 w-12 shrink-0 rounded-2xl border border-white/10 bg-black object-cover shadow-[0_0_24px_rgba(34,197,94,0.18)]" />
             <div className="min-w-0"><h1 className="truncate text-lg font-black leading-tight">1 Stop Ops Pro</h1><p className="truncate text-xs font-semibold text-zinc-400">Payroll • Make Ready • Invoices</p></div>
           </div>
-          <div className="flex items-center gap-2 text-zinc-100"><button type="button" aria-label="Go to invoices" onClick={() => goTo("invoices")} className="flex h-10 w-10 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.04] transition active:scale-95"><ReceiptText size={21} /></button><button type="button" aria-label="Open more controls" onClick={() => goTo("more")} className="flex h-10 w-10 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.04] transition active:scale-95"><MoreVertical size={21} /></button></div>
+          <div className="flex items-center gap-2 text-zinc-100"><button type="button" aria-label="Go to invoices" onClick={() => goTo("ops")} className="flex h-10 w-10 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.04] transition active:scale-95"><ReceiptText size={21} /></button><button type="button" aria-label="Open more controls" onClick={() => goTo("more")} className="flex h-10 w-10 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.04] transition active:scale-95"><MoreVertical size={21} /></button></div>
         </div>
       </header>
       {menuOpen && (
@@ -1228,9 +1237,9 @@ function ConfirmModal({ title, message, onCancel, onConfirm }: { title: string; 
 function BottomNav({ activeTab, setActiveTab }: { activeTab: ActiveTab; setActiveTab: (tab: ActiveTab) => void }) {
   const tabs: { tab: ActiveTab; label: string; icon: React.ReactNode }[] = [
     { tab: "dashboard", label: "Home", icon: <Home size={20} /> },
-    { tab: "jobs", label: "Ops", icon: <BriefcaseBusiness size={20} /> },
-    { tab: "makeReady", label: "Ready", icon: <ClipboardCheck size={20} /> },
-    { tab: "invoices", label: "Invoice", icon: <ReceiptText size={20} /> },
+    { tab: "ops", label: "Ops", icon: <BriefcaseBusiness size={20} /> },
+    { tab: "employees", label: "Employees", icon: <Users size={20} /> },
+    { tab: "reports", label: "Reports", icon: <ClipboardList size={20} /> },
     { tab: "more", label: "More", icon: <MoreVertical size={20} /> },
   ];
   return <nav className="fixed bottom-0 left-0 right-0 z-40 border-t border-white/10 bg-[#02070a]/95 px-2 pb-3 pt-2 backdrop-blur-xl"><div className="mx-auto grid max-w-[540px] grid-cols-5 gap-1">{tabs.map((item) => { const active = activeTab === item.tab; return <button key={item.tab} onClick={() => setActiveTab(item.tab)} className={`flex flex-col items-center justify-center gap-1 rounded-2xl py-2 text-[11px] font-black transition active:scale-95 ${active ? "bg-green-500 text-black" : "text-zinc-500"}`}>{item.icon}<span>{item.label}</span></button>; })}</div></nav>;
