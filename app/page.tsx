@@ -362,6 +362,7 @@ function invoiceEmailBody(invoice: Invoice) {
 }
 
 function openInvoiceEmail(invoice: Invoice) {
+  invoice = customerSafeInvoice(invoice);
   const subject = encodeURIComponent(invoiceEmailSubject(invoice));
   const body = encodeURIComponent(invoiceEmailBody(invoice));
   const to = encodeURIComponent(invoice.clientEmail || "");
@@ -389,8 +390,29 @@ function invoiceStatusIsPaid(invoice: Invoice) {
   return invoice.status === "paid" && total > 0 && safeNumber(invoice.paidAmount) >= total;
 }
 
+function stripInternalInvoiceText(text: string) {
+  return String(text || "")
+    .split(/(?<=[.!?])\s+|\n+/)
+    .map((part) => part.trim())
+    .filter((part) => part && !/(employee\s*pay|worker\s*pay|payroll|pay\s+the\s+employee|paid\s+to\s+workers|kept\s+separate|separate\s+from\s+employee|separate\s+from\s+what\s+you\s+pay)/i.test(part))
+    .join(" ")
+    .trim();
+}
+
+function customerSafeInvoice(invoice: Invoice): Invoice {
+  return {
+    ...invoice,
+    notes: stripInternalInvoiceText(invoice.notes) || "Thank you for your business. God bless.",
+    lineItems: invoice.lineItems.map((item) => ({
+      ...item,
+      description: stripInternalInvoiceText(item.description) || item.description || "Labor and materials",
+    })),
+  };
+}
+
 function printInvoiceDocument(invoice: Invoice, beforePhotos: string[] = [], afterPhotos: string[] = []) {
   if (typeof window === "undefined") return;
+  invoice = customerSafeInvoice(invoice);
   const total = invoiceTotal(invoice);
   const paid = safeNumber(invoice.paidAmount);
   const balance = Math.max(total - paid, 0);
@@ -743,14 +765,15 @@ export default function PayrollProEliteOperationsX() {
   }
 
   function upsertInvoice(invoice: Invoice) {
+    const cleanInvoice = customerSafeInvoice(invoice);
     setState((prev) => {
-      const exists = prev.invoices.some((row) => row.id === invoice.id);
-      return { ...prev, invoices: exists ? prev.invoices.map((row) => (row.id === invoice.id ? invoice : row)) : [invoice, ...prev.invoices] };
+      const exists = prev.invoices.some((row) => row.id === cleanInvoice.id);
+      return { ...prev, invoices: exists ? prev.invoices.map((row) => (row.id === cleanInvoice.id ? cleanInvoice : row)) : [cleanInvoice, ...prev.invoices] };
     });
   }
 
   function createInvoiceFromWeekJobs() {
-    if (!confirmAction("Create an invoice from all jobs in the selected week?\n\nImportant: invoice charges are separate from employee pay. You can edit every charge amount before saving.")) return;
+    if (!confirmAction("Create an invoice from all jobs in the selected week?\n\nYou can edit every company charge amount before saving.")) return;
     if (weekJobs.length === 0) {
       alert("There are no jobs in the selected week to invoice.");
       return;
@@ -769,7 +792,7 @@ export default function PayrollProEliteOperationsX() {
       paidAmount: 0,
       beforePhotos: [],
       afterPhotos: weekJobs.flatMap((job) => job.photos || []),
-      notes: `Created from jobs for work week ${week.start} to ${week.end}. Invoice charges are separate from employee payroll.`,
+      notes: `Thank you for your business. God bless.`,
       sourceJobIds: weekJobs.map((job) => job.id),
       lineItems: weekJobs.map((job) => ({
         id: uid(),
@@ -795,9 +818,7 @@ export default function PayrollProEliteOperationsX() {
     const chargeText = window.prompt(
       `Create invoice for this job
 
-Employee pay: ${money(job.pay)}
-
-Enter the amount you are charging the company. This is separate from what you pay the employee.`
+Enter the amount you are charging the company for this work.`
     );
     if (chargeText === null) return;
     const chargeAmount = safeNumber(chargeText.replace(/[^0-9.-]/g, ""));
@@ -818,7 +839,7 @@ Enter the amount you are charging the company. This is separate from what you pa
       paidAmount: 0,
       beforePhotos: [],
       afterPhotos: job.photos || [],
-      notes: `Created from one job. Employee pay was ${money(job.pay)} and is kept separate from this invoice.`,
+      notes: `Thank you for your business. God bless.`,
       sourceJobIds: [job.id],
       lineItems: [{
         id: uid(),
@@ -858,7 +879,7 @@ Enter the amount you are charging the company.`
       paidAmount: 0,
       beforePhotos: [],
       afterPhotos: [],
-      notes: `Created from Make Ready workflow. Charge amount is separate from employee payroll. ${item.notes || ""}`.trim(),
+      notes: item.notes || `Thank you for your business. God bless.`,
       sourceMakeReadyId: item.id,
       lineItems: [{
         id: uid(),
