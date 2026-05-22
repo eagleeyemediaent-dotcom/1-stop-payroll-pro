@@ -41,8 +41,8 @@ import {
 } from "lucide-react";
 
 // 1 STOP TURNOVER SPECIALIST PRO ELITE - OPERATIONS X
-// PHASE 8 single-file replacement for app/page.tsx
-// Due/Sent/Paid/Overdue invoice workflow + customer-safe invoices
+// PHASE 9 single-file replacement for app/page.tsx
+// Adds employee work assignments with English / Spanish / Both message generation
 
 const STORAGE_KEY = "oneStopPayrollProEliteBlackGoldX_v1";
 
@@ -142,17 +142,37 @@ type Invoice = {
   sourceMakeReadyId?: string;
 };
 
+type AssignmentLanguage = "english" | "spanish" | "both";
+type AssignmentStatus = "draft" | "sent" | "in-progress" | "completed";
+
+type WorkAssignment = {
+  id: string;
+  employeeId: string;
+  date: string;
+  property: string;
+  address: string;
+  unitNumber: string;
+  priority: "normal" | "urgent";
+  language: AssignmentLanguage;
+  status: AssignmentStatus;
+  scope: string;
+  notes: string;
+  photos: string[];
+  createdAt: string;
+};
+
 type AppState = {
   employees: Employee[];
   jobs: JobEntry[];
   makeReady: MakeReadyItem[];
   invoices: Invoice[];
+  assignments: WorkAssignment[];
   properties: string[];
   jobTypeOptions: string[];
   companyName: string;
 };
 
-type ActiveTab = "dashboard" | "field" | "office" | "ops" | "employees" | "jobs" | "makeReady" | "invoices" | "properties" | "reports" | "more";
+type ActiveTab = "dashboard" | "field" | "office" | "ops" | "employees" | "jobs" | "makeReady" | "assignments" | "invoices" | "properties" | "reports" | "more";
 
 const defaultProperties = [
   "Charles Place Apartments",
@@ -209,6 +229,7 @@ const starterState: AppState = {
   jobs: [],
   makeReady: [],
   invoices: [],
+  assignments: [],
   properties: defaultProperties,
   jobTypeOptions: defaultJobTypes,
 };
@@ -603,18 +624,20 @@ export default function PayrollProEliteOperationsX() {
   const [state, setState] = useState<AppState>(starterState);
   const [hydrated, setHydrated] = useState(false);
   const [activeTab, setActiveTab] = useState<ActiveTab>("dashboard");
-  const [opsView, setOpsView] = useState<"jobs" | "makeReady" | "invoices">("jobs");
+  const [opsView, setOpsView] = useState<"jobs" | "makeReady" | "assignments" | "invoices">("jobs");
   const [selectedWeek, setSelectedWeek] = useState(todayISO());
   const [search, setSearch] = useState("");
   const [expandedEmployeeId, setExpandedEmployeeId] = useState<string | null>(null);
   const [showEmployeeForm, setShowEmployeeForm] = useState(false);
   const [showJobForm, setShowJobForm] = useState(false);
+  const [showAssignmentForm, setShowAssignmentForm] = useState(false);
+  const [editingAssignment, setEditingAssignment] = useState<WorkAssignment | null>(null);
   const [showPropertyForm, setShowPropertyForm] = useState(false);
   const [showMakeReadyForm, setShowMakeReadyForm] = useState(false);
   const [editingMakeReady, setEditingMakeReady] = useState<MakeReadyItem | null>(null);
   const [showInvoiceForm, setShowInvoiceForm] = useState(false);
   const [editingInvoice, setEditingInvoice] = useState<Invoice | null>(null);
-  const [confirmDelete, setConfirmDelete] = useState<{ type: "employee" | "job" | "property" | "makeReady" | "invoice"; id: string } | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<{ type: "employee" | "job" | "property" | "makeReady" | "invoice" | "assignment"; id: string } | null>(null);
   const importRef = useRef<HTMLInputElement | null>(null);
 
   const week = useMemo(() => getWeekRange(selectedWeek), [selectedWeek]);
@@ -632,6 +655,7 @@ export default function PayrollProEliteOperationsX() {
           jobs: Array.isArray(parsed.jobs) ? parsed.jobs : [],
           makeReady: Array.isArray(parsed.makeReady) ? parsed.makeReady : [],
           invoices: Array.isArray(parsed.invoices) ? parsed.invoices : [],
+          assignments: Array.isArray(parsed.assignments) ? parsed.assignments : [],
           properties: Array.isArray(parsed.properties) ? parsed.properties : defaultProperties,
           jobTypeOptions: Array.isArray(parsed.jobTypeOptions) ? parsed.jobTypeOptions : defaultJobTypes,
         });
@@ -698,6 +722,20 @@ export default function PayrollProEliteOperationsX() {
       .sort((a, b) => a.deadline.localeCompare(b.deadline));
   }, [state.makeReady, search, employeesById]);
 
+  const filteredAssignments = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return state.assignments
+      .filter((assignment) => {
+        if (!q) return true;
+        const employeeName = employeesById.get(assignment.employeeId)?.name || "";
+        return [employeeName, assignment.property, assignment.address, assignment.unitNumber, assignment.status, assignment.priority, assignment.scope, assignment.notes]
+          .join(" ")
+          .toLowerCase()
+          .includes(q);
+      })
+      .sort((a, b) => b.date.localeCompare(a.date));
+  }, [state.assignments, search, employeesById]);
+
   const filteredInvoices = useMemo(() => {
     const q = search.trim().toLowerCase();
     return state.invoices
@@ -761,6 +799,16 @@ export default function PayrollProEliteOperationsX() {
     setState((prev) => {
       const exists = prev.makeReady.some((row) => row.id === item.id);
       return { ...prev, makeReady: exists ? prev.makeReady.map((row) => (row.id === item.id ? item : row)) : [item, ...prev.makeReady] };
+    });
+  }
+
+  function upsertAssignment(assignment: WorkAssignment) {
+    setState((prev) => {
+      const exists = prev.assignments.some((row) => row.id === assignment.id);
+      return {
+        ...prev,
+        assignments: exists ? prev.assignments.map((row) => (row.id === assignment.id ? assignment : row)) : [assignment, ...prev.assignments],
+      };
     });
   }
 
@@ -900,6 +948,7 @@ Enter the amount you are charging the company.`
       if (confirmDelete.type === "job") return { ...prev, jobs: prev.jobs.filter((job) => job.id !== confirmDelete.id) };
       if (confirmDelete.type === "makeReady") return { ...prev, makeReady: prev.makeReady.filter((item) => item.id !== confirmDelete.id) };
       if (confirmDelete.type === "invoice") return { ...prev, invoices: prev.invoices.filter((item) => item.id !== confirmDelete.id) };
+      if (confirmDelete.type === "assignment") return { ...prev, assignments: prev.assignments.filter((item) => item.id !== confirmDelete.id) };
       return { ...prev, properties: prev.properties.filter((property) => property !== confirmDelete.id) };
     });
     setConfirmDelete(null);
@@ -930,6 +979,7 @@ Enter the amount you are charging the company.`
           jobs: parsed.jobs,
           makeReady: Array.isArray(parsed.makeReady) ? parsed.makeReady : [],
           invoices: Array.isArray(parsed.invoices) ? parsed.invoices : [],
+          assignments: Array.isArray(parsed.assignments) ? parsed.assignments : [],
           properties: Array.isArray(parsed.properties) ? parsed.properties : defaultProperties,
           jobTypeOptions: Array.isArray(parsed.jobTypeOptions) ? parsed.jobTypeOptions : defaultJobTypes,
         });
@@ -1055,22 +1105,28 @@ Enter the amount you are charging the company.`
                   onClick={() =>
                     opsView === "makeReady"
                       ? (setEditingMakeReady(null), setShowMakeReadyForm(true))
-                      : setShowJobForm(true)
+                      : opsView === "assignments"
+                        ? (setEditingAssignment(null), setShowAssignmentForm(true))
+                        : setShowJobForm(true)
                   }
                   className="goldButton"
                 >
-                  <Plus size={18} /> {opsView === "makeReady" ? "Add Unit" : "Add Job"}
+                  <Plus size={18} /> {opsView === "makeReady" ? "Add Unit" : opsView === "assignments" ? "Assign Job" : "Add Job"}
                 </button>
               </SectionTop>
 
               <div className="rounded-2xl border border-blue-400/20 bg-blue-500/10 p-3 text-sm font-semibold text-blue-200">
-                Field is your job-cost side: worker pay, job details, units, photos, make ready, and one-tap invoice creation.
+                Field is your job-cost side: worker pay, job details, assignments, units, photos, make ready, and one-tap invoice creation.
               </div>
 
-              <div className="grid grid-cols-2 gap-1 rounded-[1.2rem] border border-white/10 bg-black/30 p-1">
-                <button type="button" onClick={() => setOpsView("jobs")} className={`rounded-2xl px-2 py-3 text-xs font-black transition ${opsView !== "makeReady" ? "bg-green-500 text-black shadow-[0_10px_25px_rgba(34,197,94,0.22)]" : "text-zinc-400"}`}>
+              <div className="grid grid-cols-3 gap-1 rounded-[1.2rem] border border-white/10 bg-black/30 p-1">
+                <button type="button" onClick={() => setOpsView("jobs")} className={`rounded-2xl px-2 py-3 text-xs font-black transition ${opsView === "jobs" ? "bg-green-500 text-black shadow-[0_10px_25px_rgba(34,197,94,0.22)]" : "text-zinc-400"}`}>
                   <span className="flex items-center justify-center gap-1"><BriefcaseBusiness size={16} /> Jobs</span>
                   <span className="mt-1 block text-[10px] font-black opacity-75">{filteredJobs.length}</span>
+                </button>
+                <button type="button" onClick={() => setOpsView("assignments")} className={`rounded-2xl px-2 py-3 text-xs font-black transition ${opsView === "assignments" ? "bg-green-500 text-black shadow-[0_10px_25px_rgba(34,197,94,0.22)]" : "text-zinc-400"}`}>
+                  <span className="flex items-center justify-center gap-1"><FileText size={16} /> Assign</span>
+                  <span className="mt-1 block text-[10px] font-black opacity-75">{filteredAssignments.length}</span>
                 </button>
                 <button type="button" onClick={() => setOpsView("makeReady")} className={`rounded-2xl px-2 py-3 text-xs font-black transition ${opsView === "makeReady" ? "bg-green-500 text-black shadow-[0_10px_25px_rgba(34,197,94,0.22)]" : "text-zinc-400"}`}>
                   <span className="flex items-center justify-center gap-1"><ClipboardCheck size={16} /> Make Ready</span>
@@ -1078,8 +1134,11 @@ Enter the amount you are charging the company.`
                 </button>
               </div>
 
-              {opsView !== "makeReady" && (
+              {opsView === "jobs" && (
                 <JobList jobs={filteredJobs} employees={state.employees} employeesById={employeesById} properties={state.properties} jobTypeOptions={state.jobTypeOptions} onDelete={(id) => setConfirmDelete({ type: "job", id })} onUpdate={updateJob} onCreateInvoice={createInvoiceFromJob} />
+              )}
+              {opsView === "assignments" && (
+                <AssignmentBoard assignments={filteredAssignments} employees={state.employees} employeesById={employeesById} onAdd={() => { setEditingAssignment(null); setShowAssignmentForm(true); }} onEdit={(item) => { setEditingAssignment(item); setShowAssignmentForm(true); }} onDelete={(id) => setConfirmDelete({ type: "assignment", id })} onUpdate={upsertAssignment} />
               )}
               {opsView === "makeReady" && (
                 <MakeReadyBoard compact items={filteredMakeReady} employees={state.employees} employeesById={employeesById} onAdd={() => { setEditingMakeReady(null); setShowMakeReadyForm(true); }} onEdit={(item) => { setEditingMakeReady(item); setShowMakeReadyForm(true); }} onDelete={(id) => setConfirmDelete({ type: "makeReady", id })} onUpdate={upsertMakeReady} onCreateInvoice={createInvoiceFromMakeReady} />
@@ -1129,6 +1188,10 @@ Enter the amount you are charging the company.`
 
       {showJobForm && (
         <JobModal employees={state.employees} properties={state.properties} jobTypeOptions={state.jobTypeOptions} onAddProperty={(newProperty) => { const cleanProperty = newProperty.trim(); if (!cleanProperty) return; setState((prev) => ({ ...prev, properties: [...new Set([...prev.properties, cleanProperty])] })); }} onClose={() => setShowJobForm(false)} onSave={(job) => { addJob(job); setShowJobForm(false); }} />
+      )}
+
+      {showAssignmentForm && (
+        <AssignmentModal employees={state.employees} properties={state.properties} initial={editingAssignment} onClose={() => { setShowAssignmentForm(false); setEditingAssignment(null); }} onSave={(assignment) => { upsertAssignment(assignment); setShowAssignmentForm(false); setEditingAssignment(null); }} />
       )}
 
       {showPropertyForm && <PropertyModal onClose={() => setShowPropertyForm(false)} onSave={(property) => { setState((prev) => ({ ...prev, properties: [...new Set([...prev.properties, property.trim()])].filter(Boolean) })); setShowPropertyForm(false); }} />}
@@ -1256,6 +1319,101 @@ function EmployeeCard({ employee, totals, expanded, onToggle, onDelete, onSave, 
 
 function BalancePill({ label, value, gold = false, danger = false }: { label: string; value: string; gold?: boolean; danger?: boolean }) { return <div className={`rounded-2xl border p-2 ${danger ? "border-red-400/30 bg-red-500/10" : gold ? "border-green-400/25 bg-green-500/10" : "border-zinc-800 bg-black/30"}`}><p className="text-[10px] font-black uppercase tracking-wider text-zinc-500">{label}</p><p className={`text-sm font-black ${danger ? "text-red-300" : gold ? "text-green-400" : "text-zinc-100"}`}>{value}</p></div>; }
 
+
+
+function assignmentStatusLabel(status: AssignmentStatus) {
+  if (status === "draft") return "Draft";
+  if (status === "sent") return "Sent";
+  if (status === "in-progress") return "In Progress";
+  return "Completed";
+}
+
+function formatAssignmentDate(dateISO: string) {
+  if (!dateISO) return "No date";
+  const date = new Date(`${dateISO}T12:00:00`);
+  return new Intl.DateTimeFormat("en-US", { weekday: "long", month: "long", day: "numeric" }).format(date);
+}
+
+function buildAssignmentMessage(assignment: WorkAssignment, employeeName: string) {
+  const locationLine = [assignment.property, assignment.address].filter(Boolean).join("\n");
+  const unitLine = assignment.unitNumber ? `Unit ${assignment.unitNumber}` : "";
+  const scopeLines = assignment.scope.split("\n").map((line) => line.trim()).filter(Boolean).map((line) => `• ${line.replace(/^•\s*/, "")}`).join("\n");
+  const notes = assignment.notes.trim();
+  const english = [
+    `God bless ${employeeName},`,
+    ``,
+    `📣 Work assigned for ${formatAssignmentDate(assignment.date)}`,
+    ``,
+    `📍 ${locationLine}`,
+    unitLine ? `🏠 ${unitLine}` : "",
+    ``,
+    `🛠️ Work to complete:`,
+    scopeLines || "• Job details to be confirmed.",
+    notes ? `` : "",
+    notes ? `📝 Notes: ${notes}` : "",
+    ``,
+    assignment.priority === "urgent" ? `⚠️ Priority: URGENT` : `✅ Priority: Normal`,
+    ``,
+    `Materials and labor included as discussed. Please contact me with any questions or issues.`,
+  ].filter((line) => line !== "").join("\n");
+
+  const spanish = [
+    `Dios te bendiga ${employeeName},`,
+    ``,
+    `📣 Trabajo asignado para ${formatAssignmentDate(assignment.date)}`,
+    ``,
+    `📍 ${locationLine}`,
+    unitLine ? `🏠 ${unitLine.replace("Unit", "Unidad")}` : "",
+    ``,
+    `🛠️ Trabajo a realizar:`,
+    scopeLines || "• Detalles del trabajo por confirmar.",
+    notes ? `` : "",
+    notes ? `📝 Notas: ${notes}` : "",
+    ``,
+    assignment.priority === "urgent" ? `⚠️ Prioridad: URGENTE` : `✅ Prioridad: Normal`,
+    ``,
+    `Materiales y labor incluidos según lo hablado. Cualquier duda o inconveniente, favor de comunicarte conmigo.`,
+  ].filter((line) => line !== "").join("\n");
+
+  if (assignment.language === "english") return english;
+  if (assignment.language === "spanish") return spanish;
+  return `${english}\n\n--------------------\n\n${spanish}`;
+}
+
+async function copyAssignmentMessage(assignment: WorkAssignment, employeeName: string) {
+  const text = buildAssignmentMessage(assignment, employeeName);
+  try {
+    await navigator.clipboard.writeText(text);
+    alert("Assignment copied. You can paste it into text, WhatsApp, or email.");
+  } catch {
+    window.prompt("Copy this assignment message:", text);
+  }
+}
+
+function openAssignmentText(assignment: WorkAssignment, employee: Employee | undefined) {
+  const body = encodeURIComponent(buildAssignmentMessage(assignment, employee?.name || ""));
+  const phone = (employee?.phone || "").replace(/[^0-9+]/g, "");
+  window.location.href = `sms:${phone ? phone : ""}?&body=${body}`;
+}
+
+function openAssignmentWhatsApp(assignment: WorkAssignment, employee: Employee | undefined) {
+  const text = encodeURIComponent(buildAssignmentMessage(assignment, employee?.name || ""));
+  const phone = (employee?.phone || "").replace(/[^0-9]/g, "");
+  window.open(`https://wa.me/${phone}?text=${text}`, "_blank");
+}
+
+function AssignmentBoard({ assignments, employeesById, onAdd, onEdit, onDelete, onUpdate }: { assignments: WorkAssignment[]; employees: Employee[]; employeesById: Map<string, Employee>; onAdd: () => void; onEdit: (item: WorkAssignment) => void; onDelete: (id: string) => void; onUpdate: (item: WorkAssignment) => void }) {
+  if (assignments.length === 0) return <div className="blackCard p-4"><EmptyText text="No assignments yet. Tap Assign Job to send professional work orders." /><button className="goldButton mt-2 w-full" onClick={onAdd}><Plus size={18} /> Assign Job</button></div>;
+  return <div className="grid gap-3">{assignments.map((assignment) => { const employee = employeesById.get(assignment.employeeId); const employeeName = employee?.name || "Employee"; return <div key={assignment.id} className="blackCard p-4"><div className="relative z-10"><div className="flex items-start justify-between gap-3"><div><p className="text-xs font-black uppercase tracking-[0.14em] text-green-400">{assignment.priority === "urgent" ? "Urgent Assignment" : "Work Assignment"}</p><h3 className="mt-1 text-lg font-black">{assignment.property}{assignment.unitNumber ? ` — Unit ${assignment.unitNumber}` : ""}</h3><p className="mt-1 text-xs font-semibold text-zinc-500">{formatAssignmentDate(assignment.date)} • {employeeName}</p></div><span className={`rounded-full border px-3 py-1 text-[10px] font-black uppercase ${assignment.status === "completed" ? "border-green-400/40 bg-green-500/10 text-green-300" : assignment.status === "in-progress" ? "border-blue-400/40 bg-blue-500/10 text-blue-300" : assignment.status === "sent" ? "border-amber-400/40 bg-amber-500/10 text-amber-300" : "border-zinc-700 bg-zinc-900 text-zinc-300"}`}>{assignmentStatusLabel(assignment.status)}</span></div><p className="mt-3 whitespace-pre-wrap rounded-2xl border border-white/10 bg-black/25 p-3 text-sm font-semibold text-zinc-300">{assignment.scope || "No scope added yet."}</p>{assignment.notes && <p className="mt-2 text-xs font-semibold text-zinc-500">Notes: {assignment.notes}</p>}<div className="mt-3 grid grid-cols-2 gap-2"><button className="goldButton" onClick={() => copyAssignmentMessage(assignment, employeeName)}><ClipboardList size={16} /> Copy</button><button className="darkButton" onClick={() => openAssignmentText(assignment, employee)}><FileText size={16} /> Text</button><button className="darkButton" onClick={() => openAssignmentWhatsApp(assignment, employee)}><Mail size={16} /> WhatsApp</button><button className="darkButton" onClick={() => onEdit(assignment)}><Pencil size={16} /> Edit</button></div><div className="mt-2 grid grid-cols-2 gap-2"><select className="inputElite" value={assignment.status} onChange={(e) => onUpdate({ ...assignment, status: e.target.value as AssignmentStatus })}><option value="draft">Draft</option><option value="sent">Sent</option><option value="in-progress">In Progress</option><option value="completed">Completed</option></select><button className="iconDanger justify-center" onClick={() => onDelete(assignment.id)}><Trash2 size={16} /> Delete</button></div></div></div>; })}</div>;
+}
+
+function AssignmentModal({ employees, properties, initial, onClose, onSave }: { employees: Employee[]; properties: string[]; initial: WorkAssignment | null; onClose: () => void; onSave: (assignment: WorkAssignment) => void }) {
+  const [assignment, setAssignment] = useState<WorkAssignment>(initial || { id: uid(), employeeId: employees[0]?.id || "", date: todayISO(), property: properties[0] || "", address: "", unitNumber: "", priority: "normal", language: "spanish", status: "draft", scope: "Reparación de sheetrock dañado.\nPlasteo y lijado de áreas afectadas para dejar las paredes lisas y listas para pintura.\nReparación y detalle de paredes según sea necesario.\nLimpieza básica del área de trabajo al finalizar.", notes: "", photos: [], createdAt: new Date().toISOString() });
+  const employee = employees.find((item) => item.id === assignment.employeeId);
+  const employeeName = employee?.name || "Employee";
+  const preview = buildAssignmentMessage(assignment, employeeName);
+  return <Modal title={initial ? "Edit Assignment" : "Assign Job"} onClose={onClose}><div className="space-y-3"><div className="grid grid-cols-2 gap-2"><Field label="Employee"><select className="inputElite" value={assignment.employeeId} onChange={(e) => setAssignment({ ...assignment, employeeId: e.target.value })}>{employees.map((employee) => <option key={employee.id} value={employee.id}>{employee.name}</option>)}</select></Field><Field label="Date"><input className="inputElite" type="date" value={assignment.date} onChange={(e) => setAssignment({ ...assignment, date: e.target.value })} /></Field></div><Field label="Property"><select className="inputElite" value={assignment.property} onChange={(e) => setAssignment({ ...assignment, property: e.target.value })}>{properties.map((property) => <option key={property} value={property}>{property}</option>)}</select></Field><Field label="Address"><input className="inputElite" value={assignment.address} onChange={(e) => setAssignment({ ...assignment, address: e.target.value })} placeholder="460 Charles St, Providence RI" /></Field><div className="grid grid-cols-2 gap-2"><Field label="Unit"><input className="inputElite" value={assignment.unitNumber} onChange={(e) => setAssignment({ ...assignment, unitNumber: e.target.value })} placeholder="107" /></Field><Field label="Priority"><select className="inputElite" value={assignment.priority} onChange={(e) => setAssignment({ ...assignment, priority: e.target.value as WorkAssignment["priority"] })}><option value="normal">Normal</option><option value="urgent">Urgent</option></select></Field></div><div className="grid grid-cols-2 gap-2"><Field label="Language"><select className="inputElite" value={assignment.language} onChange={(e) => setAssignment({ ...assignment, language: e.target.value as AssignmentLanguage })}><option value="spanish">Español</option><option value="english">English</option><option value="both">Both</option></select></Field><Field label="Status"><select className="inputElite" value={assignment.status} onChange={(e) => setAssignment({ ...assignment, status: e.target.value as AssignmentStatus })}><option value="draft">Draft</option><option value="sent">Sent</option><option value="in-progress">In Progress</option><option value="completed">Completed</option></select></Field></div><Field label="Scope of Work"><textarea className="inputElite min-h-32" value={assignment.scope} onChange={(e) => setAssignment({ ...assignment, scope: e.target.value })} /></Field><Field label="Notes"><textarea className="inputElite min-h-20" value={assignment.notes} onChange={(e) => setAssignment({ ...assignment, notes: e.target.value })} placeholder="Optional notes for employee" /></Field><div className="rounded-2xl border border-green-400/20 bg-green-500/10 p-3"><p className="mb-2 text-xs font-black uppercase text-green-400">Message Preview</p><pre className="max-h-56 overflow-y-auto whitespace-pre-wrap rounded-xl bg-black/40 p-3 text-xs font-semibold text-zinc-200">{preview}</pre></div><div className="grid grid-cols-2 gap-2"><button className="goldButton" onClick={() => onSave({ ...assignment, createdAt: assignment.createdAt || new Date().toISOString() })}><Check size={18} /> Save</button><button className="darkButton" onClick={() => copyAssignmentMessage(assignment, employeeName)}><ClipboardList size={18} /> Copy</button><button className="darkButton" onClick={() => openAssignmentText(assignment, employee)}><FileText size={18} /> Send Text</button><button className="darkButton" onClick={() => openAssignmentWhatsApp(assignment, employee)}><Mail size={18} /> WhatsApp</button></div></div></Modal>;
+}
 
 function JobList({ jobs, employees, employeesById, properties, jobTypeOptions, onDelete, onUpdate, onCreateInvoice }: { jobs: JobEntry[]; employees: Employee[]; employeesById: Map<string, Employee>; properties: string[]; jobTypeOptions: string[]; onDelete: (id: string) => void; onUpdate: (job: JobEntry) => void; onCreateInvoice: (job: JobEntry) => void }) {
   return <div className="space-y-3">{jobs.map((job) => <JobRow key={job.id} job={job} employees={employees} employee={employeesById.get(job.employeeId)} properties={properties} jobTypeOptions={jobTypeOptions} onDelete={() => onDelete(job.id)} onUpdate={onUpdate} onCreateInvoice={() => onCreateInvoice(job)} />)}{jobs.length === 0 && <div className="blackCard p-6"><EmptyText text="No jobs found for this selected week." /></div>}</div>;
