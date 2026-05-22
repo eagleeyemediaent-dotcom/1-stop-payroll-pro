@@ -41,8 +41,8 @@ import {
 } from "lucide-react";
 
 // 1 STOP TURNOVER SPECIALIST PRO ELITE - OPERATIONS X
-// PHASE 9 single-file replacement for app/page.tsx
-// Adds employee work assignments with English / Spanish / Both message generation
+// PHASE 10 single-file replacement for app/page.tsx
+// One Job Entry + Assignment Built In, cleaner message preview, no duplicate Quick Add
 
 const STORAGE_KEY = "oneStopPayrollProEliteBlackGoldX_v1";
 
@@ -1187,7 +1187,7 @@ Enter the amount you are charging the company.`
       {showEmployeeForm && <EmployeeModal onClose={() => setShowEmployeeForm(false)} onSave={(employee) => { upsertEmployee(employee); setShowEmployeeForm(false); }} />}
 
       {showJobForm && (
-        <JobModal employees={state.employees} properties={state.properties} jobTypeOptions={state.jobTypeOptions} onAddProperty={(newProperty) => { const cleanProperty = newProperty.trim(); if (!cleanProperty) return; setState((prev) => ({ ...prev, properties: [...new Set([...prev.properties, cleanProperty])] })); }} onClose={() => setShowJobForm(false)} onSave={(job) => { addJob(job); setShowJobForm(false); }} />
+        <JobModal employees={state.employees} properties={state.properties} jobTypeOptions={state.jobTypeOptions} onAddProperty={(newProperty) => { const cleanProperty = newProperty.trim(); if (!cleanProperty) return; setState((prev) => ({ ...prev, properties: [...new Set([...prev.properties, cleanProperty])] })); }} onClose={() => setShowJobForm(false)} onSave={(job, assignment) => { addJob(job); if (assignment) upsertAssignment(assignment); setShowJobForm(false); }} />
       )}
 
       {showAssignmentForm && (
@@ -1287,7 +1287,7 @@ function SectionTop({ title, subtitle, children }: { title: string; subtitle: st
 
 function Dashboard({ employeeTotals, filteredJobs, employeesById, makeReadyTotals, totals, onAddJob, onGoEmployees, onGoReports, onGoMakeReady, onGoInvoices }: { employeeTotals: { employee: Employee; jobs: JobEntry[]; earned: number; paid: number; borrowed: number; owed: number }[]; filteredJobs: JobEntry[]; employeesById: Map<string, Employee>; makeReadyTotals: { ready: number; inProgress: number; urgent: number; scheduled: number }; totals: { invoiceOpen: number }; onAddJob: () => void; onGoEmployees: () => void; onGoReports: () => void; onGoMakeReady: () => void; onGoInvoices: () => void }) {
   const topOwed = [...employeeTotals].sort((a, b) => b.owed - a.owed).slice(0, 4);
-  return <section className="grid gap-4"><div className="space-y-4"><SectionTop title="Command Center" subtitle="Your company week at a glance."><button onClick={onAddJob} className="goldButton"><Plus size={18} /> Quick Add</button></SectionTop><div className="grid grid-cols-2 gap-3"><QuickTile onClick={onGoEmployees} icon={<UserPlus />} title="Employees" subtitle="Worker balances" /><QuickTile onClick={onGoMakeReady} icon={<ClipboardCheck />} title="Field" subtitle={`${makeReadyTotals.inProgress} make ready`} /><QuickTile onClick={onGoInvoices} icon={<ReceiptText />} title="Office" subtitle={`${money(totals.invoiceOpen)} open`} /><QuickTile onClick={onGoReports} icon={<FileText />} title="Reports" subtitle="Payroll closeout" /></div><div className="grid grid-cols-4 gap-2"><MiniMetric label="Ready" value={makeReadyTotals.ready} /><MiniMetric label="Progress" value={makeReadyTotals.inProgress} /><MiniMetric label="Urgent" value={makeReadyTotals.urgent} danger /><MiniMetric label="Waiting" value={makeReadyTotals.scheduled} /></div><div className="blackCard p-4"><h3 className="font-black">Balances by Employee</h3><div className="mt-3 space-y-3">{topOwed.map(({ employee, earned, paid, owed, borrowed }) => <div key={employee.id} className="rounded-2xl border border-zinc-800 bg-black/30 p-3"><div className="flex items-center justify-between gap-3"><p className="font-black">{employee.name}</p><p className={`${owed > 0 ? "text-red-300" : "text-green-400"} font-black`}>{money(owed)}</p></div><div className="mt-2 grid grid-cols-4 gap-2 text-[11px] text-zinc-400"><span>Earned {money(earned)}</span><span>Paid {money(paid)}</span><span>Borrowed {money(borrowed)}</span><span>Owed {money(owed)}</span></div></div>)}{topOwed.length === 0 && <EmptyText text="No employee payroll yet this week." />}</div></div></div><div className="space-y-3"><div className="flex items-center justify-between"><h3 className="text-sm font-black uppercase tracking-wide text-zinc-300">Jobs This Week</h3><span className="darkButton !px-3 !py-2 text-xs"><Filter size={14} /> Week Only</span></div><div className="blackCard divide-y divide-white/10 overflow-hidden">{filteredJobs.slice(0, 7).map((job) => <JobMini key={job.id} job={job} employee={employeesById.get(job.employeeId)} />)}{filteredJobs.length === 0 && <EmptyText text="No jobs found for this week." />}</div></div></section>;
+  return <section className="grid gap-4"><div className="space-y-4"><SectionTop title="Command Center" subtitle="Your company week at a glance." /><div className="grid grid-cols-2 gap-3"><QuickTile onClick={onGoEmployees} icon={<UserPlus />} title="Employees" subtitle="Worker balances" /><QuickTile onClick={onGoMakeReady} icon={<ClipboardCheck />} title="Field" subtitle={`${makeReadyTotals.inProgress} make ready`} /><QuickTile onClick={onGoInvoices} icon={<ReceiptText />} title="Office" subtitle={`${money(totals.invoiceOpen)} open`} /><QuickTile onClick={onGoReports} icon={<FileText />} title="Reports" subtitle="Payroll closeout" /></div><div className="grid grid-cols-4 gap-2"><MiniMetric label="Ready" value={makeReadyTotals.ready} /><MiniMetric label="Progress" value={makeReadyTotals.inProgress} /><MiniMetric label="Urgent" value={makeReadyTotals.urgent} danger /><MiniMetric label="Waiting" value={makeReadyTotals.scheduled} /></div><div className="blackCard p-4"><h3 className="font-black">Balances by Employee</h3><div className="mt-3 space-y-3">{topOwed.map(({ employee, earned, paid, owed, borrowed }) => <div key={employee.id} className="rounded-2xl border border-zinc-800 bg-black/30 p-3"><div className="flex items-center justify-between gap-3"><p className="font-black">{employee.name}</p><p className={`${owed > 0 ? "text-red-300" : "text-green-400"} font-black`}>{money(owed)}</p></div><div className="mt-2 grid grid-cols-4 gap-2 text-[11px] text-zinc-400"><span>Earned {money(earned)}</span><span>Paid {money(paid)}</span><span>Borrowed {money(borrowed)}</span><span>Owed {money(owed)}</span></div></div>)}{topOwed.length === 0 && <EmptyText text="No employee payroll yet this week." />}</div></div></div><div className="space-y-3"><div className="flex items-center justify-between"><h3 className="text-sm font-black uppercase tracking-wide text-zinc-300">Jobs This Week</h3><span className="darkButton !px-3 !py-2 text-xs"><Filter size={14} /> Week Only</span></div><div className="blackCard divide-y divide-white/10 overflow-hidden">{filteredJobs.slice(0, 7).map((job) => <JobMini key={job.id} job={job} employee={employeesById.get(job.employeeId)} />)}{filteredJobs.length === 0 && <EmptyText text="No jobs found for this week." />}</div></div></section>;
 }
 
 function QuickTile({ onClick, icon, title, subtitle }: { onClick: () => void; icon: React.ReactNode; title: string; subtitle: string }) { return <button onClick={onClick} className="blackCard p-5 text-left transition active:scale-[.99]"><div className="relative z-10 flex h-12 w-12 items-center justify-center rounded-2xl border border-white/10 bg-green-500/10 text-green-400">{icon}</div><p className="relative z-10 mt-3 text-lg font-black">{title}</p><p className="relative z-10 text-xs text-zinc-500">{subtitle}</p></button>; }
@@ -1354,7 +1354,7 @@ function buildAssignmentMessage(assignment: WorkAssignment, employeeName: string
     ``,
     assignment.priority === "urgent" ? `⚠️ Priority: URGENT` : `✅ Priority: Normal`,
     ``,
-    `Materials and labor included as discussed. Please contact me with any questions or issues.`,
+    `Please contact me with any questions or issues.`,
   ].filter((line) => line !== "").join("\n");
 
   const spanish = [
@@ -1372,7 +1372,7 @@ function buildAssignmentMessage(assignment: WorkAssignment, employeeName: string
     ``,
     assignment.priority === "urgent" ? `⚠️ Prioridad: URGENTE` : `✅ Prioridad: Normal`,
     ``,
-    `Materiales y labor incluidos según lo hablado. Cualquier duda o inconveniente, favor de comunicarte conmigo.`,
+    `Cualquier duda o inconveniente, favor de comunicarte conmigo.`,
   ].filter((line) => line !== "").join("\n");
 
   if (assignment.language === "english") return english;
@@ -1691,7 +1691,7 @@ function EmployeeModal({ onClose, onSave }: { onClose: () => void; onSave: (empl
   return <Modal title="Add Employee" onClose={onClose}><div className="space-y-3"><Field label="Employee Name"><input className="inputElite" value={employee.name} onChange={(e) => setEmployee({ ...employee, name: e.target.value })} placeholder="Worker name" /></Field><Field label="Phone"><input className="inputElite" value={employee.phone} onChange={(e) => setEmployee({ ...employee, phone: e.target.value })} placeholder="Phone number" /></Field><Field label="Default Rate"><MoneyInput value={employee.defaultRate} onValueChange={(value) => setEmployee({ ...employee, defaultRate: value })} /></Field><Field label="Notes"><textarea className="inputElite min-h-20" value={employee.notes} onChange={(e) => setEmployee({ ...employee, notes: e.target.value })} /></Field><button className="goldButton w-full" onClick={() => employee.name.trim() && onSave({ ...employee, name: employee.name.trim() })}><Check size={18} /> Save Employee</button></div></Modal>;
 }
 
-function JobModal({ employees, properties, jobTypeOptions, onAddProperty, onClose, onSave }: { employees: Employee[]; properties: string[]; jobTypeOptions: string[]; onAddProperty: (property: string) => void; onClose: () => void; onSave: (job: JobEntry) => void }) {
+function JobModal({ employees, properties, jobTypeOptions, onAddProperty, onClose, onSave }: { employees: Employee[]; properties: string[]; jobTypeOptions: string[]; onAddProperty: (property: string) => void; onClose: () => void; onSave: (job: JobEntry, assignment?: WorkAssignment) => void }) {
   const [employeeId, setEmployeeId] = useState(employees[0]?.id || "");
   const [date, setDate] = useState(todayISO());
   const [property, setProperty] = useState(properties[0] || "");
@@ -1702,8 +1702,53 @@ function JobModal({ employees, properties, jobTypeOptions, onAddProperty, onClos
   const [paidAmount, setPaidAmount] = useState(0);
   const [notes, setNotes] = useState("");
   const [photos, setPhotos] = useState<string[]>([]);
+  const [createAssignment, setCreateAssignment] = useState(true);
+  const [assignmentAddress, setAssignmentAddress] = useState("");
+  const [assignmentPriority, setAssignmentPriority] = useState<WorkAssignment["priority"]>("normal");
+  const [assignmentLanguage, setAssignmentLanguage] = useState<AssignmentLanguage>("spanish");
+
   function toggleType(type: string) { setSelectedTypes((prev) => (prev.includes(type) ? prev.filter((item) => item !== type) : [...prev, type])); }
-  return <Modal title="Add Job Entry" onClose={onClose}><div className="space-y-3"><Field label="Employee"><select className="inputElite" value={employeeId} onChange={(e) => setEmployeeId(e.target.value)}>{employees.map((employee) => <option key={employee.id} value={employee.id}>{employee.name}</option>)}</select></Field><div className="grid grid-cols-2 gap-3"><Field label="Date"><input className="inputElite cursor-pointer" type="date" value={date} onClick={(e) => e.currentTarget.showPicker?.()} onFocus={(e) => e.currentTarget.showPicker?.()} onChange={(e) => setDate(e.target.value)} /></Field><Field label="Property"><select className="inputElite" value={property} onChange={(e) => { const selected = e.target.value; if (selected === "__add_new_property__") { const entered = window.prompt("Enter new property name:"); const cleanProperty = entered?.trim() || ""; if (cleanProperty) { onAddProperty(cleanProperty); setProperty(cleanProperty); } return; } setProperty(selected); }}>{properties.map((item) => <option key={item} value={item}>{item}</option>)}<option value="__add_new_property__">+ Add New Property</option></select></Field></div><Field label="Unit #"><input className="inputElite" value={unitNumber} onChange={(e) => setUnitNumber(e.target.value)} placeholder="Example: 212" /></Field><Field label="Work Type"><div className="grid grid-cols-2 gap-2">{jobTypeOptions.map((type) => <button type="button" key={type} onClick={() => toggleType(type)} className={`rounded-xl border px-3 py-2 text-left text-xs font-bold ${selectedTypes.includes(type) ? "border-green-400/50 bg-green-500/20 text-green-300" : "border-zinc-800 bg-black/30 text-zinc-400"}`}>{selectedTypes.includes(type) ? "✓ " : ""}{type}</button>)}</div></Field><Field label="Custom Work"><input className="inputElite" value={customWork} onChange={(e) => setCustomWork(e.target.value)} placeholder="Extra work description" /></Field><div className="grid grid-cols-2 gap-3"><Field label="Pay"><MoneyInput value={pay} onValueChange={setPay} placeholder="Enter Amount" /></Field><Field label="Paid"><MoneyInput value={paidAmount} onValueChange={setPaidAmount} placeholder="Enter Amount" /></Field></div><Field label="Photos"><div className="rounded-2xl border border-dashed border-zinc-800 bg-black/30 p-4"><div className="grid grid-cols-2 gap-2"><label className="goldButton w-full cursor-pointer"><Camera size={18} /> Take Photo<input type="file" accept="image/*" multiple capture="environment" className="hidden" onChange={async (e) => { const newPhotos = await readPhotoFiles(e.target.files); setPhotos((prev) => [...prev, ...newPhotos]); e.currentTarget.value = ""; }} /></label><label className="darkButton w-full cursor-pointer"><ImageIcon size={18} /> Upload<input type="file" accept="image/*" multiple className="hidden" onChange={async (e) => { const newPhotos = await readPhotoFiles(e.target.files); setPhotos((prev) => [...prev, ...newPhotos]); e.currentTarget.value = ""; }} /></label></div>{photos.length > 0 && <p className="mt-3 text-center text-sm text-zinc-400">{photos.length} photo(s) attached.</p>}</div></Field><Field label="Notes"><textarea className="inputElite min-h-24" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Notes" /></Field><button className="goldButton w-full" onClick={() => employeeId && property && onSave({ id: uid(), employeeId, date, property, unitNumber, jobTypes: selectedTypes, customWork, pay, paidAmount: Math.min(safeNumber(paidAmount), safeNumber(pay)), status: statusFrom(pay, Math.min(safeNumber(paidAmount), safeNumber(pay))), notes, photos })}><Check size={18} /> Save Job</button></div></Modal>;
+
+  const assignedEmployee = employees.find((employee) => employee.id === employeeId);
+  const scopeText = [...selectedTypes, customWork].filter(Boolean).join("\n") || "Job details to be confirmed.";
+  const assignmentPreview: WorkAssignment = {
+    id: uid(),
+    employeeId,
+    date,
+    property,
+    address: assignmentAddress,
+    unitNumber,
+    priority: assignmentPriority,
+    language: assignmentLanguage,
+    status: "draft",
+    scope: scopeText,
+    notes,
+    photos,
+    createdAt: new Date().toISOString(),
+  };
+
+  function saveJobAndAssignment() {
+    if (!employeeId || !property) return;
+    const cleanPaid = Math.min(safeNumber(paidAmount), safeNumber(pay));
+    const job: JobEntry = {
+      id: uid(),
+      employeeId,
+      date,
+      property,
+      unitNumber,
+      jobTypes: selectedTypes,
+      customWork,
+      pay,
+      paidAmount: cleanPaid,
+      status: statusFrom(pay, cleanPaid),
+      notes,
+      photos,
+    };
+    const assignment: WorkAssignment | undefined = createAssignment ? { ...assignmentPreview, id: uid(), photos: [...photos], createdAt: new Date().toISOString() } : undefined;
+    onSave(job, assignment);
+  }
+
+  return <Modal title="Add Job Entry" onClose={onClose}><div className="space-y-3"><div className="rounded-2xl border border-green-400/20 bg-green-500/10 p-3 text-sm font-semibold text-green-100"><b>One entry workflow:</b> this saves the payroll job and can create the employee assignment message at the same time.</div><Field label="Employee / Assigned To"><select className="inputElite" value={employeeId} onChange={(e) => setEmployeeId(e.target.value)}>{employees.map((employee) => <option key={employee.id} value={employee.id}>{employee.name}</option>)}</select></Field><div className="grid grid-cols-2 gap-3"><Field label="Date"><input className="inputElite cursor-pointer" type="date" value={date} onClick={(e) => e.currentTarget.showPicker?.()} onFocus={(e) => e.currentTarget.showPicker?.()} onChange={(e) => setDate(e.target.value)} /></Field><Field label="Property"><select className="inputElite" value={property} onChange={(e) => { const selected = e.target.value; if (selected === "__add_new_property__") { const entered = window.prompt("Enter new property name:"); const cleanProperty = entered?.trim() || ""; if (cleanProperty) { onAddProperty(cleanProperty); setProperty(cleanProperty); } return; } setProperty(selected); }}>{properties.map((item) => <option key={item} value={item}>{item}</option>)}<option value="__add_new_property__">+ Add New Property</option></select></Field></div><Field label="Unit #"><input className="inputElite" value={unitNumber} onChange={(e) => setUnitNumber(e.target.value)} placeholder="Example: 212" /></Field><Field label="Work Type"><div className="grid grid-cols-2 gap-2">{jobTypeOptions.map((type) => <button type="button" key={type} onClick={() => toggleType(type)} className={`rounded-xl border px-3 py-2 text-left text-xs font-bold ${selectedTypes.includes(type) ? "border-green-400/50 bg-green-500/20 text-green-300" : "border-zinc-800 bg-black/30 text-zinc-400"}`}>{selectedTypes.includes(type) ? "✓ " : ""}{type}</button>)}</div></Field><Field label="Custom Work"><input className="inputElite" value={customWork} onChange={(e) => setCustomWork(e.target.value)} placeholder="Extra work description" /></Field><div className="grid grid-cols-2 gap-3"><Field label="Pay"><MoneyInput value={pay} onValueChange={setPay} placeholder="Enter Amount" /></Field><Field label="Paid"><MoneyInput value={paidAmount} onValueChange={setPaidAmount} placeholder="Enter Amount" /></Field></div><div className="rounded-2xl border border-white/10 bg-black/25 p-3"><label className="flex items-center gap-3 text-sm font-black text-zinc-100"><input type="checkbox" checked={createAssignment} onChange={(e) => setCreateAssignment(e.target.checked)} /> Create employee assignment message</label>{createAssignment && <div className="mt-3 space-y-3"><Field label="Job Address for Message"><input className="inputElite" value={assignmentAddress} onChange={(e) => setAssignmentAddress(e.target.value)} placeholder="460 Charles St, Providence RI" /></Field><div className="grid grid-cols-2 gap-3"><Field label="Priority"><select className="inputElite" value={assignmentPriority} onChange={(e) => setAssignmentPriority(e.target.value as WorkAssignment["priority"])}><option value="normal">Normal</option><option value="urgent">Urgent</option></select></Field><Field label="Language"><select className="inputElite" value={assignmentLanguage} onChange={(e) => setAssignmentLanguage(e.target.value as AssignmentLanguage)}><option value="spanish">Español</option><option value="english">English</option><option value="both">Both</option></select></Field></div><div className="rounded-2xl border border-green-400/20 bg-green-500/10 p-3"><p className="mb-2 text-xs font-black uppercase text-green-400">Message Preview</p><pre className="max-h-48 overflow-y-auto whitespace-pre-wrap rounded-xl bg-black/40 p-3 text-xs font-semibold text-zinc-200">{buildAssignmentMessage(assignmentPreview, assignedEmployee?.name || "")}</pre></div></div>}</div><Field label="Photos"><div className="rounded-2xl border border-dashed border-zinc-800 bg-black/30 p-4"><div className="grid grid-cols-2 gap-2"><label className="goldButton w-full cursor-pointer"><Camera size={18} /> Take Photo<input type="file" accept="image/*" multiple capture="environment" className="hidden" onChange={async (e) => { const newPhotos = await readPhotoFiles(e.target.files); setPhotos((prev) => [...prev, ...newPhotos]); e.currentTarget.value = ""; }} /></label><label className="darkButton w-full cursor-pointer"><ImageIcon size={18} /> Upload<input type="file" accept="image/*" multiple className="hidden" onChange={async (e) => { const newPhotos = await readPhotoFiles(e.target.files); setPhotos((prev) => [...prev, ...newPhotos]); e.currentTarget.value = ""; }} /></label></div>{photos.length > 0 && <p className="mt-3 text-center text-sm text-zinc-400">{photos.length} photo(s) attached.</p>}</div></Field><Field label="Notes"><textarea className="inputElite min-h-24" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Notes" /></Field><button className="goldButton w-full" onClick={saveJobAndAssignment}><Check size={18} /> Save Job{createAssignment ? " + Assignment" : ""}</button></div></Modal>;
 }
 
 function MakeReadyModal({ employees, properties, initial, onClose, onSave }: { employees: Employee[]; properties: string[]; initial: MakeReadyItem | null; onClose: () => void; onSave: (item: MakeReadyItem) => void }) {
