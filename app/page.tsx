@@ -41,8 +41,8 @@ import {
 } from "lucide-react";
 
 // 1 STOP TURNOVER SPECIALIST PRO ELITE - OPERATIONS X
-// PHASE 10 single-file replacement for app/page.tsx
-// One Job Entry + Assignment Built In, cleaner message preview, no duplicate Quick Add
+// PHASE 11 single-file replacement for app/page.tsx
+// Workflow statuses + stronger assignment message formatting + property address auto-fill
 
 const STORAGE_KEY = "oneStopPayrollProEliteBlackGoldX_v1";
 
@@ -143,7 +143,7 @@ type Invoice = {
 };
 
 type AssignmentLanguage = "english" | "spanish" | "both";
-type AssignmentStatus = "draft" | "sent" | "in-progress" | "completed";
+type AssignmentStatus = "assigned" | "sent" | "in-progress" | "completed" | "approved" | "ready-to-invoice";
 
 type WorkAssignment = {
   id: string;
@@ -186,6 +186,23 @@ const defaultProperties = [
   "Waterview Apartments",
   "Wingate Property",
 ];
+
+const defaultPropertyAddresses: Record<string, string> = {
+  "Charles Place Apartments": "460 Charles St, Providence RI",
+  "206 Broad St": "206 Broad St, Providence RI",
+  "220 Broad St": "220 Broad St, Providence RI",
+  "228 Broad St": "228 Broad St, Providence RI",
+  "Copley Chambers": "Broad St, Providence RI",
+  "Riverstone Apartments": "",
+  "Tanglewood Village Apartments": "",
+  "Valley Apartments": "",
+  "Waterview Apartments": "",
+  "Wingate Property": "",
+};
+
+function getPropertyAddress(property: string) {
+  return defaultPropertyAddresses[property] || "";
+}
 
 const defaultJobTypes = [
   "Full Unit Painting",
@@ -1166,7 +1183,7 @@ Enter the amount you are charging the company.`
               <div className="grid gap-3">
                 {state.properties.map((property) => (
                   <div key={property} className="blackCard flex items-center justify-between p-4">
-                    <div><p className="font-bold">{property}</p><p className="text-xs text-zinc-500">Saved property</p></div>
+                    <div><p className="font-bold">{property}</p><p className="text-xs text-zinc-500">{getPropertyAddress(property) || "Saved property"}</p></div>
                     <button onClick={() => setConfirmDelete({ type: "property", id: property })} className="iconDanger"><Trash2 size={17} /></button>
                   </div>
                 ))}
@@ -1334,25 +1351,52 @@ function formatAssignmentDate(dateISO: string) {
   return new Intl.DateTimeFormat("en-US", { weekday: "long", month: "long", day: "numeric" }).format(date);
 }
 
+function assignmentStatusLabel(status: AssignmentStatus) {
+  if (status === "assigned") return "Assigned";
+  if (status === "sent") return "Sent";
+  if (status === "in-progress") return "In Progress";
+  if (status === "completed") return "Completed";
+  if (status === "approved") return "Approved";
+  if (status === "ready-to-invoice") return "Ready To Invoice";
+  return "Assigned";
+}
+
+function assignmentStatusClass(status: AssignmentStatus) {
+  if (status === "ready-to-invoice") return "border-emerald-400/50 bg-emerald-500/15 text-emerald-300";
+  if (status === "approved") return "border-green-400/50 bg-green-500/15 text-green-300";
+  if (status === "completed") return "border-teal-400/50 bg-teal-500/15 text-teal-300";
+  if (status === "in-progress") return "border-blue-400/40 bg-blue-500/10 text-blue-300";
+  if (status === "sent") return "border-amber-400/40 bg-amber-500/10 text-amber-300";
+  return "border-zinc-700 bg-zinc-900 text-zinc-300";
+}
+
 function buildAssignmentMessage(assignment: WorkAssignment, employeeName: string) {
-  const locationLine = [assignment.property, assignment.address].filter(Boolean).join("\n");
+  const autoAddress = assignment.address || getPropertyAddress(assignment.property);
+  const locationLine = [assignment.property, autoAddress].filter(Boolean).join("\n");
   const unitLine = assignment.unitNumber ? `Unit ${assignment.unitNumber}` : "";
   const scopeLines = assignment.scope.split("\n").map((line) => line.trim()).filter(Boolean).map((line) => `• ${line.replace(/^•\s*/, "")}`).join("\n");
   const notes = assignment.notes.trim();
+  const divider = `━━━━━━━━━━━━━━━━━━━━`;
   const english = [
     `God bless ${employeeName},`,
     ``,
-    `📣 Work assigned for ${formatAssignmentDate(assignment.date)}`,
+    `📣 *WORK ASSIGNMENT*`,
+    divider,
+    `📅 *DATE:* ${formatAssignmentDate(assignment.date)}`,
     ``,
-    `📍 ${locationLine}`,
-    unitLine ? `🏠 ${unitLine}` : "",
+    `📍 *PROPERTY / ADDRESS*`,
+    divider,
+    locationLine,
+    unitLine ? `🏠 *UNIT:* ${unitLine.replace("Unit ", "")}` : "",
     ``,
-    `🛠️ Work to complete:`,
+    `🛠️ *WORK TO COMPLETE*`,
+    divider,
     scopeLines || "• Job details to be confirmed.",
     notes ? `` : "",
-    notes ? `📝 Notes: ${notes}` : "",
+    notes ? `📝 *NOTES:* ${notes}` : "",
     ``,
-    assignment.priority === "urgent" ? `⚠️ Priority: URGENT` : `✅ Priority: Normal`,
+    assignment.priority === "urgent" ? `⚠️ *PRIORITY:* URGENT` : `✅ *PRIORITY:* Normal`,
+    `📌 *STATUS:* ${assignmentStatusLabel(assignment.status)}`,
     ``,
     `Please contact me with any questions or issues.`,
   ].filter((line) => line !== "").join("\n");
@@ -1360,17 +1404,23 @@ function buildAssignmentMessage(assignment: WorkAssignment, employeeName: string
   const spanish = [
     `Dios te bendiga ${employeeName},`,
     ``,
-    `📣 Trabajo asignado para ${formatAssignmentDate(assignment.date)}`,
+    `📣 *ASIGNACIÓN DE TRABAJO*`,
+    divider,
+    `📅 *FECHA:* ${formatAssignmentDate(assignment.date)}`,
     ``,
-    `📍 ${locationLine}`,
-    unitLine ? `🏠 ${unitLine.replace("Unit", "Unidad")}` : "",
+    `📍 *PROPIEDAD / DIRECCIÓN*`,
+    divider,
+    locationLine,
+    unitLine ? `🏠 *UNIDAD:* ${unitLine.replace("Unit ", "")}` : "",
     ``,
-    `🛠️ Trabajo a realizar:`,
+    `🛠️ *TRABAJO A REALIZAR*`,
+    divider,
     scopeLines || "• Detalles del trabajo por confirmar.",
     notes ? `` : "",
-    notes ? `📝 Notas: ${notes}` : "",
+    notes ? `📝 *NOTAS:* ${notes}` : "",
     ``,
-    assignment.priority === "urgent" ? `⚠️ Prioridad: URGENTE` : `✅ Prioridad: Normal`,
+    assignment.priority === "urgent" ? `⚠️ *PRIORIDAD:* URGENTE` : `✅ *PRIORIDAD:* Normal`,
+    `📌 *ESTATUS:* ${assignmentStatusLabel(assignment.status)}`,
     ``,
     `Cualquier duda o inconveniente, favor de comunicarte conmigo.`,
   ].filter((line) => line !== "").join("\n");
@@ -1404,15 +1454,15 @@ function openAssignmentWhatsApp(assignment: WorkAssignment, employee: Employee |
 
 function AssignmentBoard({ assignments, employeesById, onAdd, onEdit, onDelete, onUpdate }: { assignments: WorkAssignment[]; employees: Employee[]; employeesById: Map<string, Employee>; onAdd: () => void; onEdit: (item: WorkAssignment) => void; onDelete: (id: string) => void; onUpdate: (item: WorkAssignment) => void }) {
   if (assignments.length === 0) return <div className="blackCard p-4"><EmptyText text="No assignments yet. Tap Assign Job to send professional work orders." /><button className="goldButton mt-2 w-full" onClick={onAdd}><Plus size={18} /> Assign Job</button></div>;
-  return <div className="grid gap-3">{assignments.map((assignment) => { const employee = employeesById.get(assignment.employeeId); const employeeName = employee?.name || "Employee"; return <div key={assignment.id} className="blackCard p-4"><div className="relative z-10"><div className="flex items-start justify-between gap-3"><div><p className="text-xs font-black uppercase tracking-[0.14em] text-green-400">{assignment.priority === "urgent" ? "Urgent Assignment" : "Work Assignment"}</p><h3 className="mt-1 text-lg font-black">{assignment.property}{assignment.unitNumber ? ` — Unit ${assignment.unitNumber}` : ""}</h3><p className="mt-1 text-xs font-semibold text-zinc-500">{formatAssignmentDate(assignment.date)} • {employeeName}</p></div><span className={`rounded-full border px-3 py-1 text-[10px] font-black uppercase ${assignment.status === "completed" ? "border-green-400/40 bg-green-500/10 text-green-300" : assignment.status === "in-progress" ? "border-blue-400/40 bg-blue-500/10 text-blue-300" : assignment.status === "sent" ? "border-amber-400/40 bg-amber-500/10 text-amber-300" : "border-zinc-700 bg-zinc-900 text-zinc-300"}`}>{assignmentStatusLabel(assignment.status)}</span></div><p className="mt-3 whitespace-pre-wrap rounded-2xl border border-white/10 bg-black/25 p-3 text-sm font-semibold text-zinc-300">{assignment.scope || "No scope added yet."}</p>{assignment.notes && <p className="mt-2 text-xs font-semibold text-zinc-500">Notes: {assignment.notes}</p>}<div className="mt-3 grid grid-cols-2 gap-2"><button className="goldButton" onClick={() => copyAssignmentMessage(assignment, employeeName)}><ClipboardList size={16} /> Copy</button><button className="darkButton" onClick={() => openAssignmentText(assignment, employee)}><FileText size={16} /> Text</button><button className="darkButton" onClick={() => openAssignmentWhatsApp(assignment, employee)}><Mail size={16} /> WhatsApp</button><button className="darkButton" onClick={() => onEdit(assignment)}><Pencil size={16} /> Edit</button></div><div className="mt-2 grid grid-cols-2 gap-2"><select className="inputElite" value={assignment.status} onChange={(e) => onUpdate({ ...assignment, status: e.target.value as AssignmentStatus })}><option value="draft">Draft</option><option value="sent">Sent</option><option value="in-progress">In Progress</option><option value="completed">Completed</option></select><button className="iconDanger justify-center" onClick={() => onDelete(assignment.id)}><Trash2 size={16} /> Delete</button></div></div></div>; })}</div>;
+  return <div className="grid gap-3">{assignments.map((assignment) => { const employee = employeesById.get(assignment.employeeId); const employeeName = employee?.name || "Employee"; return <div key={assignment.id} className="blackCard p-4"><div className="relative z-10"><div className="flex items-start justify-between gap-3"><div><p className="text-xs font-black uppercase tracking-[0.14em] text-green-400">{assignment.priority === "urgent" ? "Urgent Assignment" : "Work Assignment"}</p><h3 className="mt-1 text-lg font-black">{assignment.property}{assignment.unitNumber ? ` — Unit ${assignment.unitNumber}` : ""}</h3><p className="mt-1 text-xs font-semibold text-zinc-500">{formatAssignmentDate(assignment.date)} • {employeeName}</p></div><span className={`rounded-full border px-3 py-1 text-[10px] font-black uppercase ${assignmentStatusClass(assignment.status)}`}>{assignmentStatusLabel(assignment.status)}</span></div><p className="mt-3 whitespace-pre-wrap rounded-2xl border border-white/10 bg-black/25 p-3 text-sm font-semibold text-zinc-300">{assignment.scope || "No scope added yet."}</p>{assignment.notes && <p className="mt-2 text-xs font-semibold text-zinc-500">Notes: {assignment.notes}</p>}<div className="mt-3 grid grid-cols-2 gap-2"><button className="goldButton" onClick={() => copyAssignmentMessage(assignment, employeeName)}><ClipboardList size={16} /> Copy</button><button className="darkButton" onClick={() => openAssignmentText(assignment, employee)}><FileText size={16} /> Text</button><button className="darkButton" onClick={() => openAssignmentWhatsApp(assignment, employee)}><Mail size={16} /> WhatsApp</button><button className="darkButton" onClick={() => onEdit(assignment)}><Pencil size={16} /> Edit</button></div><div className="mt-2 grid grid-cols-2 gap-2"><select className="inputElite" value={assignment.status} onChange={(e) => onUpdate({ ...assignment, status: e.target.value as AssignmentStatus })}><option value="assigned">Assigned</option><option value="sent">Sent</option><option value="in-progress">In Progress</option><option value="completed">Completed</option><option value="approved">Approved</option><option value="ready-to-invoice">Ready To Invoice</option></select><button className="iconDanger justify-center" onClick={() => onDelete(assignment.id)}><Trash2 size={16} /> Delete</button></div></div></div>; })}</div>;
 }
 
 function AssignmentModal({ employees, properties, initial, onClose, onSave }: { employees: Employee[]; properties: string[]; initial: WorkAssignment | null; onClose: () => void; onSave: (assignment: WorkAssignment) => void }) {
-  const [assignment, setAssignment] = useState<WorkAssignment>(initial || { id: uid(), employeeId: employees[0]?.id || "", date: todayISO(), property: properties[0] || "", address: "", unitNumber: "", priority: "normal", language: "spanish", status: "draft", scope: "Reparación de sheetrock dañado.\nPlasteo y lijado de áreas afectadas para dejar las paredes lisas y listas para pintura.\nReparación y detalle de paredes según sea necesario.\nLimpieza básica del área de trabajo al finalizar.", notes: "", photos: [], createdAt: new Date().toISOString() });
+  const [assignment, setAssignment] = useState<WorkAssignment>(initial || { id: uid(), employeeId: employees[0]?.id || "", date: todayISO(), property: properties[0] || "", address: getPropertyAddress(properties[0] || ""), unitNumber: "", priority: "normal", language: "spanish", status: "assigned", scope: "Reparación de sheetrock dañado.\nPlasteo y lijado de áreas afectadas para dejar las paredes lisas y listas para pintura.\nReparación y detalle de paredes según sea necesario.\nLimpieza básica del área de trabajo al finalizar.", notes: "", photos: [], createdAt: new Date().toISOString() });
   const employee = employees.find((item) => item.id === assignment.employeeId);
   const employeeName = employee?.name || "Employee";
   const preview = buildAssignmentMessage(assignment, employeeName);
-  return <Modal title={initial ? "Edit Assignment" : "Assign Job"} onClose={onClose}><div className="space-y-3"><div className="grid grid-cols-2 gap-2"><Field label="Employee"><select className="inputElite" value={assignment.employeeId} onChange={(e) => setAssignment({ ...assignment, employeeId: e.target.value })}>{employees.map((employee) => <option key={employee.id} value={employee.id}>{employee.name}</option>)}</select></Field><Field label="Date"><input className="inputElite" type="date" value={assignment.date} onChange={(e) => setAssignment({ ...assignment, date: e.target.value })} /></Field></div><Field label="Property"><select className="inputElite" value={assignment.property} onChange={(e) => setAssignment({ ...assignment, property: e.target.value })}>{properties.map((property) => <option key={property} value={property}>{property}</option>)}</select></Field><Field label="Address"><input className="inputElite" value={assignment.address} onChange={(e) => setAssignment({ ...assignment, address: e.target.value })} placeholder="460 Charles St, Providence RI" /></Field><div className="grid grid-cols-2 gap-2"><Field label="Unit"><input className="inputElite" value={assignment.unitNumber} onChange={(e) => setAssignment({ ...assignment, unitNumber: e.target.value })} placeholder="107" /></Field><Field label="Priority"><select className="inputElite" value={assignment.priority} onChange={(e) => setAssignment({ ...assignment, priority: e.target.value as WorkAssignment["priority"] })}><option value="normal">Normal</option><option value="urgent">Urgent</option></select></Field></div><div className="grid grid-cols-2 gap-2"><Field label="Language"><select className="inputElite" value={assignment.language} onChange={(e) => setAssignment({ ...assignment, language: e.target.value as AssignmentLanguage })}><option value="spanish">Español</option><option value="english">English</option><option value="both">Both</option></select></Field><Field label="Status"><select className="inputElite" value={assignment.status} onChange={(e) => setAssignment({ ...assignment, status: e.target.value as AssignmentStatus })}><option value="draft">Draft</option><option value="sent">Sent</option><option value="in-progress">In Progress</option><option value="completed">Completed</option></select></Field></div><Field label="Scope of Work"><textarea className="inputElite min-h-32" value={assignment.scope} onChange={(e) => setAssignment({ ...assignment, scope: e.target.value })} /></Field><Field label="Notes"><textarea className="inputElite min-h-20" value={assignment.notes} onChange={(e) => setAssignment({ ...assignment, notes: e.target.value })} placeholder="Optional notes for employee" /></Field><div className="rounded-2xl border border-green-400/20 bg-green-500/10 p-3"><p className="mb-2 text-xs font-black uppercase text-green-400">Message Preview</p><pre className="max-h-56 overflow-y-auto whitespace-pre-wrap rounded-xl bg-black/40 p-3 text-xs font-semibold text-zinc-200">{preview}</pre></div><div className="grid grid-cols-2 gap-2"><button className="goldButton" onClick={() => onSave({ ...assignment, createdAt: assignment.createdAt || new Date().toISOString() })}><Check size={18} /> Save</button><button className="darkButton" onClick={() => copyAssignmentMessage(assignment, employeeName)}><ClipboardList size={18} /> Copy</button><button className="darkButton" onClick={() => openAssignmentText(assignment, employee)}><FileText size={18} /> Send Text</button><button className="darkButton" onClick={() => openAssignmentWhatsApp(assignment, employee)}><Mail size={18} /> WhatsApp</button></div></div></Modal>;
+  return <Modal title={initial ? "Edit Assignment" : "Assign Job"} onClose={onClose}><div className="space-y-3"><div className="grid grid-cols-2 gap-2"><Field label="Employee"><select className="inputElite" value={assignment.employeeId} onChange={(e) => setAssignment({ ...assignment, employeeId: e.target.value })}>{employees.map((employee) => <option key={employee.id} value={employee.id}>{employee.name}</option>)}</select></Field><Field label="Date"><input className="inputElite" type="date" value={assignment.date} onChange={(e) => setAssignment({ ...assignment, date: e.target.value })} /></Field></div><Field label="Property"><select className="inputElite" value={assignment.property} onChange={(e) => { const selected = e.target.value; setAssignment({ ...assignment, property: selected, address: getPropertyAddress(selected) }); }}>{properties.map((property) => <option key={property} value={property}>{property}</option>)}</select></Field><Field label="Address"><input className="inputElite" value={assignment.address} onChange={(e) => setAssignment({ ...assignment, address: e.target.value })} placeholder="460 Charles St, Providence RI" /></Field><div className="grid grid-cols-2 gap-2"><Field label="Unit"><input className="inputElite" value={assignment.unitNumber} onChange={(e) => setAssignment({ ...assignment, unitNumber: e.target.value })} placeholder="107" /></Field><Field label="Priority"><select className="inputElite" value={assignment.priority} onChange={(e) => setAssignment({ ...assignment, priority: e.target.value as WorkAssignment["priority"] })}><option value="normal">Normal</option><option value="urgent">Urgent</option></select></Field></div><div className="grid grid-cols-2 gap-2"><Field label="Language"><select className="inputElite" value={assignment.language} onChange={(e) => setAssignment({ ...assignment, language: e.target.value as AssignmentLanguage })}><option value="spanish">Español</option><option value="english">English</option><option value="both">Both</option></select></Field><Field label="Status"><select className="inputElite" value={assignment.status} onChange={(e) => setAssignment({ ...assignment, status: e.target.value as AssignmentStatus })}><option value="assigned">Assigned</option><option value="sent">Sent</option><option value="in-progress">In Progress</option><option value="completed">Completed</option><option value="approved">Approved</option><option value="ready-to-invoice">Ready To Invoice</option></select></Field></div><Field label="Scope of Work"><textarea className="inputElite min-h-32" value={assignment.scope} onChange={(e) => setAssignment({ ...assignment, scope: e.target.value })} /></Field><Field label="Notes"><textarea className="inputElite min-h-20" value={assignment.notes} onChange={(e) => setAssignment({ ...assignment, notes: e.target.value })} placeholder="Optional notes for employee" /></Field><div className="rounded-2xl border border-green-400/20 bg-green-500/10 p-3"><p className="mb-2 text-xs font-black uppercase text-green-400">Message Preview</p><pre className="max-h-56 overflow-y-auto whitespace-pre-wrap rounded-xl bg-black/40 p-3 text-xs font-semibold text-zinc-200">{preview}</pre></div><div className="grid grid-cols-2 gap-2"><button className="goldButton" onClick={() => onSave({ ...assignment, createdAt: assignment.createdAt || new Date().toISOString() })}><Check size={18} /> Save</button><button className="darkButton" onClick={() => copyAssignmentMessage(assignment, employeeName)}><ClipboardList size={18} /> Copy</button><button className="darkButton" onClick={() => openAssignmentText(assignment, employee)}><FileText size={18} /> Send Text</button><button className="darkButton" onClick={() => openAssignmentWhatsApp(assignment, employee)}><Mail size={18} /> WhatsApp</button></div></div></Modal>;
 }
 
 function JobList({ jobs, employees, employeesById, properties, jobTypeOptions, onDelete, onUpdate, onCreateInvoice }: { jobs: JobEntry[]; employees: Employee[]; employeesById: Map<string, Employee>; properties: string[]; jobTypeOptions: string[]; onDelete: (id: string) => void; onUpdate: (job: JobEntry) => void; onCreateInvoice: (job: JobEntry) => void }) {
@@ -1703,7 +1753,7 @@ function JobModal({ employees, properties, jobTypeOptions, onAddProperty, onClos
   const [notes, setNotes] = useState("");
   const [photos, setPhotos] = useState<string[]>([]);
   const [createAssignment, setCreateAssignment] = useState(true);
-  const [assignmentAddress, setAssignmentAddress] = useState("");
+  const [assignmentAddress, setAssignmentAddress] = useState(getPropertyAddress(property));
   const [assignmentPriority, setAssignmentPriority] = useState<WorkAssignment["priority"]>("normal");
   const [assignmentLanguage, setAssignmentLanguage] = useState<AssignmentLanguage>("spanish");
 
@@ -1720,7 +1770,7 @@ function JobModal({ employees, properties, jobTypeOptions, onAddProperty, onClos
     unitNumber,
     priority: assignmentPriority,
     language: assignmentLanguage,
-    status: "draft",
+    status: "assigned",
     scope: scopeText,
     notes,
     photos,
@@ -1748,7 +1798,7 @@ function JobModal({ employees, properties, jobTypeOptions, onAddProperty, onClos
     onSave(job, assignment);
   }
 
-  return <Modal title="Add Job Entry" onClose={onClose}><div className="space-y-3"><div className="rounded-2xl border border-green-400/20 bg-green-500/10 p-3 text-sm font-semibold text-green-100"><b>One entry workflow:</b> this saves the payroll job and can create the employee assignment message at the same time.</div><Field label="Employee / Assigned To"><select className="inputElite" value={employeeId} onChange={(e) => setEmployeeId(e.target.value)}>{employees.map((employee) => <option key={employee.id} value={employee.id}>{employee.name}</option>)}</select></Field><div className="grid grid-cols-2 gap-3"><Field label="Date"><input className="inputElite cursor-pointer" type="date" value={date} onClick={(e) => e.currentTarget.showPicker?.()} onFocus={(e) => e.currentTarget.showPicker?.()} onChange={(e) => setDate(e.target.value)} /></Field><Field label="Property"><select className="inputElite" value={property} onChange={(e) => { const selected = e.target.value; if (selected === "__add_new_property__") { const entered = window.prompt("Enter new property name:"); const cleanProperty = entered?.trim() || ""; if (cleanProperty) { onAddProperty(cleanProperty); setProperty(cleanProperty); } return; } setProperty(selected); }}>{properties.map((item) => <option key={item} value={item}>{item}</option>)}<option value="__add_new_property__">+ Add New Property</option></select></Field></div><Field label="Unit #"><input className="inputElite" value={unitNumber} onChange={(e) => setUnitNumber(e.target.value)} placeholder="Example: 212" /></Field><Field label="Work Type"><div className="grid grid-cols-2 gap-2">{jobTypeOptions.map((type) => <button type="button" key={type} onClick={() => toggleType(type)} className={`rounded-xl border px-3 py-2 text-left text-xs font-bold ${selectedTypes.includes(type) ? "border-green-400/50 bg-green-500/20 text-green-300" : "border-zinc-800 bg-black/30 text-zinc-400"}`}>{selectedTypes.includes(type) ? "✓ " : ""}{type}</button>)}</div></Field><Field label="Custom Work"><input className="inputElite" value={customWork} onChange={(e) => setCustomWork(e.target.value)} placeholder="Extra work description" /></Field><div className="grid grid-cols-2 gap-3"><Field label="Pay"><MoneyInput value={pay} onValueChange={setPay} placeholder="Enter Amount" /></Field><Field label="Paid"><MoneyInput value={paidAmount} onValueChange={setPaidAmount} placeholder="Enter Amount" /></Field></div><div className="rounded-2xl border border-white/10 bg-black/25 p-3"><label className="flex items-center gap-3 text-sm font-black text-zinc-100"><input type="checkbox" checked={createAssignment} onChange={(e) => setCreateAssignment(e.target.checked)} /> Create employee assignment message</label>{createAssignment && <div className="mt-3 space-y-3"><Field label="Job Address for Message"><input className="inputElite" value={assignmentAddress} onChange={(e) => setAssignmentAddress(e.target.value)} placeholder="460 Charles St, Providence RI" /></Field><div className="grid grid-cols-2 gap-3"><Field label="Priority"><select className="inputElite" value={assignmentPriority} onChange={(e) => setAssignmentPriority(e.target.value as WorkAssignment["priority"])}><option value="normal">Normal</option><option value="urgent">Urgent</option></select></Field><Field label="Language"><select className="inputElite" value={assignmentLanguage} onChange={(e) => setAssignmentLanguage(e.target.value as AssignmentLanguage)}><option value="spanish">Español</option><option value="english">English</option><option value="both">Both</option></select></Field></div><div className="rounded-2xl border border-green-400/20 bg-green-500/10 p-3"><p className="mb-2 text-xs font-black uppercase text-green-400">Message Preview</p><pre className="max-h-48 overflow-y-auto whitespace-pre-wrap rounded-xl bg-black/40 p-3 text-xs font-semibold text-zinc-200">{buildAssignmentMessage(assignmentPreview, assignedEmployee?.name || "")}</pre></div></div>}</div><Field label="Photos"><div className="rounded-2xl border border-dashed border-zinc-800 bg-black/30 p-4"><div className="grid grid-cols-2 gap-2"><label className="goldButton w-full cursor-pointer"><Camera size={18} /> Take Photo<input type="file" accept="image/*" multiple capture="environment" className="hidden" onChange={async (e) => { const newPhotos = await readPhotoFiles(e.target.files); setPhotos((prev) => [...prev, ...newPhotos]); e.currentTarget.value = ""; }} /></label><label className="darkButton w-full cursor-pointer"><ImageIcon size={18} /> Upload<input type="file" accept="image/*" multiple className="hidden" onChange={async (e) => { const newPhotos = await readPhotoFiles(e.target.files); setPhotos((prev) => [...prev, ...newPhotos]); e.currentTarget.value = ""; }} /></label></div>{photos.length > 0 && <p className="mt-3 text-center text-sm text-zinc-400">{photos.length} photo(s) attached.</p>}</div></Field><Field label="Notes"><textarea className="inputElite min-h-24" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Notes" /></Field><button className="goldButton w-full" onClick={saveJobAndAssignment}><Check size={18} /> Save Job{createAssignment ? " + Assignment" : ""}</button></div></Modal>;
+  return <Modal title="Add Job Entry" onClose={onClose}><div className="space-y-3"><div className="rounded-2xl border border-green-400/20 bg-green-500/10 p-3 text-sm font-semibold text-green-100"><b>One entry workflow:</b> this saves the payroll job and can create the employee assignment message at the same time.</div><Field label="Employee / Assigned To"><select className="inputElite" value={employeeId} onChange={(e) => setEmployeeId(e.target.value)}>{employees.map((employee) => <option key={employee.id} value={employee.id}>{employee.name}</option>)}</select></Field><div className="grid grid-cols-2 gap-3"><Field label="Date"><input className="inputElite cursor-pointer" type="date" value={date} onClick={(e) => e.currentTarget.showPicker?.()} onFocus={(e) => e.currentTarget.showPicker?.()} onChange={(e) => setDate(e.target.value)} /></Field><Field label="Property"><select className="inputElite" value={property} onChange={(e) => { const selected = e.target.value; if (selected === "__add_new_property__") { const entered = window.prompt("Enter new property name:"); const cleanProperty = entered?.trim() || ""; if (cleanProperty) { onAddProperty(cleanProperty); setProperty(cleanProperty); setAssignmentAddress(""); } return; } setProperty(selected); setAssignmentAddress(getPropertyAddress(selected)); }}>{properties.map((item) => <option key={item} value={item}>{item}</option>)}<option value="__add_new_property__">+ Add New Property</option></select></Field></div><Field label="Unit #"><input className="inputElite" value={unitNumber} onChange={(e) => setUnitNumber(e.target.value)} placeholder="Example: 212" /></Field><Field label="Work Type"><div className="grid grid-cols-2 gap-2">{jobTypeOptions.map((type) => <button type="button" key={type} onClick={() => toggleType(type)} className={`rounded-xl border px-3 py-2 text-left text-xs font-bold ${selectedTypes.includes(type) ? "border-green-400/50 bg-green-500/20 text-green-300" : "border-zinc-800 bg-black/30 text-zinc-400"}`}>{selectedTypes.includes(type) ? "✓ " : ""}{type}</button>)}</div></Field><Field label="Custom Work"><input className="inputElite" value={customWork} onChange={(e) => setCustomWork(e.target.value)} placeholder="Extra work description" /></Field><div className="grid grid-cols-2 gap-3"><Field label="Pay"><MoneyInput value={pay} onValueChange={setPay} placeholder="Enter Amount" /></Field><Field label="Paid"><MoneyInput value={paidAmount} onValueChange={setPaidAmount} placeholder="Enter Amount" /></Field></div><div className="rounded-2xl border border-white/10 bg-black/25 p-3"><label className="flex items-center gap-3 text-sm font-black text-zinc-100"><input type="checkbox" checked={createAssignment} onChange={(e) => setCreateAssignment(e.target.checked)} /> Create employee assignment message</label>{createAssignment && <div className="mt-3 space-y-3"><Field label="Job Address for Message"><input className="inputElite" value={assignmentAddress} onChange={(e) => setAssignmentAddress(e.target.value)} placeholder="460 Charles St, Providence RI" /></Field><div className="grid grid-cols-2 gap-3"><Field label="Priority"><select className="inputElite" value={assignmentPriority} onChange={(e) => setAssignmentPriority(e.target.value as WorkAssignment["priority"])}><option value="normal">Normal</option><option value="urgent">Urgent</option></select></Field><Field label="Language"><select className="inputElite" value={assignmentLanguage} onChange={(e) => setAssignmentLanguage(e.target.value as AssignmentLanguage)}><option value="spanish">Español</option><option value="english">English</option><option value="both">Both</option></select></Field></div><div className="rounded-2xl border border-green-400/20 bg-green-500/10 p-3"><p className="mb-2 text-xs font-black uppercase text-green-400">Message Preview</p><pre className="max-h-48 overflow-y-auto whitespace-pre-wrap rounded-xl bg-black/40 p-3 text-xs font-semibold text-zinc-200">{buildAssignmentMessage(assignmentPreview, assignedEmployee?.name || "")}</pre></div></div>}</div><Field label="Photos"><div className="rounded-2xl border border-dashed border-zinc-800 bg-black/30 p-4"><div className="grid grid-cols-2 gap-2"><label className="goldButton w-full cursor-pointer"><Camera size={18} /> Take Photo<input type="file" accept="image/*" multiple capture="environment" className="hidden" onChange={async (e) => { const newPhotos = await readPhotoFiles(e.target.files); setPhotos((prev) => [...prev, ...newPhotos]); e.currentTarget.value = ""; }} /></label><label className="darkButton w-full cursor-pointer"><ImageIcon size={18} /> Upload<input type="file" accept="image/*" multiple className="hidden" onChange={async (e) => { const newPhotos = await readPhotoFiles(e.target.files); setPhotos((prev) => [...prev, ...newPhotos]); e.currentTarget.value = ""; }} /></label></div>{photos.length > 0 && <p className="mt-3 text-center text-sm text-zinc-400">{photos.length} photo(s) attached.</p>}</div></Field><Field label="Notes"><textarea className="inputElite min-h-24" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Notes" /></Field><button className="goldButton w-full" onClick={saveJobAndAssignment}><Check size={18} /> Save Job{createAssignment ? " + Assignment" : ""}</button></div></Modal>;
 }
 
 function MakeReadyModal({ employees, properties, initial, onClose, onSave }: { employees: Employee[]; properties: string[]; initial: MakeReadyItem | null; onClose: () => void; onSave: (item: MakeReadyItem) => void }) {
