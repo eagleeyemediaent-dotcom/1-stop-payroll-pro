@@ -41,8 +41,8 @@ import {
 } from "lucide-react";
 
 // 1 STOP TURNOVER SPECIALIST PRO ELITE - OPERATIONS X
-// PHASE 12A STABLE ROLLBACK single-file replacement for app/page.tsx
-// Restored from last working build. Safe base before unified work order merge.
+// PHASE 11B single-file replacement for app/page.tsx
+// Fixed duplicate assignment status function causing Vercel build failure
 
 const STORAGE_KEY = "oneStopPayrollProEliteBlackGoldX_v1";
 
@@ -1337,13 +1337,6 @@ function EmployeeCard({ employee, totals, expanded, onToggle, onDelete, onSave, 
 function BalancePill({ label, value, gold = false, danger = false }: { label: string; value: string; gold?: boolean; danger?: boolean }) { return <div className={`rounded-2xl border p-2 ${danger ? "border-red-400/30 bg-red-500/10" : gold ? "border-green-400/25 bg-green-500/10" : "border-zinc-800 bg-black/30"}`}><p className="text-[10px] font-black uppercase tracking-wider text-zinc-500">{label}</p><p className={`text-sm font-black ${danger ? "text-red-300" : gold ? "text-green-400" : "text-zinc-100"}`}>{value}</p></div>; }
 
 
-
-function assignmentStatusLabel(status: AssignmentStatus) {
-  if (status === "draft") return "Draft";
-  if (status === "sent") return "Sent";
-  if (status === "in-progress") return "In Progress";
-  return "Completed";
-}
 
 function formatAssignmentDate(dateISO: string) {
   if (!dateISO) return "No date";
