@@ -45,6 +45,7 @@ import {
 // Stable Phase 12: property profile helpers only — Make Ready merge intentionally removed
 
 const STORAGE_KEY = "oneStopPayrollProEliteBlackGoldX_v1";
+const PROPERTY_PROFILES_KEY = "oneStopPropertyProfiles_v1";
 
 const appShellClass =
   "min-h-screen bg-[radial-gradient(circle_at_top_left,rgba(34,197,94,0.10),transparent_34%),radial-gradient(circle_at_top_right,rgba(59,130,246,0.08),transparent_30%),linear-gradient(180deg,#02070a_0%,#030303_45%,#050505_100%)] text-zinc-100 selection:bg-green-400 selection:text-black";
@@ -243,6 +244,44 @@ function getPropertyEmail(property: string) {
 function getPropertyContactLine(property: string) {
   const profile = getPropertyProfile(property);
   return [profile.contactName, profile.email, profile.phone].filter(Boolean).join(" • ");
+}
+
+function normalizePropertyProfile(property: string, profile?: Partial<PropertyContactProfile>): PropertyContactProfile {
+  const fallback = getPropertyProfile(property);
+  return {
+    address: String(profile?.address ?? fallback.address ?? ""),
+    contactName: String(profile?.contactName ?? fallback.contactName ?? ""),
+    email: String(profile?.email ?? fallback.email ?? ""),
+    phone: String(profile?.phone ?? fallback.phone ?? ""),
+    billingName: String(profile?.billingName ?? fallback.billingName ?? property),
+    notes: String(profile?.notes ?? fallback.notes ?? ""),
+  };
+}
+
+function loadSavedPropertyProfiles(): Record<string, PropertyContactProfile> {
+  if (typeof window === "undefined") return {};
+  try {
+    const raw = localStorage.getItem(PROPERTY_PROFILES_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as Record<string, Partial<PropertyContactProfile>>;
+    if (!parsed || typeof parsed !== "object") return {};
+    return Object.fromEntries(
+      Object.entries(parsed).map(([name, profile]) => [name, normalizePropertyProfile(name, profile)])
+    );
+  } catch (error) {
+    console.error("Property profile load failed", error);
+    return {};
+  }
+}
+
+function savePropertyProfilesToStorage(profiles: Record<string, PropertyContactProfile>) {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem(PROPERTY_PROFILES_KEY, JSON.stringify(profiles));
+  } catch (error) {
+    console.error("Property profile save failed", error);
+    alert("The property profile could not save. Please export a backup and remove a few old photos if phone storage is full.");
+  }
 }
 
 const defaultJobTypes = [
@@ -705,8 +744,10 @@ export default function PayrollProEliteOperationsX() {
   useEffect(() => {
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
+      const savedPropertyProfiles = loadSavedPropertyProfiles();
       if (raw) {
         const parsed = JSON.parse(raw) as Partial<AppState>;
+        const mergedPropertyProfiles = { ...defaultPropertyProfiles, ...(parsed.propertyProfiles || {}), ...savedPropertyProfiles };
         setState({
           companyName: parsed.companyName || starterState.companyName,
           employees: Array.isArray(parsed.employees)
@@ -717,9 +758,15 @@ export default function PayrollProEliteOperationsX() {
           invoices: Array.isArray(parsed.invoices) ? parsed.invoices : [],
           assignments: Array.isArray(parsed.assignments) ? parsed.assignments : [],
           properties: Array.isArray(parsed.properties) ? parsed.properties : defaultProperties,
-          propertyProfiles: parsed.propertyProfiles && typeof parsed.propertyProfiles === "object" ? { ...defaultPropertyProfiles, ...parsed.propertyProfiles } : defaultPropertyProfiles,
+          propertyProfiles: mergedPropertyProfiles,
           jobTypeOptions: Array.isArray(parsed.jobTypeOptions) ? parsed.jobTypeOptions : defaultJobTypes,
         });
+      } else if (Object.keys(savedPropertyProfiles).length > 0) {
+        setState((prev) => ({
+          ...prev,
+          propertyProfiles: { ...defaultPropertyProfiles, ...savedPropertyProfiles },
+          properties: [...new Set([...prev.properties, ...Object.keys(savedPropertyProfiles)])].filter(Boolean),
+        }));
       }
     } catch (error) {
       console.error("Load failed", error);
@@ -732,6 +779,7 @@ export default function PayrollProEliteOperationsX() {
     if (!hydrated) return;
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      savePropertyProfilesToStorage(state.propertyProfiles || {});
     } catch (error) {
       console.error("Save failed", error);
       alert("The app could not save because the phone browser storage is full. Remove a few photos or export a backup, then try again.");
@@ -857,17 +905,26 @@ export default function PayrollProEliteOperationsX() {
   function savePropertyProfile(propertyName: string, profile: PropertyContactProfile) {
     const cleanName = propertyName.trim();
     if (!cleanName) return;
-    setState((prev) => ({
-      ...prev,
-      properties: [...new Set([...prev.properties, cleanName])].filter(Boolean),
-      propertyProfiles: {
-        ...(prev.propertyProfiles || {}),
-        [cleanName]: {
-          ...profile,
-          billingName: profile.billingName.trim() || cleanName,
-        },
-      },
-    }));
+
+    setState((prev) => {
+      const currentProfiles = prev.propertyProfiles || {};
+      const nextProfile = normalizePropertyProfile(cleanName, {
+        ...profile,
+        billingName: profile.billingName.trim() || cleanName,
+      });
+      const nextProfiles = {
+        ...currentProfiles,
+        [cleanName]: nextProfile,
+      };
+
+      savePropertyProfilesToStorage(nextProfiles);
+
+      return {
+        ...prev,
+        properties: [...new Set([...prev.properties, cleanName])].filter(Boolean),
+        propertyProfiles: nextProfiles,
+      };
+    });
   }
 
   function upsertEmployee(employee: Employee) {
@@ -1044,6 +1101,7 @@ Enter the amount you are charging the company.`
       if (confirmDelete.type === "assignment") return { ...prev, assignments: prev.assignments.filter((item) => item.id !== confirmDelete.id) };
       const nextProfiles = { ...(prev.propertyProfiles || {}) };
       delete nextProfiles[confirmDelete.id];
+      savePropertyProfilesToStorage(nextProfiles);
       return { ...prev, properties: prev.properties.filter((property) => property !== confirmDelete.id), propertyProfiles: nextProfiles };
     });
     setConfirmDelete(null);
@@ -1076,7 +1134,7 @@ Enter the amount you are charging the company.`
           invoices: Array.isArray(parsed.invoices) ? parsed.invoices : [],
           assignments: Array.isArray(parsed.assignments) ? parsed.assignments : [],
           properties: Array.isArray(parsed.properties) ? parsed.properties : defaultProperties,
-          propertyProfiles: parsed.propertyProfiles && typeof parsed.propertyProfiles === "object" ? { ...defaultPropertyProfiles, ...parsed.propertyProfiles } : defaultPropertyProfiles,
+          propertyProfiles: { ...defaultPropertyProfiles, ...(parsed.propertyProfiles || {}), ...loadSavedPropertyProfiles() },
           jobTypeOptions: Array.isArray(parsed.jobTypeOptions) ? parsed.jobTypeOptions : defaultJobTypes,
         });
       } catch {
@@ -1912,7 +1970,7 @@ function InvoicePhotoPicker({ photos, label, onChange }: { photos: string[]; lab
 function PropertyModal({ initialName = "", initialProfile, onClose, onSave }: { initialName?: string; initialProfile?: PropertyContactProfile; onClose: () => void; onSave: (property: string, profile: PropertyContactProfile) => void }) {
   const [property, setProperty] = useState(initialName);
   const [profile, setProfile] = useState<PropertyContactProfile>(initialProfile || { address: "", contactName: "", email: "", phone: "", billingName: initialName, notes: "" });
-  return <Modal title={initialName ? "Edit Property Profile" : "Add Property Profile"} onClose={onClose}><div className="space-y-3"><Field label="Property Name"><input className="inputElite" value={property} onChange={(e) => { setProperty(e.target.value); if (!profile.billingName) setProfile({ ...profile, billingName: e.target.value }); }} placeholder="Property name" /></Field><Field label="Full Address"><input className="inputElite" value={profile.address} onChange={(e) => setProfile({ ...profile, address: e.target.value })} placeholder="460 Charles St, Providence RI" /></Field><div className="grid grid-cols-2 gap-3"><Field label="Contact Name"><input className="inputElite" value={profile.contactName} onChange={(e) => setProfile({ ...profile, contactName: e.target.value })} placeholder="Manager name" /></Field><Field label="Phone"><input className="inputElite" value={profile.phone} onChange={(e) => setProfile({ ...profile, phone: e.target.value })} placeholder="Phone number" /></Field></div><Field label="Email"><input className="inputElite" type="email" value={profile.email} onChange={(e) => setProfile({ ...profile, email: e.target.value })} placeholder="manager@email.com" /></Field><Field label="Billing Name"><input className="inputElite" value={profile.billingName} onChange={(e) => setProfile({ ...profile, billingName: e.target.value })} placeholder="Company/client name for invoices" /></Field><Field label="Notes"><textarea className="inputElite min-h-20" value={profile.notes} onChange={(e) => setProfile({ ...profile, notes: e.target.value })} placeholder="Gate codes, office notes, billing instructions, etc." /></Field><button className="goldButton w-full" onClick={() => property.trim() && onSave(property, { ...profile, billingName: profile.billingName.trim() || property.trim() })}><Check size={18} /> Save Property Profile</button></div></Modal>; }
+  return <Modal title={initialName ? "Edit Property Profile" : "Add Property Profile"} onClose={onClose}><div className="space-y-3"><Field label="Property Name"><input className="inputElite" value={property} onChange={(e) => { setProperty(e.target.value); if (!profile.billingName) setProfile({ ...profile, billingName: e.target.value }); }} placeholder="Property name" /></Field><Field label="Full Address"><input className="inputElite" value={profile.address} onChange={(e) => setProfile({ ...profile, address: e.target.value })} placeholder="460 Charles St, Providence RI" /></Field><div className="grid grid-cols-2 gap-3"><Field label="Contact Name"><input className="inputElite" value={profile.contactName} onChange={(e) => setProfile({ ...profile, contactName: e.target.value })} placeholder="Manager name" /></Field><Field label="Phone"><input className="inputElite" value={profile.phone} onChange={(e) => setProfile({ ...profile, phone: e.target.value })} placeholder="Phone number" /></Field></div><Field label="Email"><input className="inputElite" type="email" value={profile.email} onChange={(e) => setProfile({ ...profile, email: e.target.value })} placeholder="manager@email.com" /></Field><Field label="Billing Name"><input className="inputElite" value={profile.billingName} onChange={(e) => setProfile({ ...profile, billingName: e.target.value })} placeholder="Company/client name for invoices" /></Field><Field label="Notes"><textarea className="inputElite min-h-20" value={profile.notes} onChange={(e) => setProfile({ ...profile, notes: e.target.value })} placeholder="Gate codes, office notes, billing instructions, etc." /></Field><button className="goldButton w-full" onClick={() => { const cleanName = property.trim(); if (!cleanName) return; onSave(cleanName, { address: profile.address.trim(), contactName: profile.contactName.trim(), email: profile.email.trim(), phone: profile.phone.trim(), billingName: profile.billingName.trim() || cleanName, notes: profile.notes.trim() }); }}><Check size={18} /> Save Property Profile</button></div></Modal>; }
 
 function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) { return <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 p-3 backdrop-blur-sm sm:items-center"><div className="modalCard blackCard w-full max-w-[520px] p-4"><div className="relative z-10 mb-4 flex items-center justify-between gap-3"><h2 className="text-xl font-black">{title}</h2><button onClick={onClose} className="darkButton !p-3"><X size={18} /></button></div><div className="relative z-10">{children}</div></div></div>; }
 function Field({ label, children }: { label: string; children: React.ReactNode }) { return <label className="block"><span className="labelElite">{label}</span>{children}</label>; }
