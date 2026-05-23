@@ -1256,16 +1256,33 @@ Enter the amount you are charging the company.`
 
           {activeTab === "properties" && (
             <section className="space-y-4">
-              <SectionTop title="Properties" subtitle="Saved property profiles for jobs, assignments, and invoices.">
-                <button onClick={() => setShowPropertyForm(true)} className="goldButton"><Building2 size={18} /> Add Property</button>
+              <SectionTop title="Property Profiles" subtitle="Save address, contact, phone, email, billing name, and notes for auto-fill.">
+                <button onClick={() => { setEditingPropertyName(null); setShowPropertyForm(true); }} className="goldButton"><Building2 size={18} /> Add Property</button>
               </SectionTop>
+              <div className="rounded-2xl border border-green-400/20 bg-green-500/10 p-3 text-sm font-semibold text-green-200">
+                Tap <span className="font-black">Edit</span> on any property to add address, contact name, phone, email, billing contact, and notes.
+              </div>
               <div className="grid gap-3">
-                {state.properties.map((property) => (
-                  <div key={property} className="blackCard flex items-center justify-between p-4">
-                    <div><p className="font-bold">{property}</p><p className="text-xs text-zinc-500">{getPropertyAddress(property) || "Saved property"}</p>{getPropertyContactLine(property) && <p className="mt-1 text-xs font-semibold text-green-300">{getPropertyContactLine(property)}</p>}</div>
-                    <button onClick={() => setConfirmDelete({ type: "property", id: property })} className="iconDanger"><Trash2 size={17} /></button>
-                  </div>
-                ))}
+                {state.properties.map((property) => {
+                  const profile = getSavedPropertyProfile(property);
+                  const contactLine = [profile.contactName, profile.email, profile.phone].filter(Boolean).join(" • ");
+                  return (
+                    <div key={property} className="blackCard p-4">
+                      <div className="relative z-10 flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="font-bold text-zinc-50">{property}</p>
+                          <p className="mt-1 text-xs font-semibold text-zinc-400">{profile.address || "No address saved yet"}</p>
+                          {contactLine ? <p className="mt-1 text-xs font-semibold text-green-300">{contactLine}</p> : <p className="mt-1 text-xs font-semibold text-zinc-600">No contact info saved yet</p>}
+                          {profile.billingName && profile.billingName !== property && <p className="mt-1 text-xs font-semibold text-blue-300">Billing: {profile.billingName}</p>}
+                        </div>
+                        <div className="flex shrink-0 items-center gap-2">
+                          <button onClick={() => { setEditingPropertyName(property); setShowPropertyForm(true); }} className="darkButton !p-3"><Pencil size={16} /></button>
+                          <button onClick={() => setConfirmDelete({ type: "property", id: property })} className="iconDanger"><Trash2 size={17} /></button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             </section>
           )}
