@@ -41,8 +41,8 @@ import {
 } from "lucide-react";
 
 // 1 STOP TURNOVER SPECIALIST PRO ELITE - OPERATIONS X
-// PHASE 11B single-file replacement for app/page.tsx
-// Fixed duplicate assignment status function causing Vercel build failure
+// PHASE 12 single-file replacement for app/page.tsx
+// Stable Phase 12: property profile helpers only — Make Ready merge intentionally removed
 
 const STORAGE_KEY = "oneStopPayrollProEliteBlackGoldX_v1";
 
@@ -202,6 +202,46 @@ const defaultPropertyAddresses: Record<string, string> = {
 
 function getPropertyAddress(property: string) {
   return defaultPropertyAddresses[property] || "";
+}
+
+
+type PropertyContactProfile = {
+  address: string;
+  contactName: string;
+  email: string;
+  phone: string;
+  billingName: string;
+  notes: string;
+};
+
+const defaultPropertyProfiles: Record<string, PropertyContactProfile> = {
+  "Charles Place Apartments": { address: "460 Charles St, Providence RI", contactName: "", email: "", phone: "", billingName: "Charles Place Apartments", notes: "" },
+  "206 Broad St": { address: "206 Broad St, Providence RI", contactName: "", email: "", phone: "", billingName: "Copley Chambers", notes: "" },
+  "220 Broad St": { address: "220 Broad St, Providence RI", contactName: "", email: "", phone: "", billingName: "Copley Chambers", notes: "" },
+  "228 Broad St": { address: "228 Broad St, Providence RI", contactName: "", email: "", phone: "", billingName: "Copley Chambers", notes: "" },
+  "Copley Chambers": { address: "Broad St, Providence RI", contactName: "", email: "", phone: "", billingName: "Copley Chambers", notes: "" },
+  "Riverstone Apartments": { address: "", contactName: "", email: "", phone: "", billingName: "Riverstone Apartments", notes: "" },
+  "Tanglewood Village Apartments": { address: "", contactName: "", email: "", phone: "", billingName: "Tanglewood Village Apartments", notes: "" },
+  "Valley Apartments": { address: "", contactName: "", email: "", phone: "", billingName: "Valley Apartments", notes: "" },
+  "Waterview Apartments": { address: "", contactName: "", email: "", phone: "", billingName: "Waterview Apartments", notes: "" },
+  "Wingate Property": { address: "", contactName: "", email: "", phone: "", billingName: "Wingate Property", notes: "" },
+};
+
+function getPropertyProfile(property: string): PropertyContactProfile {
+  return defaultPropertyProfiles[property] || { address: getPropertyAddress(property), contactName: "", email: "", phone: "", billingName: property, notes: "" };
+}
+
+function getPropertyBillingName(property: string) {
+  return getPropertyProfile(property).billingName || property;
+}
+
+function getPropertyEmail(property: string) {
+  return getPropertyProfile(property).email || "";
+}
+
+function getPropertyContactLine(property: string) {
+  const profile = getPropertyProfile(property);
+  return [profile.contactName, profile.email, profile.phone].filter(Boolean).join(" • ");
 }
 
 const defaultJobTypes = [
@@ -847,8 +887,8 @@ export default function PayrollProEliteOperationsX() {
     const invoice: Invoice = {
       id: uid(),
       invoiceNumber: nextInvoiceNumber(state.invoices),
-      clientName: first.property,
-      clientEmail: "",
+      clientName: getPropertyBillingName(first.property),
+      clientEmail: getPropertyEmail(first.property),
       property: first.property,
       unitNumber: first.unitNumber || "",
       invoiceDate: todayISO(),
@@ -894,8 +934,8 @@ Enter the amount you are charging the company for this work.`
     const invoice: Invoice = {
       id: uid(),
       invoiceNumber: nextInvoiceNumber(state.invoices),
-      clientName: job.property,
-      clientEmail: "",
+      clientName: getPropertyBillingName(job.property),
+      clientEmail: getPropertyEmail(job.property),
       property: job.property,
       unitNumber: job.unitNumber || "",
       invoiceDate: todayISO(),
@@ -934,8 +974,8 @@ Enter the amount you are charging the company.`
     const invoice: Invoice = {
       id: uid(),
       invoiceNumber: nextInvoiceNumber(state.invoices),
-      clientName: item.property,
-      clientEmail: "",
+      clientName: getPropertyBillingName(item.property),
+      clientEmail: getPropertyEmail(item.property),
       property: item.property,
       unitNumber: item.unitNumber || "",
       invoiceDate: todayISO(),
@@ -1177,13 +1217,13 @@ Enter the amount you are charging the company.`
 
           {activeTab === "properties" && (
             <section className="space-y-4">
-              <SectionTop title="Properties" subtitle="Your saved property dropdown list.">
+              <SectionTop title="Properties" subtitle="Saved property profiles for jobs, assignments, and invoices.">
                 <button onClick={() => setShowPropertyForm(true)} className="goldButton"><Building2 size={18} /> Add Property</button>
               </SectionTop>
               <div className="grid gap-3">
                 {state.properties.map((property) => (
                   <div key={property} className="blackCard flex items-center justify-between p-4">
-                    <div><p className="font-bold">{property}</p><p className="text-xs text-zinc-500">{getPropertyAddress(property) || "Saved property"}</p></div>
+                    <div><p className="font-bold">{property}</p><p className="text-xs text-zinc-500">{getPropertyAddress(property) || "Saved property"}</p>{getPropertyContactLine(property) && <p className="mt-1 text-xs font-semibold text-green-300">{getPropertyContactLine(property)}</p>}</div>
                     <button onClick={() => setConfirmDelete({ type: "property", id: property })} className="iconDanger"><Trash2 size={17} /></button>
                   </div>
                 ))}
