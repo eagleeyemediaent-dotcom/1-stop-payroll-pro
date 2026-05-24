@@ -846,7 +846,7 @@ export default function PayrollProEliteOperationsX() {
     return map;
   }, [state.employees]);
 
-  const weekWork Orders = useMemo(
+  const weekJobs = useMemo(
     () => state.jobs.filter((job) => isWithinRange(job.date, week.start, week.end)),
     [state.jobs, week.start, week.end]
   );
@@ -857,9 +857,9 @@ export default function PayrollProEliteOperationsX() {
     return state.employees.filter((employee) => employee.name.toLowerCase().includes(q) || employee.phone.includes(q));
   }, [state.employees, search]);
 
-  const filteredWork Orders = useMemo(() => {
+  const filteredJobs = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return weekWork Orders
+    return weekJobs
       .filter((job) => {
         if (!q) return true;
         const employeeName = employeesById.get(job.employeeId)?.name || "";
@@ -869,7 +869,7 @@ export default function PayrollProEliteOperationsX() {
           .includes(q);
       })
       .sort((a, b) => b.date.localeCompare(a.date));
-  }, [weekWork Orders, search, employeesById]);
+  }, [weekJobs, search, employeesById]);
 
   const filteredMakeReady = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -899,7 +899,7 @@ export default function PayrollProEliteOperationsX() {
       .sort((a, b) => b.date.localeCompare(a.date));
   }, [state.assignments, search, employeesById]);
 
-  const filteredOffice Pipeline = useMemo(() => {
+  const filteredInvoices = useMemo(() => {
     const q = search.trim().toLowerCase();
     return state.invoices
       .filter((invoice) => {
@@ -913,13 +913,13 @@ export default function PayrollProEliteOperationsX() {
   }, [state.invoices, search]);
 
   const totals = useMemo(() => {
-    const earned = weekWork Orders.reduce((sum, job) => sum + safeNumber(job.pay), 0);
-    const paid = weekWork Orders.reduce((sum, job) => sum + safeNumber(job.paidAmount), 0);
+    const earned = weekJobs.reduce((sum, job) => sum + safeNumber(job.pay), 0);
+    const paid = weekJobs.reduce((sum, job) => sum + safeNumber(job.paidAmount), 0);
     const borrowed = state.employees.reduce((sum, employee) => sum + getBorrowedForWeek(employee, week.start), 0);
     const owed = Math.max(earned - paid - borrowed, 0);
     const invoiceOpen = state.invoices.reduce((sum, invoice) => sum + Math.max(invoiceTotal(invoice) - safeNumber(invoice.paidAmount), 0), 0);
     return { earned, paid, borrowed, owed, invoiceOpen };
-  }, [weekWork Orders, state.employees, state.invoices, week.start]);
+  }, [weekJobs, state.employees, state.invoices, week.start]);
 
   const makeReadyTotals = useMemo(() => {
     const ready = state.makeReady.filter((item) => item.status === "ready").length;
@@ -931,14 +931,14 @@ export default function PayrollProEliteOperationsX() {
 
   const employeeTotals = useMemo(() => {
     return state.employees.map((employee) => {
-      const jobs = weekWork Orders.filter((job) => job.employeeId === employee.id);
+      const jobs = weekJobs.filter((job) => job.employeeId === employee.id);
       const earned = jobs.reduce((sum, job) => sum + job.pay, 0);
       const paid = jobs.reduce((sum, job) => sum + job.paidAmount, 0);
       const borrowed = getBorrowedForWeek(employee, week.start);
       const owed = Math.max(earned - paid - borrowed, 0);
       return { employee, jobs, earned, paid, borrowed, owed };
     });
-  }, [state.employees, weekWork Orders, week.start]);
+  }, [state.employees, weekJobs, week.start]);
 
   function getSavedPropertyProfile(property: string): PropertyContactProfile {
     return state.propertyProfiles?.[property] || getPropertyProfile(property);
@@ -1029,13 +1029,13 @@ export default function PayrollProEliteOperationsX() {
     });
   }
 
-  function createInvoiceFromWeekWork Orders() {
+  function createInvoiceFromWeekJobs() {
     if (!confirmAction("Create an invoice from all jobs in the selected week?\n\nYou can edit every company charge amount before saving.")) return;
-    if (weekWork Orders.length === 0) {
+    if (weekJobs.length === 0) {
       alert("There are no jobs in the selected week to invoice.");
       return;
     }
-    const first = weekWork Orders[0];
+    const first = weekJobs[0];
     const invoice: Invoice = {
       id: uid(),
       invoiceNumber: nextInvoiceNumber(state.invoices),
@@ -1049,10 +1049,10 @@ export default function PayrollProEliteOperationsX() {
       status: "due",
       paidAmount: 0,
       beforePhotos: [],
-      afterPhotos: weekWork Orders.flatMap((job) => job.photos || []),
+      afterPhotos: weekJobs.flatMap((job) => job.photos || []),
       notes: `Thank you for your business. God bless.`,
-      sourceJobIds: weekWork Orders.map((job) => job.id),
-      lineItems: weekWork Orders.map((job) => ({
+      sourceJobIds: weekJobs.map((job) => job.id),
+      lineItems: weekJobs.map((job) => ({
         id: uid(),
         description: `${formatJobDate(job.date)} — ${propertyWithUnit(job)} — ${[...job.jobTypes, job.customWork].filter(Boolean).join(" / ") || "Labor"}`,
         qty: 1,
@@ -1297,7 +1297,7 @@ Enter the amount you are charging the company.`
 
         <main className="mt-5">
           {activeTab === "dashboard" && (
-            <Dashboard employeeTotals={employeeTotals} filteredWork Orders={filteredWork Orders} employeesById={employeesById} makeReadyTotals={makeReadyTotals} totals={totals} onAddJob={() => setShowJobForm(true)} onGoEmployees={() => setActiveTab("employees")} onGoReports={() => setActiveTab("reports")} onGoMakeReady={() => { setActiveTab("field"); setOpsView("makeReady"); }} onGoOffice Pipeline={() => { setActiveTab("office"); setOpsView("invoices"); }} />
+            <Dashboard employeeTotals={employeeTotals} filteredJobs={filteredJobs} employeesById={employeesById} makeReadyTotals={makeReadyTotals} totals={totals} onAddJob={() => setShowJobForm(true)} onGoEmployees={() => setActiveTab("employees")} onGoReports={() => setActiveTab("reports")} onGoMakeReady={() => { setActiveTab("field"); setOpsView("makeReady"); }} onGoInvoices={() => { setActiveTab("office"); setOpsView("invoices"); }} />
           )}
 
           {activeTab === "employees" && (
@@ -1338,7 +1338,7 @@ Enter the amount you are charging the company.`
               <div className="grid grid-cols-3 gap-1 rounded-[1.2rem] border border-white/10 bg-black/30 p-1">
                 <button type="button" onClick={() => setOpsView("jobs")} className={`rounded-2xl px-2 py-3 text-xs font-black transition ${opsView === "jobs" ? "bg-green-500 text-black shadow-[0_10px_25px_rgba(34,197,94,0.22)]" : "text-zinc-400"}`}>
                   <span className="flex items-center justify-center gap-1"><BriefcaseBusiness size={16} /> Work Orders</span>
-                  <span className="mt-1 block text-[10px] font-black opacity-75">{filteredWork Orders.length}</span>
+                  <span className="mt-1 block text-[10px] font-black opacity-75">{filteredJobs.length}</span>
                 </button>
                 <button type="button" onClick={() => setOpsView("assignments")} className={`rounded-2xl px-2 py-3 text-xs font-black transition ${opsView === "assignments" ? "bg-green-500 text-black shadow-[0_10px_25px_rgba(34,197,94,0.22)]" : "text-zinc-400"}`}>
                   <span className="flex items-center justify-center gap-1"><FileText size={16} /> Assign</span>
@@ -1351,7 +1351,7 @@ Enter the amount you are charging the company.`
               </div>
 
               {opsView === "jobs" && (
-                <JobList jobs={filteredWork Orders} employees={state.employees} employeesById={employeesById} properties={state.properties} jobTypeOptions={state.jobTypeOptions} onDelete={(id) => setConfirmDelete({ type: "job", id })} onUpdate={updateJob} onCreateInvoice={createInvoiceFromJob} />
+                <JobList jobs={filteredJobs} employees={state.employees} employeesById={employeesById} properties={state.properties} jobTypeOptions={state.jobTypeOptions} onDelete={(id) => setConfirmDelete({ type: "job", id })} onUpdate={updateJob} onCreateInvoice={createInvoiceFromJob} />
               )}
               {opsView === "assignments" && (
                 <AssignmentBoard assignments={filteredAssignments} employees={state.employees} employeesById={employeesById} onAdd={() => { setEditingAssignment(null); setShowAssignmentForm(true); }} onEdit={(item) => { setEditingAssignment(item); setShowAssignmentForm(true); }} onDelete={(id) => setConfirmDelete({ type: "assignment", id })} onUpdate={upsertAssignment} />
@@ -1370,7 +1370,7 @@ Enter the amount you are charging the company.`
               <div className="rounded-2xl border border-green-400/20 bg-green-500/10 p-3 text-sm font-semibold text-green-200">
                 Office is your billing side: what you charge the company is separate from what you pay the employee.
               </div>
-              <Office PipelinePanel invoices={filteredOffice Pipeline} jobs={state.jobs} weekWork Orders={weekWork Orders} onAdd={() => { setEditingInvoice(null); setShowInvoiceForm(true); }} onCreateFromWeek={createInvoiceFromWeekWork Orders} onEdit={(invoice) => { setEditingInvoice(invoice); setShowInvoiceForm(true); }} onDelete={(id) => setConfirmDelete({ type: "invoice", id })} onUpdate={upsertInvoice} />
+              <InvoicesPanel invoices={filteredInvoices} jobs={state.jobs} weekJobs={weekJobs} onAdd={() => { setEditingInvoice(null); setShowInvoiceForm(true); }} onCreateFromWeek={createInvoiceFromWeekJobs} onEdit={(invoice) => { setEditingInvoice(invoice); setShowInvoiceForm(true); }} onDelete={(id) => setConfirmDelete({ type: "invoice", id })} onUpdate={upsertInvoice} />
             </section>
           )}
 
@@ -1407,7 +1407,7 @@ Enter the amount you are charging the company.`
             </section>
           )}
 
-          {activeTab === "reports" && <Reports totals={totals} employeeTotals={employeeTotals} jobs={filteredWork Orders} employeesById={employeesById} onCloseWeek={closeWeekAsPaid} onExport={exportData} onCreateInvoice={createInvoiceFromWeekWork Orders} />}
+          {activeTab === "reports" && <Reports totals={totals} employeeTotals={employeeTotals} jobs={filteredJobs} employeesById={employeesById} onCloseWeek={closeWeekAsPaid} onExport={exportData} onCreateInvoice={createInvoiceFromWeekJobs} />}
 
           {activeTab === "more" && <MorePanel onExport={exportData} onImport={() => importRef.current?.click()} onReset={() => { if (confirm("Reset app data? This cannot be undone unless you exported a backup.")) setState(starterState); }} />}
         </main>
@@ -1518,9 +1518,9 @@ function SectionTop({ title, subtitle, children }: { title: string; subtitle: st
   return <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between"><div><h2 className="text-2xl font-black">{title}</h2><p className="text-sm text-zinc-500">{subtitle}</p></div>{children}</div>;
 }
 
-function Dashboard({ employeeTotals, filteredWork Orders, employeesById, makeReadyTotals, totals, onAddJob, onGoEmployees, onGoReports, onGoMakeReady, onGoOffice Pipeline }: { employeeTotals: { employee: Employee; jobs: JobEntry[]; earned: number; paid: number; borrowed: number; owed: number }[]; filteredWork Orders: JobEntry[]; employeesById: Map<string, Employee>; makeReadyTotals: { ready: number; inProgress: number; urgent: number; scheduled: number }; totals: { invoiceOpen: number }; onAddJob: () => void; onGoEmployees: () => void; onGoReports: () => void; onGoMakeReady: () => void; onGoOffice Pipeline: () => void }) {
+function Dashboard({ employeeTotals, filteredJobs, employeesById, makeReadyTotals, totals, onAddJob, onGoEmployees, onGoReports, onGoMakeReady, onGoInvoices }: { employeeTotals: { employee: Employee; jobs: JobEntry[]; earned: number; paid: number; borrowed: number; owed: number }[]; filteredJobs: JobEntry[]; employeesById: Map<string, Employee>; makeReadyTotals: { ready: number; inProgress: number; urgent: number; scheduled: number }; totals: { invoiceOpen: number }; onAddJob: () => void; onGoEmployees: () => void; onGoReports: () => void; onGoMakeReady: () => void; onGoInvoices: () => void }) {
   const topOwed = [...employeeTotals].sort((a, b) => b.owed - a.owed).slice(0, 4);
-  return <section className="grid gap-4"><div className="space-y-4"><SectionTop title="Command Center" subtitle="Your company week at a glance." /><div className="grid grid-cols-2 gap-3"><QuickTile onClick={onGoEmployees} icon={<UserPlus />} title="Employees" subtitle="Worker balances" /><QuickTile onClick={onGoMakeReady} icon={<ClipboardCheck />} title="Operations" subtitle={`${makeReadyTotals.inProgress} make ready`} /><QuickTile onClick={onGoOffice Pipeline} icon={<ReceiptText />} title="Office" subtitle={`${money(totals.invoiceOpen)} open`} /><QuickTile onClick={onGoReports} icon={<FileText />} title="Reports" subtitle="Payroll closeout" /></div><div className="grid grid-cols-4 gap-2"><MiniMetric label="Ready" value={makeReadyTotals.ready} /><MiniMetric label="Progress" value={makeReadyTotals.inProgress} /><MiniMetric label="Urgent" value={makeReadyTotals.urgent} danger /><MiniMetric label="Waiting" value={makeReadyTotals.scheduled} /></div><div className="blackCard p-4"><h3 className="font-black">Balances by Employee</h3><div className="mt-3 space-y-3">{topOwed.map(({ employee, earned, paid, owed, borrowed }) => <div key={employee.id} className="rounded-2xl border border-zinc-800 bg-black/30 p-3"><div className="flex items-center justify-between gap-3"><p className="font-black">{employee.name}</p><p className={`${owed > 0 ? "text-red-300" : "text-green-400"} font-black`}>{money(owed)}</p></div><div className="mt-2 grid grid-cols-4 gap-2 text-[11px] text-zinc-400"><span>Earned {money(earned)}</span><span>Paid {money(paid)}</span><span>Borrowed {money(borrowed)}</span><span>Owed {money(owed)}</span></div></div>)}{topOwed.length === 0 && <EmptyText text="No employee payroll yet this week." />}</div></div></div><div className="space-y-3"><div className="flex items-center justify-between"><h3 className="text-sm font-black uppercase tracking-wide text-zinc-300">Work Orders This Week</h3><span className="darkButton !px-3 !py-2 text-xs"><Filter size={14} /> Week Only</span></div><div className="blackCard divide-y divide-white/10 overflow-hidden">{filteredWork Orders.slice(0, 7).map((job) => <JobMini key={job.id} job={job} employee={employeesById.get(job.employeeId)} />)}{filteredWork Orders.length === 0 && <EmptyText text="No jobs found for this week." />}</div></div></section>;
+  return <section className="grid gap-4"><div className="space-y-4"><SectionTop title="Command Center" subtitle="Your company week at a glance." /><div className="grid grid-cols-2 gap-3"><QuickTile onClick={onGoEmployees} icon={<UserPlus />} title="Employees" subtitle="Worker balances" /><QuickTile onClick={onGoMakeReady} icon={<ClipboardCheck />} title="Operations" subtitle={`${makeReadyTotals.inProgress} make ready`} /><QuickTile onClick={onGoInvoices} icon={<ReceiptText />} title="Office" subtitle={`${money(totals.invoiceOpen)} open`} /><QuickTile onClick={onGoReports} icon={<FileText />} title="Reports" subtitle="Payroll closeout" /></div><div className="grid grid-cols-4 gap-2"><MiniMetric label="Ready" value={makeReadyTotals.ready} /><MiniMetric label="Progress" value={makeReadyTotals.inProgress} /><MiniMetric label="Urgent" value={makeReadyTotals.urgent} danger /><MiniMetric label="Waiting" value={makeReadyTotals.scheduled} /></div><div className="blackCard p-4"><h3 className="font-black">Balances by Employee</h3><div className="mt-3 space-y-3">{topOwed.map(({ employee, earned, paid, owed, borrowed }) => <div key={employee.id} className="rounded-2xl border border-zinc-800 bg-black/30 p-3"><div className="flex items-center justify-between gap-3"><p className="font-black">{employee.name}</p><p className={`${owed > 0 ? "text-red-300" : "text-green-400"} font-black`}>{money(owed)}</p></div><div className="mt-2 grid grid-cols-4 gap-2 text-[11px] text-zinc-400"><span>Earned {money(earned)}</span><span>Paid {money(paid)}</span><span>Borrowed {money(borrowed)}</span><span>Owed {money(owed)}</span></div></div>)}{topOwed.length === 0 && <EmptyText text="No employee payroll yet this week." />}</div></div></div><div className="space-y-3"><div className="flex items-center justify-between"><h3 className="text-sm font-black uppercase tracking-wide text-zinc-300">Work Orders This Week</h3><span className="darkButton !px-3 !py-2 text-xs"><Filter size={14} /> Week Only</span></div><div className="blackCard divide-y divide-white/10 overflow-hidden">{filteredJobs.slice(0, 7).map((job) => <JobMini key={job.id} job={job} employee={employeesById.get(job.employeeId)} />)}{filteredJobs.length === 0 && <EmptyText text="No jobs found for this week." />}</div></div></section>;
 }
 
 function QuickTile({ onClick, icon, title, subtitle }: { onClick: () => void; icon: React.ReactNode; title: string; subtitle: string }) { return <button onClick={onClick} className="blackCard p-5 text-left transition active:scale-[.99]"><div className="relative z-10 flex h-12 w-12 items-center justify-center rounded-2xl border border-white/10 bg-green-500/10 text-green-400">{icon}</div><p className="relative z-10 mt-3 text-lg font-black">{title}</p><p className="relative z-10 text-xs text-zinc-500">{subtitle}</p></button>; }
@@ -1534,7 +1534,7 @@ function jobsByDay(jobs: JobEntry[]) {
   const days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
   const grouped: Record<string, JobEntry[]> = { Monday: [], Tuesday: [], Wednesday: [], Thursday: [], Friday: [], Saturday: [] };
   jobs.forEach((job) => { const day = new Date(`${job.date}T12:00:00`).toLocaleDateString("en-US", { weekday: "long" }); if (day in grouped) grouped[day].push(job); });
-  return days.map((day) => { const dayWork Orders = grouped[day].sort((a, b) => propertyWithUnit(a).localeCompare(propertyWithUnit(b))); const total = dayWork Orders.reduce((sum, job) => sum + safeNumber(job.pay), 0); return { day, jobs: dayWork Orders, total }; });
+  return days.map((day) => { const dayJobs = grouped[day].sort((a, b) => propertyWithUnit(a).localeCompare(propertyWithUnit(b))); const total = dayJobs.reduce((sum, job) => sum + safeNumber(job.pay), 0); return { day, jobs: dayJobs, total }; });
 }
 
 function EmployeeCard({ employee, totals, expanded, onToggle, onDelete, onSave, onMarkWeekPaid, onMarkWeekUnpaid, weekStart }: { employee: Employee; totals?: { jobs: JobEntry[]; earned: number; paid: number; borrowed: number; owed: number }; expanded: boolean; onToggle: () => void; onDelete: () => void; onSave: (employee: Employee) => void; onMarkWeekPaid: (employeeId: string) => void; onMarkWeekUnpaid: (employeeId: string) => void; weekStart: string }) {
@@ -1733,19 +1733,19 @@ function MakeReadyCard({ item, employee, employees, onEdit, onDelete, onUpdate, 
   return <div className="blackCard p-4"><div className="flex items-start justify-between gap-3"><div><p className="text-lg font-black">{makeReadyTitle(item)}</p><p className="text-xs text-zinc-500">Assigned: {employee?.name || "Not assigned"} • Deadline: {item.deadline || "—"}</p></div><span className={`rounded-full px-3 py-1 text-[10px] font-black uppercase ${statusClasses}`}>{item.priority === "urgent" ? "Urgent" : item.status.replace("-", " ")}</span></div><div className="mt-3 h-3 overflow-hidden rounded-full border border-white/10 bg-black/40"><div className="h-full rounded-full bg-green-500" style={{ width: `${percent}%` }} /></div><p className="mt-1 text-xs font-bold text-zinc-500">{percent}% complete • Move-out {item.moveOutDate || "—"} • Move-in {item.moveInDate || "—"}</p><div className="mt-3 grid gap-2">{item.tasks.map((task) => <button type="button" key={task.id} onClick={() => { if (!task.done && !confirmAction(`Confirm: mark ${task.label} complete?`)) return; onUpdate({ ...item, tasks: item.tasks.map((row) => row.id === task.id ? { ...row, done: !row.done } : row) }); }} className={`flex items-center gap-2 rounded-xl border px-3 py-2 text-left text-sm font-bold ${task.done ? "border-green-400/25 bg-green-500/10 text-green-300" : "border-zinc-800 bg-black/30 text-zinc-400"}`}><span>{task.done ? "✅" : "⬜"}</span>{task.label}</button>)}</div><div className="mt-3 grid grid-cols-2 gap-2"><Operations label="Status"><select className="inputElite" value={item.status} onChange={(e) => { const nextStatus = e.target.value as MakeReadyItem["status"]; if (nextStatus === "ready" && !confirmAction("Confirm: mark this unit ready?")) return; onUpdate({ ...item, status: nextStatus }); }}><option value="scheduled">Scheduled</option><option value="in-progress">In Progress</option><option value="waiting">Waiting</option><option value="ready">Ready</option></select></Operations><Operations label="Assigned"><select className="inputElite" value={item.assignedEmployeeId} onChange={(e) => onUpdate({ ...item, assignedEmployeeId: e.target.value })}><option value="">Not assigned</option>{employees.map((employee) => <option key={employee.id} value={employee.id}>{employee.name}</option>)}</select></Operations></div>{item.notes && <p className="mt-3 rounded-2xl border border-white/10 bg-black/25 p-3 text-sm text-zinc-400">{item.notes}</p>}<div className="mt-3 grid grid-cols-2 gap-2"><button className="darkButton" onClick={onEdit}><Pencil size={16} /> Edit Unit</button><button className="goldButton" onClick={onCreateInvoice}><ReceiptText size={16} /> Create Invoice</button></div><div className="mt-2 flex justify-end"><button className="iconDanger" onClick={onDelete}><Trash2 size={18} /></button></div></div>;
 }
 
-function Office PipelinePanel({ invoices, jobs, weekWork Orders, onAdd, onCreateFromWeek, onEdit, onDelete, onUpdate }: { invoices: Invoice[]; jobs: JobEntry[]; weekWork Orders: JobEntry[]; onAdd: () => void; onCreateFromWeek: () => void; onEdit: (invoice: Invoice) => void; onDelete: (id: string) => void; onUpdate: (invoice: Invoice) => void }) {
+function InvoicesPanel({ invoices, jobs, weekJobs, onAdd, onCreateFromWeek, onEdit, onDelete, onUpdate }: { invoices: Invoice[]; jobs: JobEntry[]; weekJobs: JobEntry[]; onAdd: () => void; onCreateFromWeek: () => void; onEdit: (invoice: Invoice) => void; onDelete: (id: string) => void; onUpdate: (invoice: Invoice) => void }) {
   const [invoiceFilter, setInvoiceFilter] = useState<"all" | "outstanding" | "paid">("all");
   const invoiceIsPaid = (invoice: Invoice) => invoiceStatusIsPaid(invoice);
-  const outstandingOffice Pipeline = invoices.filter((invoice) => !invoiceIsPaid(invoice));
-  const paidOffice Pipeline = invoices.filter((invoice) => invoiceIsPaid(invoice));
-  const visibleOffice Pipeline = invoiceFilter === "paid" ? paidOffice Pipeline : invoiceFilter === "outstanding" ? outstandingOffice Pipeline : invoices;
+  const outstandingInvoices = invoices.filter((invoice) => !invoiceIsPaid(invoice));
+  const paidInvoices = invoices.filter((invoice) => invoiceIsPaid(invoice));
+  const visibleInvoices = invoiceFilter === "paid" ? paidInvoices : invoiceFilter === "outstanding" ? outstandingInvoices : invoices;
   const openBalance = invoices.reduce((sum, invoice) => sum + Math.max(invoiceTotal(invoice) - safeNumber(invoice.paidAmount), 0), 0);
-  const paidCount = paidOffice Pipeline.length;
+  const paidCount = paidInvoices.length;
 
   const filterButtons = [
     { id: "all" as const, label: "All Office Pipeline", count: invoices.length },
-    { id: "outstanding" as const, label: "Outstanding", count: outstandingOffice Pipeline.length },
-    { id: "paid" as const, label: "Paid", count: paidOffice Pipeline.length },
+    { id: "outstanding" as const, label: "Outstanding", count: outstandingInvoices.length },
+    { id: "paid" as const, label: "Paid", count: paidInvoices.length },
   ];
 
   return (
@@ -1777,11 +1777,11 @@ function Office PipelinePanel({ invoices, jobs, weekWork Orders, onAdd, onCreate
         ))}
       </div>
 
-      {weekWork Orders.length > 0 && <div className="rounded-2xl border border-green-400/20 bg-green-500/10 p-3 text-sm font-semibold text-green-200">Selected week has {weekWork Orders.length} jobs ready to invoice. Enter the company charge amount separately from employee pay.</div>}
+      {weekJobs.length > 0 && <div className="rounded-2xl border border-green-400/20 bg-green-500/10 p-3 text-sm font-semibold text-green-200">Selected week has {weekJobs.length} jobs ready to invoice. Enter the company charge amount separately from employee pay.</div>}
 
       <div className="space-y-3">
-        {visibleOffice Pipeline.map((invoice) => <InvoiceCard key={invoice.id} invoice={invoice} jobs={jobs} onEdit={() => onEdit(invoice)} onDelete={() => onDelete(invoice.id)} onUpdate={onUpdate} />)}
-        {visibleOffice Pipeline.length === 0 && <div className="blackCard p-6"><EmptyText text={invoiceFilter === "paid" ? "No paid invoices yet." : invoiceFilter === "outstanding" ? "No outstanding invoices right now." : "No invoices yet. Create one manually or from this week’s jobs."} /></div>}
+        {visibleInvoices.map((invoice) => <InvoiceCard key={invoice.id} invoice={invoice} jobs={jobs} onEdit={() => onEdit(invoice)} onDelete={() => onDelete(invoice.id)} onUpdate={onUpdate} />)}
+        {visibleInvoices.length === 0 && <div className="blackCard p-6"><EmptyText text={invoiceFilter === "paid" ? "No paid invoices yet." : invoiceFilter === "outstanding" ? "No outstanding invoices right now." : "No invoices yet. Create one manually or from this week’s jobs."} /></div>}
       </div>
     </section>
   );
