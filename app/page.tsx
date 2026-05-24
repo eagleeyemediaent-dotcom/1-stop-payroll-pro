@@ -41,8 +41,8 @@ import {
 } from "lucide-react";
 
 // 1 STOP TURNOVER SPECIALIST PRO ELITE - OPERATIONS X
-// PHASE 12 single-file replacement for app/page.tsx
-// Stable Phase 12: property profile helpers only — Make Ready merge intentionally removed
+// PHASE 13 single-file replacement for app/page.tsx
+// Property address persistence + assignment preset dropdown fix
 
 const STORAGE_KEY = "oneStopPayrollProEliteBlackGoldX_v1";
 const PROPERTY_PROFILES_KEY = "oneStopPropertyProfiles_v1";
@@ -129,6 +129,7 @@ type Invoice = {
   invoiceNumber: string;
   clientName: string;
   property: string;
+  propertyAddress?: string;
   unitNumber: string;
   invoiceDate: string;
   dueDate: string;
@@ -206,6 +207,9 @@ function getPropertyAddress(property: string) {
   return defaultPropertyAddresses[property] || "";
 }
 
+function normalizePropertyName(name: string) {
+  return String(name || "").trim().replace(/\s+/g, " ");
+}
 
 type PropertyContactProfile = {
   address: string;
@@ -297,6 +301,52 @@ const defaultJobTypes = [
   "Carpentry Repair",
   "Touch Ups",
 ];
+
+const assignmentPresets: { label: string; english: string; spanish: string }[] = [
+  {
+    label: "Sheetrock Repair",
+    english: "Repair damaged sheetrock.\nPlaster and sand affected areas until walls are smooth and ready for paint.\nRepair and detail walls as needed.\nClean work area when finished.",
+    spanish: "Reparación de sheetrock dañado.\nPlasteo y lijado de áreas afectadas para dejar las paredes lisas y listas para pintura.\nReparación y detalle de paredes según sea necesario.\nLimpieza básica del área de trabajo al finalizar.",
+  },
+  {
+    label: "Water Damage Repair",
+    english: "Repair wall damage caused by water.\nRemove loose material as needed.\nPatch, plaster, sand, and prepare affected walls for paint.\nClean work area when finished.",
+    spanish: "Reparar daños en las paredes causados por agua.\nRemover material suelto según sea necesario.\nParchar, plaster, lijar y preparar las paredes afectadas para pintura.\nLimpiar el área de trabajo al finalizar.",
+  },
+  {
+    label: "Full Unit Painting",
+    english: "Prepare unit for painting.\nRepair minor wall imperfections as needed.\nPaint walls with two coats where required.\nComplete touch-ups and leave the unit clean.",
+    spanish: "Preparar la unidad para pintura.\nReparar imperfecciones menores en las paredes según sea necesario.\nPintar las paredes con dos manos donde sea requerido.\nCompletar retoques y dejar la unidad limpia.",
+  },
+  {
+    label: "Trash Out",
+    english: "Remove trash and unwanted items from the unit.\nSweep affected areas.\nNotify office if large items or hazardous materials are found.",
+    spanish: "Remover basura y artículos no deseados de la unidad.\nBarrer las áreas afectadas.\nNotificar a la oficina si hay artículos grandes o materiales peligrosos.",
+  },
+  {
+    label: "Occupied Unit Work",
+    english: "Complete assigned work inside occupied unit.\nProtect resident belongings and keep area clean.\nCommunicate any issue before leaving.",
+    spanish: "Completar el trabajo asignado dentro de una unidad ocupada.\nProteger las pertenencias del residente y mantener el área limpia.\nComunicar cualquier problema antes de salir.",
+  },
+  {
+    label: "Touch Ups",
+    english: "Complete paint and repair touch-ups as needed.\nCheck details before leaving.\nClean work area when finished.",
+    spanish: "Completar retoques de pintura y reparación según sea necesario.\nRevisar los detalles antes de salir.\nLimpiar el área de trabajo al finalizar.",
+  },
+  {
+    label: "Custom",
+    english: "",
+    spanish: "",
+  },
+];
+
+function assignmentScopeFor(label: string, language: AssignmentLanguage) {
+  const preset = assignmentPresets.find((item) => item.label === label);
+  if (!preset || label === "Custom") return "";
+  if (language === "english") return preset.english;
+  if (language === "both") return `${preset.english}\n\n--- Español ---\n${preset.spanish}`.trim();
+  return preset.spanish;
+}
 
 const defaultMakeReadyTasks = [
   "Move-Out Confirmed",
@@ -445,6 +495,7 @@ function invoiceEmailSubject(invoice: Pick<Invoice, "invoiceNumber" | "property"
 
 function invoiceEmailBody(invoice: Invoice) {
   const total = invoiceTotal(invoice);
+  const invoiceAddress = invoice.propertyAddress || getPropertyAddress(invoice.property);
   const balance = Math.max(total - safeNumber(invoice.paidAmount), 0);
   const lines = invoice.lineItems
     .map((item) => `- ${item.description} | Qty: ${item.qty} | Rate: ${money(item.rate)} | Total: ${money(item.qty * item.rate)}`)
@@ -459,6 +510,7 @@ function invoiceEmailBody(invoice: Invoice) {
     `Please see invoice ${invoice.invoiceNumber} from 1 Stop Turnover Specialist LLC.`,
     ``,
     `Property: ${invoice.property}${invoice.unitNumber ? ` - Unit ${invoice.unitNumber}` : ""}`,
+    invoiceAddress ? `Address: ${invoiceAddress}` : "",
     `Invoice Date: ${invoice.invoiceDate}`,
     `Due Date: ${invoice.dueDate}`,
     ``,
@@ -536,6 +588,7 @@ function printInvoiceDocument(invoice: Invoice, beforePhotos: string[] = [], aft
   const paid = safeNumber(invoice.paidAmount);
   const balance = Math.max(total - paid, 0);
   const isPaid = invoiceStatusIsPaid(invoice);
+  const invoiceAddress = invoice.propertyAddress || getPropertyAddress(invoice.property);
   const lineRows = invoice.lineItems.map((item) => `
     <tr>
       <td>${escapePrintHtml(item.description)}</td>
@@ -623,6 +676,7 @@ function printInvoiceDocument(invoice: Invoice, beforePhotos: string[] = [], aft
         <p class="strong">${escapePrintHtml(invoice.clientName || "Client Name")}</p>
         ${invoice.clientEmail ? `<p>${escapePrintHtml(invoice.clientEmail)}</p>` : ""}
         <p>${escapePrintHtml(invoice.property)}${invoice.unitNumber ? ` — Unit ${escapePrintHtml(invoice.unitNumber)}` : ""}</p>
+        ${invoiceAddress ? `<p>${escapePrintHtml(invoiceAddress)}</p>` : ""}
       </div>
       <div class="right">
         <p><b>Invoice Date:</b> ${escapePrintHtml(invoice.invoiceDate)}</p>
@@ -902,26 +956,31 @@ export default function PayrollProEliteOperationsX() {
     return getSavedPropertyProfile(property).email || "";
   }
 
-  function savePropertyProfile(propertyName: string, profile: PropertyContactProfile) {
-    const cleanName = propertyName.trim();
+  function savePropertyProfile(propertyName: string, profile: PropertyContactProfile, previousName?: string | null) {
+    const cleanName = normalizePropertyName(propertyName);
+    const oldName = normalizePropertyName(previousName || "");
     if (!cleanName) return;
 
     setState((prev) => {
       const currentProfiles = prev.propertyProfiles || {};
+      const existingProfile = oldName && currentProfiles[oldName] ? currentProfiles[oldName] : currentProfiles[cleanName];
       const nextProfile = normalizePropertyProfile(cleanName, {
+        ...existingProfile,
         ...profile,
-        billingName: profile.billingName.trim() || cleanName,
+        billingName: normalizePropertyName(profile.billingName) || cleanName,
       });
-      const nextProfiles = {
-        ...currentProfiles,
-        [cleanName]: nextProfile,
-      };
+      const nextProfiles = { ...currentProfiles };
+      if (oldName && oldName !== cleanName) delete nextProfiles[oldName];
+      nextProfiles[cleanName] = nextProfile;
+
+      const nextProperties = prev.properties.map((item) => (oldName && item === oldName ? cleanName : item));
+      const finalProperties = [...new Set([...nextProperties, cleanName].map(normalizePropertyName).filter(Boolean))];
 
       savePropertyProfilesToStorage(nextProfiles);
 
       return {
         ...prev,
-        properties: [...new Set([...prev.properties, cleanName])].filter(Boolean),
+        properties: finalProperties,
         propertyProfiles: nextProfiles,
       };
     });
@@ -983,6 +1042,7 @@ export default function PayrollProEliteOperationsX() {
       clientName: getSavedPropertyBillingName(first.property),
       clientEmail: getSavedPropertyEmail(first.property),
       property: first.property,
+      propertyAddress: getSavedPropertyAddress(first.property),
       unitNumber: first.unitNumber || "",
       invoiceDate: todayISO(),
       dueDate: addDaysISO(todayISO(), 14),
@@ -1030,6 +1090,7 @@ Enter the amount you are charging the company for this work.`
       clientName: getSavedPropertyBillingName(job.property),
       clientEmail: getSavedPropertyEmail(job.property),
       property: job.property,
+      propertyAddress: getSavedPropertyAddress(job.property),
       unitNumber: job.unitNumber || "",
       invoiceDate: todayISO(),
       dueDate: addDaysISO(todayISO(), 14),
@@ -1070,6 +1131,7 @@ Enter the amount you are charging the company.`
       clientName: getSavedPropertyBillingName(item.property),
       clientEmail: getSavedPropertyEmail(item.property),
       property: item.property,
+      propertyAddress: getSavedPropertyAddress(item.property),
       unitNumber: item.unitNumber || "",
       invoiceDate: todayISO(),
       dueDate: addDaysISO(todayISO(), 14),
@@ -1362,10 +1424,10 @@ Enter the amount you are charging the company.`
       )}
 
       {showAssignmentForm && (
-        <AssignmentModal employees={state.employees} properties={state.properties} getAddressForProperty={getSavedPropertyAddress} initial={editingAssignment} onClose={() => { setShowAssignmentForm(false); setEditingAssignment(null); }} onSave={(assignment) => { upsertAssignment(assignment); setShowAssignmentForm(false); setEditingAssignment(null); }} />
+        <AssignmentModal employees={state.employees} properties={state.properties} getAddressForProperty={getSavedPropertyAddress} initial={editingAssignment} onClose={() => { setShowAssignmentForm(false); setEditingAssignment(null); }} onSave={(assignment) => { if (assignment.property && assignment.address) savePropertyProfile(assignment.property, { ...getSavedPropertyProfile(assignment.property), address: assignment.address }, assignment.property); upsertAssignment(assignment); setShowAssignmentForm(false); setEditingAssignment(null); }} />
       )}
 
-      {showPropertyForm && <PropertyModal initialName={editingPropertyName || ""} initialProfile={editingPropertyName ? getSavedPropertyProfile(editingPropertyName) : undefined} onClose={() => { setShowPropertyForm(false); setEditingPropertyName(null); }} onSave={(property, profile) => { savePropertyProfile(property, profile); setShowPropertyForm(false); setEditingPropertyName(null); }} />}
+      {showPropertyForm && <PropertyModal initialName={editingPropertyName || ""} initialProfile={editingPropertyName ? getSavedPropertyProfile(editingPropertyName) : undefined} onClose={() => { setShowPropertyForm(false); setEditingPropertyName(null); }} onSave={(property, profile) => { savePropertyProfile(property, profile, editingPropertyName); setShowPropertyForm(false); setEditingPropertyName(null); }} />}
 
       {showMakeReadyForm && (
         <MakeReadyModal employees={state.employees} properties={state.properties} initial={editingMakeReady} onClose={() => { setShowMakeReadyForm(false); setEditingMakeReady(null); }} onSave={(item) => { upsertMakeReady(item); setShowMakeReadyForm(false); setEditingMakeReady(null); }} />
@@ -1605,11 +1667,23 @@ function AssignmentBoard({ assignments, employeesById, onAdd, onEdit, onDelete, 
 }
 
 function AssignmentModal({ employees, properties, getAddressForProperty, initial, onClose, onSave }: { employees: Employee[]; properties: string[]; getAddressForProperty: (property: string) => string; initial: WorkAssignment | null; onClose: () => void; onSave: (assignment: WorkAssignment) => void }) {
-  const [assignment, setAssignment] = useState<WorkAssignment>(initial || { id: uid(), employeeId: employees[0]?.id || "", date: todayISO(), property: properties[0] || "", address: getAddressForProperty(properties[0] || ""), unitNumber: "", priority: "normal", language: "spanish", status: "assigned", scope: "Reparación de sheetrock dañado.\nPlasteo y lijado de áreas afectadas para dejar las paredes lisas y listas para pintura.\nReparación y detalle de paredes según sea necesario.\nLimpieza básica del área de trabajo al finalizar.", notes: "", photos: [], createdAt: new Date().toISOString() });
+  const defaultProperty = properties[0] || "";
+  const [selectedPreset, setSelectedPreset] = useState(initial?.scope ? "Custom" : "");
+  const [assignment, setAssignment] = useState<WorkAssignment>(initial || { id: uid(), employeeId: employees[0]?.id || "", date: todayISO(), property: defaultProperty, address: getAddressForProperty(defaultProperty), unitNumber: "", priority: "normal", language: "spanish", status: "assigned", scope: "", notes: "", photos: [], createdAt: new Date().toISOString() });
   const employee = employees.find((item) => item.id === assignment.employeeId);
   const employeeName = employee?.name || "Employee";
   const preview = buildAssignmentMessage(assignment, employeeName);
-  return <Modal title={initial ? "Edit Assignment" : "Assign Job"} onClose={onClose}><div className="space-y-3"><div className="grid grid-cols-2 gap-2"><Field label="Employee"><select className="inputElite" value={assignment.employeeId} onChange={(e) => setAssignment({ ...assignment, employeeId: e.target.value })}>{employees.map((employee) => <option key={employee.id} value={employee.id}>{employee.name}</option>)}</select></Field><Field label="Date"><input className="inputElite" type="date" value={assignment.date} onChange={(e) => setAssignment({ ...assignment, date: e.target.value })} /></Field></div><Field label="Property"><select className="inputElite" value={assignment.property} onChange={(e) => { const selected = e.target.value; setAssignment({ ...assignment, property: selected, address: getAddressForProperty(selected) }); }}>{properties.map((property) => <option key={property} value={property}>{property}</option>)}</select></Field><Field label="Address"><input className="inputElite" value={assignment.address} onChange={(e) => setAssignment({ ...assignment, address: e.target.value })} placeholder="460 Charles St, Providence RI" /></Field><div className="grid grid-cols-2 gap-2"><Field label="Unit"><input className="inputElite" value={assignment.unitNumber} onChange={(e) => setAssignment({ ...assignment, unitNumber: e.target.value })} placeholder="107" /></Field><Field label="Priority"><select className="inputElite" value={assignment.priority} onChange={(e) => setAssignment({ ...assignment, priority: e.target.value as WorkAssignment["priority"] })}><option value="normal">Normal</option><option value="urgent">Urgent</option></select></Field></div><div className="grid grid-cols-2 gap-2"><Field label="Language"><select className="inputElite" value={assignment.language} onChange={(e) => setAssignment({ ...assignment, language: e.target.value as AssignmentLanguage })}><option value="spanish">Español</option><option value="english">English</option><option value="both">Both</option></select></Field><Field label="Status"><select className="inputElite" value={assignment.status} onChange={(e) => setAssignment({ ...assignment, status: e.target.value as AssignmentStatus })}><option value="assigned">Assigned</option><option value="sent">Sent</option><option value="in-progress">In Progress</option><option value="completed">Completed</option><option value="approved">Approved</option><option value="ready-to-invoice">Ready To Invoice</option></select></Field></div><Field label="Scope of Work"><textarea className="inputElite min-h-32" value={assignment.scope} onChange={(e) => setAssignment({ ...assignment, scope: e.target.value })} /></Field><Field label="Notes"><textarea className="inputElite min-h-20" value={assignment.notes} onChange={(e) => setAssignment({ ...assignment, notes: e.target.value })} placeholder="Optional notes for employee" /></Field><div className="rounded-2xl border border-green-400/20 bg-green-500/10 p-3"><p className="mb-2 text-xs font-black uppercase text-green-400">Message Preview</p><pre className="max-h-56 overflow-y-auto whitespace-pre-wrap rounded-xl bg-black/40 p-3 text-xs font-semibold text-zinc-200">{preview}</pre></div><div className="grid grid-cols-2 gap-2"><button className="goldButton" onClick={() => onSave({ ...assignment, createdAt: assignment.createdAt || new Date().toISOString() })}><Check size={18} /> Save</button><button className="darkButton" onClick={() => copyAssignmentMessage(assignment, employeeName)}><ClipboardList size={18} /> Copy</button><button className="darkButton" onClick={() => openAssignmentText(assignment, employee)}><FileText size={18} /> Send Text</button><button className="darkButton" onClick={() => openAssignmentWhatsApp(assignment, employee)}><Mail size={18} /> WhatsApp</button></div></div></Modal>;
+
+  function applyPreset(label: string, language = assignment.language) {
+    setSelectedPreset(label);
+    setAssignment((prev) => ({ ...prev, scope: assignmentScopeFor(label, language) }));
+  }
+
+  function updateLanguage(language: AssignmentLanguage) {
+    setAssignment((prev) => ({ ...prev, language, scope: selectedPreset && selectedPreset !== "Custom" ? assignmentScopeFor(selectedPreset, language) : prev.scope }));
+  }
+
+  return <Modal title={initial ? "Edit Assignment" : "Assign Job"} onClose={onClose}><div className="space-y-3"><div className="grid grid-cols-2 gap-2"><Field label="Employee"><select className="inputElite" value={assignment.employeeId} onChange={(e) => setAssignment({ ...assignment, employeeId: e.target.value })}>{employees.map((employee) => <option key={employee.id} value={employee.id}>{employee.name}</option>)}</select></Field><Field label="Date"><input className="inputElite" type="date" value={assignment.date} onChange={(e) => setAssignment({ ...assignment, date: e.target.value })} /></Field></div><Field label="Property"><select className="inputElite" value={assignment.property} onChange={(e) => { const selected = e.target.value; setAssignment({ ...assignment, property: selected, address: getAddressForProperty(selected) }); }}>{properties.map((property) => <option key={property} value={property}>{property}</option>)}</select></Field><Field label="Address"><input className="inputElite" value={assignment.address} onChange={(e) => setAssignment({ ...assignment, address: e.target.value })} placeholder="460 Charles St, Providence RI" /></Field><div className="grid grid-cols-2 gap-2"><Field label="Unit"><input className="inputElite" value={assignment.unitNumber} onChange={(e) => setAssignment({ ...assignment, unitNumber: e.target.value })} placeholder="107" /></Field><Field label="Priority"><select className="inputElite" value={assignment.priority} onChange={(e) => setAssignment({ ...assignment, priority: e.target.value as WorkAssignment["priority"] })}><option value="normal">Normal</option><option value="urgent">Urgent</option></select></Field></div><div className="grid grid-cols-2 gap-2"><Field label="Language"><select className="inputElite" value={assignment.language} onChange={(e) => updateLanguage(e.target.value as AssignmentLanguage)}><option value="spanish">Español</option><option value="english">English</option><option value="both">Both</option></select></Field><Field label="Status"><select className="inputElite" value={assignment.status} onChange={(e) => setAssignment({ ...assignment, status: e.target.value as AssignmentStatus })}><option value="assigned">Assigned</option><option value="sent">Sent</option><option value="in-progress">In Progress</option><option value="completed">Completed</option><option value="approved">Approved</option><option value="ready-to-invoice">Ready To Invoice</option></select></Field></div><Field label="Select Job Assignment"><select className="inputElite" value={selectedPreset} onChange={(e) => applyPreset(e.target.value)}><option value="">Choose assignment type...</option>{assignmentPresets.map((preset) => <option key={preset.label} value={preset.label}>{preset.label}</option>)}</select></Field><Field label="Scope of Work"><textarea className="inputElite min-h-32" value={assignment.scope} onChange={(e) => { setSelectedPreset("Custom"); setAssignment({ ...assignment, scope: e.target.value }); }} placeholder="Blank until you choose a job assignment or type your custom scope." /></Field><Field label="Notes"><textarea className="inputElite min-h-20" value={assignment.notes} onChange={(e) => setAssignment({ ...assignment, notes: e.target.value })} placeholder="Optional notes for employee" /></Field><div className="rounded-2xl border border-green-400/20 bg-green-500/10 p-3"><p className="mb-2 text-xs font-black uppercase text-green-400">Message Preview</p><pre className="max-h-56 overflow-y-auto whitespace-pre-wrap rounded-xl bg-black/40 p-3 text-xs font-semibold text-zinc-200">{preview}</pre></div><div className="grid grid-cols-2 gap-2"><button className="goldButton" onClick={() => onSave({ ...assignment, address: assignment.address.trim() || getAddressForProperty(assignment.property), createdAt: assignment.createdAt || new Date().toISOString() })}><Check size={18} /> Save</button><button className="darkButton" onClick={() => copyAssignmentMessage(assignment, employeeName)}><ClipboardList size={18} /> Copy</button><button className="darkButton" onClick={() => openAssignmentText(assignment, employee)}><FileText size={18} /> Send Text</button><button className="darkButton" onClick={() => openAssignmentWhatsApp(assignment, employee)}><Mail size={18} /> WhatsApp</button></div></div></Modal>;
 }
 
 function JobList({ jobs, employees, employeesById, properties, jobTypeOptions, onDelete, onUpdate, onCreateInvoice }: { jobs: JobEntry[]; employees: Employee[]; employeesById: Map<string, Employee>; properties: string[]; jobTypeOptions: string[]; onDelete: (id: string) => void; onUpdate: (job: JobEntry) => void; onCreateInvoice: (job: JobEntry) => void }) {
@@ -1954,9 +2028,9 @@ function MakeReadyModal({ employees, properties, initial, onClose, onSave }: { e
 }
 
 function InvoiceModal({ invoices, properties, getProfileForProperty, initial, onClose, onSave }: { invoices: Invoice[]; properties: string[]; getProfileForProperty: (property: string) => PropertyContactProfile; initial: Invoice | null; onClose: () => void; onSave: (invoice: Invoice) => void }) {
-  const [invoice, setInvoice] = useState<Invoice>(initial || { id: uid(), invoiceNumber: nextInvoiceNumber(invoices), clientName: getProfileForProperty(properties[0] || "").billingName || "", clientEmail: getProfileForProperty(properties[0] || "").email || "", property: properties[0] || "", unitNumber: "", invoiceDate: todayISO(), dueDate: addDaysISO(todayISO(), 14), status: "due", lineItems: [{ id: uid(), description: "Labor and materials", qty: 1, rate: 0 }], notes: "Thank you for your business. God bless.", paidAmount: 0, beforePhotos: [], afterPhotos: [] });
+  const [invoice, setInvoice] = useState<Invoice>(initial || { id: uid(), invoiceNumber: nextInvoiceNumber(invoices), clientName: getProfileForProperty(properties[0] || "").billingName || "", clientEmail: getProfileForProperty(properties[0] || "").email || "", property: properties[0] || "", propertyAddress: getProfileForProperty(properties[0] || "").address || "", unitNumber: "", invoiceDate: todayISO(), dueDate: addDaysISO(todayISO(), 14), status: "due", lineItems: [{ id: uid(), description: "Labor and materials", qty: 1, rate: 0 }], notes: "Thank you for your business. God bless.", paidAmount: 0, beforePhotos: [], afterPhotos: [] });
   const total = invoiceTotal(invoice);
-  return <Modal title={initial ? "Edit Invoice" : "New Invoice"} onClose={onClose}><div className="space-y-3"><div className="grid grid-cols-2 gap-3"><Field label="Invoice #"><input className="inputElite" value={invoice.invoiceNumber} onChange={(e) => setInvoice({ ...invoice, invoiceNumber: e.target.value })} /></Field><Field label="Status"><select className="inputElite" value={invoice.status} onChange={(e) => setInvoice({ ...invoice, status: e.target.value as Invoice["status"] })}><option value="due">Due</option><option value="sent">Sent</option><option value="paid">Paid</option><option value="overdue">Overdue</option></select></Field><Field label="Client"><input className="inputElite" value={invoice.clientName} onChange={(e) => setInvoice({ ...invoice, clientName: e.target.value })} placeholder="Example: Wingate Companies" /></Field><Field label="Client Email"><input className="inputElite" type="email" value={invoice.clientEmail || ""} onChange={(e) => setInvoice({ ...invoice, clientEmail: e.target.value })} placeholder="manager@email.com" /></Field><Field label="Property"><select className="inputElite" value={invoice.property} onChange={(e) => { const selected = e.target.value; const profile = getProfileForProperty(selected); setInvoice({ ...invoice, property: selected, clientName: invoice.clientName || profile.billingName || selected, clientEmail: invoice.clientEmail || profile.email || "" }); }}>{properties.map((property) => <option key={property} value={property}>{property}</option>)}</select></Field><Field label="Unit #"><input className="inputElite" value={invoice.unitNumber} onChange={(e) => setInvoice({ ...invoice, unitNumber: e.target.value })} /></Field><Field label="Invoice Date"><input className="inputElite" type="date" value={invoice.invoiceDate} onChange={(e) => setInvoice({ ...invoice, invoiceDate: e.target.value })} /></Field><Field label="Due Date"><input className="inputElite" type="date" value={invoice.dueDate} onChange={(e) => setInvoice({ ...invoice, dueDate: e.target.value })} /></Field><Field label="Paid Amount"><MoneyInput value={invoice.paidAmount} onValueChange={(value) => { const cleanValue = safeNumber(value); if (cleanValue >= total && total > 0) { if (!confirmAction("Confirm: mark this invoice paid?")) return; setInvoice({ ...invoice, paidAmount: cleanValue, status: "paid" }); return; } setInvoice({ ...invoice, paidAmount: cleanValue, status: invoice.status === "paid" ? "sent" : invoice.status }); }} /></Field></div><Field label="Line Items"><div className="space-y-3">{invoice.lineItems.map((line) => <div key={line.id} className="rounded-2xl border border-zinc-800 bg-black/25 p-3"><Field label="Description"><input className="inputElite" value={line.description} onChange={(e) => setInvoice({ ...invoice, lineItems: invoice.lineItems.map((item) => item.id === line.id ? { ...item, description: e.target.value } : item) })} /></Field><div className="mt-2 grid grid-cols-[1fr_1fr_auto] gap-2"><Field label="Qty"><input className="inputElite" type="number" value={line.qty} onChange={(e) => setInvoice({ ...invoice, lineItems: invoice.lineItems.map((item) => item.id === line.id ? { ...item, qty: safeNumber(e.target.value) } : item) })} /></Field><Field label="Rate"><MoneyInput value={line.rate} onValueChange={(value) => setInvoice({ ...invoice, lineItems: invoice.lineItems.map((item) => item.id === line.id ? { ...item, rate: value } : item) })} /></Field><button className="iconDanger self-end" onClick={() => { if (!confirmAction("Remove this line item from the invoice?")) return; setInvoice({ ...invoice, lineItems: invoice.lineItems.filter((item) => item.id !== line.id) }); }}><Trash2 size={16} /></button></div></div>)}<button className="darkButton w-full" onClick={() => setInvoice({ ...invoice, lineItems: [...invoice.lineItems, { id: uid(), description: "New line item", qty: 1, rate: 0 }] })}><Plus size={16} /> Add Line Item</button></div></Field><div className="rounded-2xl border border-green-400/20 bg-green-500/10 p-3 text-right"><p className="text-xs font-black uppercase text-green-400">Invoice Total</p><p className="text-2xl font-black">{money(total)}</p><p className="mt-1 text-xs font-semibold text-zinc-400">Phase 4 designer will use this amount on the PDF-ready preview.</p></div><div className="rounded-2xl border border-blue-400/20 bg-blue-500/10 p-3 text-xs font-semibold text-blue-100"><b>Preview PDF Tip:</b> Add before/after photos here, then tap Preview PDF on the invoice card to review the professional layout before printing, saving as PDF, or emailing.</div><Field label="Before Photos"><InvoicePhotoPicker photos={invoice.beforePhotos || []} label="Add Before Photos" onChange={(photos) => setInvoice({ ...invoice, beforePhotos: photos })} /></Field><Field label="After / Completed Job Photos"><InvoicePhotoPicker photos={invoice.afterPhotos || []} label="Add After Photos" onChange={(photos) => setInvoice({ ...invoice, afterPhotos: photos })} /></Field><Field label="Notes / Terms"><textarea className="inputElite min-h-24" value={invoice.notes} onChange={(e) => setInvoice({ ...invoice, notes: e.target.value })} /></Field><div className="grid grid-cols-2 gap-2"><button className="goldButton" onClick={() => { const cleanTotal = invoiceTotal(invoice); const cleanPaid = safeNumber(invoice.paidAmount); const cleanStatus = invoice.status === "paid" && !(cleanTotal > 0 && cleanPaid >= cleanTotal) ? "sent" : invoice.status; onSave({ ...invoice, paidAmount: cleanPaid, status: cleanStatus }); }}><Check size={18} /> Save Invoice</button><button className="darkButton" onClick={() => { const cleanTotal = invoiceTotal(invoice); const cleanPaid = safeNumber(invoice.paidAmount); const cleanInvoice = { ...invoice, status: invoice.status === "paid" && !(cleanTotal > 0 && cleanPaid >= cleanTotal) ? "sent" as Invoice["status"] : invoice.status, paidAmount: cleanPaid }; setInvoice(cleanInvoice); printInvoiceDocument(cleanInvoice, cleanInvoice.beforePhotos || [], cleanInvoice.afterPhotos || []); }}><Eye size={18} /> Preview PDF</button><button className="darkButton col-span-2" onClick={() => openInvoiceEmail({ ...invoice, status: invoice.status === "paid" && !(invoiceTotal(invoice) > 0 && safeNumber(invoice.paidAmount) >= invoiceTotal(invoice)) ? "sent" : invoice.status })}><Mail size={18} /> Email After Preview</button></div></div></Modal>;
+  return <Modal title={initial ? "Edit Invoice" : "New Invoice"} onClose={onClose}><div className="space-y-3"><div className="grid grid-cols-2 gap-3"><Field label="Invoice #"><input className="inputElite" value={invoice.invoiceNumber} onChange={(e) => setInvoice({ ...invoice, invoiceNumber: e.target.value })} /></Field><Field label="Status"><select className="inputElite" value={invoice.status} onChange={(e) => setInvoice({ ...invoice, status: e.target.value as Invoice["status"] })}><option value="due">Due</option><option value="sent">Sent</option><option value="paid">Paid</option><option value="overdue">Overdue</option></select></Field><Field label="Client"><input className="inputElite" value={invoice.clientName} onChange={(e) => setInvoice({ ...invoice, clientName: e.target.value })} placeholder="Example: Wingate Companies" /></Field><Field label="Client Email"><input className="inputElite" type="email" value={invoice.clientEmail || ""} onChange={(e) => setInvoice({ ...invoice, clientEmail: e.target.value })} placeholder="manager@email.com" /></Field><Field label="Property"><select className="inputElite" value={invoice.property} onChange={(e) => { const selected = e.target.value; const profile = getProfileForProperty(selected); setInvoice({ ...invoice, property: selected, propertyAddress: profile.address || "", clientName: invoice.clientName || profile.billingName || selected, clientEmail: invoice.clientEmail || profile.email || "" }); }}>{properties.map((property) => <option key={property} value={property}>{property}</option>)}</select></Field><Field label="Unit #"><input className="inputElite" value={invoice.unitNumber} onChange={(e) => setInvoice({ ...invoice, unitNumber: e.target.value })} /></Field><Field label="Invoice Date"><input className="inputElite" type="date" value={invoice.invoiceDate} onChange={(e) => setInvoice({ ...invoice, invoiceDate: e.target.value })} /></Field><Field label="Due Date"><input className="inputElite" type="date" value={invoice.dueDate} onChange={(e) => setInvoice({ ...invoice, dueDate: e.target.value })} /></Field><Field label="Paid Amount"><MoneyInput value={invoice.paidAmount} onValueChange={(value) => { const cleanValue = safeNumber(value); if (cleanValue >= total && total > 0) { if (!confirmAction("Confirm: mark this invoice paid?")) return; setInvoice({ ...invoice, paidAmount: cleanValue, status: "paid" }); return; } setInvoice({ ...invoice, paidAmount: cleanValue, status: invoice.status === "paid" ? "sent" : invoice.status }); }} /></Field></div><Field label="Line Items"><div className="space-y-3">{invoice.lineItems.map((line) => <div key={line.id} className="rounded-2xl border border-zinc-800 bg-black/25 p-3"><Field label="Description"><input className="inputElite" value={line.description} onChange={(e) => setInvoice({ ...invoice, lineItems: invoice.lineItems.map((item) => item.id === line.id ? { ...item, description: e.target.value } : item) })} /></Field><div className="mt-2 grid grid-cols-[1fr_1fr_auto] gap-2"><Field label="Qty"><input className="inputElite" type="number" value={line.qty} onChange={(e) => setInvoice({ ...invoice, lineItems: invoice.lineItems.map((item) => item.id === line.id ? { ...item, qty: safeNumber(e.target.value) } : item) })} /></Field><Field label="Rate"><MoneyInput value={line.rate} onValueChange={(value) => setInvoice({ ...invoice, lineItems: invoice.lineItems.map((item) => item.id === line.id ? { ...item, rate: value } : item) })} /></Field><button className="iconDanger self-end" onClick={() => { if (!confirmAction("Remove this line item from the invoice?")) return; setInvoice({ ...invoice, lineItems: invoice.lineItems.filter((item) => item.id !== line.id) }); }}><Trash2 size={16} /></button></div></div>)}<button className="darkButton w-full" onClick={() => setInvoice({ ...invoice, lineItems: [...invoice.lineItems, { id: uid(), description: "New line item", qty: 1, rate: 0 }] })}><Plus size={16} /> Add Line Item</button></div></Field><div className="rounded-2xl border border-green-400/20 bg-green-500/10 p-3 text-right"><p className="text-xs font-black uppercase text-green-400">Invoice Total</p><p className="text-2xl font-black">{money(total)}</p><p className="mt-1 text-xs font-semibold text-zinc-400">Phase 4 designer will use this amount on the PDF-ready preview.</p></div><div className="rounded-2xl border border-blue-400/20 bg-blue-500/10 p-3 text-xs font-semibold text-blue-100"><b>Preview PDF Tip:</b> Add before/after photos here, then tap Preview PDF on the invoice card to review the professional layout before printing, saving as PDF, or emailing.</div><Field label="Before Photos"><InvoicePhotoPicker photos={invoice.beforePhotos || []} label="Add Before Photos" onChange={(photos) => setInvoice({ ...invoice, beforePhotos: photos })} /></Field><Field label="After / Completed Job Photos"><InvoicePhotoPicker photos={invoice.afterPhotos || []} label="Add After Photos" onChange={(photos) => setInvoice({ ...invoice, afterPhotos: photos })} /></Field><Field label="Notes / Terms"><textarea className="inputElite min-h-24" value={invoice.notes} onChange={(e) => setInvoice({ ...invoice, notes: e.target.value })} /></Field><div className="grid grid-cols-2 gap-2"><button className="goldButton" onClick={() => { const cleanTotal = invoiceTotal(invoice); const cleanPaid = safeNumber(invoice.paidAmount); const cleanStatus = invoice.status === "paid" && !(cleanTotal > 0 && cleanPaid >= cleanTotal) ? "sent" : invoice.status; onSave({ ...invoice, paidAmount: cleanPaid, status: cleanStatus }); }}><Check size={18} /> Save Invoice</button><button className="darkButton" onClick={() => { const cleanTotal = invoiceTotal(invoice); const cleanPaid = safeNumber(invoice.paidAmount); const cleanInvoice = { ...invoice, status: invoice.status === "paid" && !(cleanTotal > 0 && cleanPaid >= cleanTotal) ? "sent" as Invoice["status"] : invoice.status, paidAmount: cleanPaid }; setInvoice(cleanInvoice); printInvoiceDocument(cleanInvoice, cleanInvoice.beforePhotos || [], cleanInvoice.afterPhotos || []); }}><Eye size={18} /> Preview PDF</button><button className="darkButton col-span-2" onClick={() => openInvoiceEmail({ ...invoice, status: invoice.status === "paid" && !(invoiceTotal(invoice) > 0 && safeNumber(invoice.paidAmount) >= invoiceTotal(invoice)) ? "sent" : invoice.status })}><Mail size={18} /> Email After Preview</button></div></div></Modal>;
 }
 
 function InvoicePhotoPicker({ photos, label, onChange }: { photos: string[]; label: string; onChange: (photos: string[]) => void }) {
