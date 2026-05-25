@@ -43,6 +43,7 @@ import {
 // 1 STOP TURNOVER SPECIALIST PRO ELITE - OPERATIONS X
 // PHASE 13 single-file replacement for app/page.tsx
 // Property address persistence + assignment preset dropdown fix
+// PHASE 19: Work Order Templates dropdown
 
 const STORAGE_KEY = "oneStopPayrollProEliteBlackGoldX_v1";
 const PROPERTY_PROFILES_KEY = "oneStopPropertyProfiles_v1";
@@ -339,6 +340,52 @@ const assignmentPresets: { label: string; english: string; spanish: string }[] =
     spanish: "",
   },
 ];
+
+
+const workOrderTemplates: {
+  label: string;
+  jobTypes: string[];
+  customWork: string;
+  notes: string;
+  priority: "normal" | "urgent";
+}[] = [
+  {
+    label: "Water Leak Turnover",
+    jobTypes: ["Repair Damage Walls Due To Water Leak", "Full Unit Painting"],
+    customWork: "Prime affected areas as needed.\nPaint repaired walls and complete touch-ups.\nClean work area when finished.",
+    notes: "Take before and after photos of water damage repairs.",
+    priority: "urgent",
+  },
+  {
+    label: "Full Paint Turnover",
+    jobTypes: ["Full Unit Painting"],
+    customWork: "Prep walls before painting.\nRepair minor wall imperfections as needed.\nApply two coats where required.\nComplete final touch-ups.",
+    notes: "Take completion photos before leaving unit.",
+    priority: "normal",
+  },
+  {
+    label: "Trash Out",
+    jobTypes: ["Trash Removal"],
+    customWork: "Remove trash and unwanted items from the unit.\nSweep affected areas.\nNotify office if large items or hazardous materials are found.",
+    notes: "Take before and after photos of all removed trash areas.",
+    priority: "normal",
+  },
+  {
+    label: "Occupied Unit Repair",
+    jobTypes: ["Occupied Unit", "Repair Damage Walls"],
+    customWork: "Complete assigned repair inside occupied unit.\nProtect resident belongings.\nKeep work area clean before leaving.",
+    notes: "Communicate any access issue or additional repair needed.",
+    priority: "normal",
+  },
+  {
+    label: "Make Ready Touch Ups",
+    jobTypes: ["Touch Ups", "Finish Painting"],
+    customWork: "Complete paint and repair touch-ups as needed.\nCheck details before leaving.\nClean work area when finished.",
+    notes: "Confirm unit is ready for final inspection.",
+    priority: "normal",
+  },
+];
+
 
 function assignmentScopeFor(label: string, language: AssignmentLanguage) {
   const preset = assignmentPresets.find((item) => item.label === label);
@@ -2014,8 +2061,19 @@ function JobModal({ employees, properties, jobTypeOptions, getAddressForProperty
   const [assignmentAddress, setAssignmentAddress] = useState(getAddressForProperty(property));
   const [assignmentPriority, setAssignmentPriority] = useState<WorkAssignment["priority"]>("normal");
   const [assignmentLanguage, setAssignmentLanguage] = useState<AssignmentLanguage>("spanish");
+  const [selectedWorkTemplate, setSelectedWorkTemplate] = useState("");
 
   function toggleType(type: string) { setSelectedTypes((prev) => (prev.includes(type) ? prev.filter((item) => item !== type) : [...prev, type])); }
+
+  function applyWorkOrderTemplate(label: string) {
+    setSelectedWorkTemplate(label);
+    const template = workOrderTemplates.find((item) => item.label === label);
+    if (!template) return;
+    setSelectedTypes(template.jobTypes);
+    setCustomWork(template.customWork);
+    setAssignmentPriority(template.priority);
+    if (!notes.trim()) setNotes(template.notes);
+  }
 
   const assignedEmployee = employees.find((employee) => employee.id === employeeId);
   const scopeText = [...selectedTypes, customWork].filter(Boolean).join("\n") || "Job details to be confirmed.";
@@ -2056,7 +2114,7 @@ function JobModal({ employees, properties, jobTypeOptions, getAddressForProperty
     onSave(job, assignment);
   }
 
-  return <Modal title="New Work Order Entry" onClose={onClose}><div className="space-y-3"><div className="rounded-2xl border border-green-400/20 bg-green-500/10 p-3 text-sm font-semibold text-green-100"><b>One entry workflow:</b> this saves the payroll job and can create the employee assignment message at the same time.</div><Operations label="Employee / Assigned To"><select className="inputElite" value={employeeId} onChange={(e) => setEmployeeId(e.target.value)}>{employees.map((employee) => <option key={employee.id} value={employee.id}>{employee.name}</option>)}</select></Operations><div className="grid grid-cols-2 gap-3"><Operations label="Date"><input className="inputElite cursor-pointer" type="date" value={date} onClick={(e) => e.currentTarget.showPicker?.()} onFocus={(e) => e.currentTarget.showPicker?.()} onChange={(e) => setDate(e.target.value)} /></Operations><Operations label="Property"><select className="inputElite" value={property} onChange={(e) => { const selected = e.target.value; if (selected === "__add_new_property__") { const entered = window.prompt("Enter new property name:"); const cleanProperty = entered?.trim() || ""; if (cleanProperty) { onAddProperty(cleanProperty); setProperty(cleanProperty); setAssignmentAddress(""); } return; } setProperty(selected); setAssignmentAddress(getAddressForProperty(selected)); }}>{properties.map((item) => <option key={item} value={item}>{item}</option>)}<option value="__add_new_property__">+ Add New Property</option></select></Operations></div><Operations label="Unit #"><input className="inputElite" value={unitNumber} onChange={(e) => setUnitNumber(e.target.value)} placeholder="Example: 212" /></Operations><Operations label="Work Type"><div className="grid grid-cols-2 gap-2">{jobTypeOptions.map((type) => <button type="button" key={type} onClick={() => toggleType(type)} className={`rounded-xl border px-3 py-2 text-left text-xs font-bold ${selectedTypes.includes(type) ? "border-green-400/50 bg-green-500/20 text-green-300" : "border-zinc-800 bg-black/30 text-zinc-400"}`}>{selectedTypes.includes(type) ? "✓ " : ""}{type}</button>)}</div></Operations><Operations label="Custom Work"><input className="inputElite" value={customWork} onChange={(e) => setCustomWork(e.target.value)} placeholder="Extra work description" /></Operations><div className="grid grid-cols-2 gap-3"><Operations label="Pay"><MoneyInput value={pay} onValueChange={setPay} placeholder="Enter Amount" /></Operations><Operations label="Paid"><MoneyInput value={paidAmount} onValueChange={setPaidAmount} placeholder="Enter Amount" /></Operations></div><div className="rounded-2xl border border-white/10 bg-black/25 p-3"><label className="flex items-center gap-3 text-sm font-black text-zinc-100"><input type="checkbox" checked={createAssignment} onChange={(e) => setCreateAssignment(e.target.checked)} /> Create employee assignment message</label>{createAssignment && <div className="mt-3 space-y-3"><Operations label="Job Address for Message"><input className="inputElite" value={assignmentAddress} onChange={(e) => setAssignmentAddress(e.target.value)} placeholder="460 Charles St, Providence RI" /></Operations><div className="grid grid-cols-2 gap-3"><Operations label="Priority"><select className="inputElite" value={assignmentPriority} onChange={(e) => setAssignmentPriority(e.target.value as WorkAssignment["priority"])}><option value="normal">Normal</option><option value="urgent">Urgent</option></select></Operations><Operations label="Language"><select className="inputElite" value={assignmentLanguage} onChange={(e) => setAssignmentLanguage(e.target.value as AssignmentLanguage)}><option value="spanish">Español</option><option value="english">English</option><option value="both">Both</option></select></Operations></div><div className="rounded-2xl border border-green-400/20 bg-green-500/10 p-3"><p className="mb-2 text-xs font-black uppercase text-green-400">Message Preview</p><pre className="max-h-48 overflow-y-auto whitespace-pre-wrap rounded-xl bg-black/40 p-3 text-xs font-semibold text-zinc-200">{buildAssignmentMessage(assignmentPreview, assignedEmployee?.name || "")}</pre></div></div>}</div><Operations label="Photos"><div className="rounded-2xl border border-dashed border-zinc-800 bg-black/30 p-4"><div className="grid grid-cols-2 gap-2"><label className="goldButton w-full cursor-pointer"><Camera size={18} /> Take Photo<input type="file" accept="image/*" multiple capture="environment" className="hidden" onChange={async (e) => { const newPhotos = await readPhotoFiles(e.target.files); setPhotos((prev) => [...prev, ...newPhotos]); e.currentTarget.value = ""; }} /></label><label className="darkButton w-full cursor-pointer"><ImageIcon size={18} /> Upload<input type="file" accept="image/*" multiple className="hidden" onChange={async (e) => { const newPhotos = await readPhotoFiles(e.target.files); setPhotos((prev) => [...prev, ...newPhotos]); e.currentTarget.value = ""; }} /></label></div>{photos.length > 0 && <p className="mt-3 text-center text-sm text-zinc-400">{photos.length} photo(s) attached.</p>}</div></Operations><Operations label="Notes"><textarea className="inputElite min-h-24" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Notes" /></Operations><button className="goldButton w-full" onClick={saveJobAndAssignment}><Check size={18} /> Save Job{createAssignment ? " + Assignment" : ""}</button></div></Modal>;
+  return <Modal title="New Work Order Entry" onClose={onClose}><div className="space-y-3"><div className="rounded-2xl border border-green-400/20 bg-green-500/10 p-3 text-sm font-semibold text-green-100"><b>One entry workflow:</b> this saves the payroll job and can create the employee assignment message at the same time.</div><Operations label="Employee / Assigned To"><select className="inputElite" value={employeeId} onChange={(e) => setEmployeeId(e.target.value)}>{employees.map((employee) => <option key={employee.id} value={employee.id}>{employee.name}</option>)}</select></Operations><div className="grid grid-cols-2 gap-3"><Operations label="Date"><input className="inputElite cursor-pointer" type="date" value={date} onClick={(e) => e.currentTarget.showPicker?.()} onFocus={(e) => e.currentTarget.showPicker?.()} onChange={(e) => setDate(e.target.value)} /></Operations><Operations label="Property"><select className="inputElite" value={property} onChange={(e) => { const selected = e.target.value; if (selected === "__add_new_property__") { const entered = window.prompt("Enter new property name:"); const cleanProperty = entered?.trim() || ""; if (cleanProperty) { onAddProperty(cleanProperty); setProperty(cleanProperty); setAssignmentAddress(""); } return; } setProperty(selected); setAssignmentAddress(getAddressForProperty(selected)); }}>{properties.map((item) => <option key={item} value={item}>{item}</option>)}<option value="__add_new_property__">+ Add New Property</option></select></Operations></div><Operations label="Unit #"><input className="inputElite" value={unitNumber} onChange={(e) => setUnitNumber(e.target.value)} placeholder="Example: 212" /></Operations><Operations label="Work Order Template"><select className="inputElite" value={selectedWorkTemplate} onChange={(e) => applyWorkOrderTemplate(e.target.value)}><option value="">Choose quick template...</option>{workOrderTemplates.map((template) => <option key={template.label} value={template.label}>{template.label}</option>)}</select></Operations><Operations label="Work Type"><div className="grid grid-cols-2 gap-2">{jobTypeOptions.map((type) => <button type="button" key={type} onClick={() => toggleType(type)} className={`rounded-xl border px-3 py-2 text-left text-xs font-bold ${selectedTypes.includes(type) ? "border-green-400/50 bg-green-500/20 text-green-300" : "border-zinc-800 bg-black/30 text-zinc-400"}`}>{selectedTypes.includes(type) ? "✓ " : ""}{type}</button>)}</div></Operations><Operations label="Custom Work"><input className="inputElite" value={customWork} onChange={(e) => setCustomWork(e.target.value)} placeholder="Extra scope or work description" /></Operations><div className="grid grid-cols-2 gap-3"><Operations label="Pay"><MoneyInput value={pay} onValueChange={setPay} placeholder="Enter Amount" /></Operations><Operations label="Paid"><MoneyInput value={paidAmount} onValueChange={setPaidAmount} placeholder="Enter Amount" /></Operations></div><div className="rounded-2xl border border-white/10 bg-black/25 p-3"><label className="flex items-center gap-3 text-sm font-black text-zinc-100"><input type="checkbox" checked={createAssignment} onChange={(e) => setCreateAssignment(e.target.checked)} /> Create employee assignment message</label>{createAssignment && <div className="mt-3 space-y-3"><Operations label="Job Address for Message"><input className="inputElite" value={assignmentAddress} onChange={(e) => setAssignmentAddress(e.target.value)} placeholder="460 Charles St, Providence RI" /></Operations><div className="grid grid-cols-2 gap-3"><Operations label="Priority"><select className="inputElite" value={assignmentPriority} onChange={(e) => setAssignmentPriority(e.target.value as WorkAssignment["priority"])}><option value="normal">Normal</option><option value="urgent">Urgent</option></select></Operations><Operations label="Language"><select className="inputElite" value={assignmentLanguage} onChange={(e) => setAssignmentLanguage(e.target.value as AssignmentLanguage)}><option value="spanish">Español</option><option value="english">English</option><option value="both">Both</option></select></Operations></div><div className="rounded-2xl border border-green-400/20 bg-green-500/10 p-3"><p className="mb-2 text-xs font-black uppercase text-green-400">Message Preview</p><pre className="max-h-48 overflow-y-auto whitespace-pre-wrap rounded-xl bg-black/40 p-3 text-xs font-semibold text-zinc-200">{buildAssignmentMessage(assignmentPreview, assignedEmployee?.name || "")}</pre></div></div>}</div><Operations label="Photos"><div className="rounded-2xl border border-dashed border-zinc-800 bg-black/30 p-4"><div className="grid grid-cols-2 gap-2"><label className="goldButton w-full cursor-pointer"><Camera size={18} /> Take Photo<input type="file" accept="image/*" multiple capture="environment" className="hidden" onChange={async (e) => { const newPhotos = await readPhotoFiles(e.target.files); setPhotos((prev) => [...prev, ...newPhotos]); e.currentTarget.value = ""; }} /></label><label className="darkButton w-full cursor-pointer"><ImageIcon size={18} /> Upload<input type="file" accept="image/*" multiple className="hidden" onChange={async (e) => { const newPhotos = await readPhotoFiles(e.target.files); setPhotos((prev) => [...prev, ...newPhotos]); e.currentTarget.value = ""; }} /></label></div>{photos.length > 0 && <p className="mt-3 text-center text-sm text-zinc-400">{photos.length} photo(s) attached.</p>}</div></Operations><Operations label="Notes"><textarea className="inputElite min-h-24" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Notes" /></Operations><button className="goldButton w-full" onClick={saveJobAndAssignment}><Check size={18} /> Save Job{createAssignment ? " + Assignment" : ""}</button></div></Modal>;
 }
 
 function MakeReadyModal({ employees, properties, initial, onClose, onSave }: { employees: Employee[]; properties: string[]; initial: MakeReadyItem | null; onClose: () => void; onSave: (item: MakeReadyItem) => void }) {
