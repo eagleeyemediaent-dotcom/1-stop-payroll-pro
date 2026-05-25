@@ -1609,7 +1609,15 @@ function buildAssignmentMessage(assignment: WorkAssignment, employeeName: string
     assignment.status === "sent" ? "Enviado" :
     "Asignado";
 
-  const english = [
+  function compactMessage(lines: Array<string | false | null | undefined>) {
+    return lines
+      .filter((line) => line !== false && line !== null && line !== undefined)
+      .join("\n")
+      .replace(/\n{3,}/g, "\n\n")
+      .trim();
+  }
+
+  const english = compactMessage([
     `🙏 God bless you ${employeeName},`,
     ``,
     `📣 *WORK ORDER ASSIGNMENT* 📣`,
@@ -1619,24 +1627,24 @@ function buildAssignmentMessage(assignment: WorkAssignment, employeeName: string
     ``,
     `📍 *PROPERTY / ADDRESS*`,
     assignment.property,
-    autoAddress,
+    autoAddress || false,
     ``,
-    unitValue ? `🏠 *UNIT:* ${unitValue}` : "",
+    unitValue ? `🏠 *UNIT:* ${unitValue}` : false,
     ``,
     `🛠️ *WORK TO BE COMPLETED*`,
     cleanScopeLines || "• Work details to be confirmed.",
     ``,
     assignment.priority === "urgent" ? `⚠️ *PRIORITY:* URGENT` : `✅ *PRIORITY:* Normal`,
     `📌 *STATUS:* ${englishStatus}`,
-    notes ? `` : "",
-    notes ? `📝 *NOTES:* ${notes}` : "",
+    notes ? `` : false,
+    notes ? `📝 *NOTES:* ${notes}` : false,
     ``,
     `If you have any questions or issues, please contact me directly.`,
     ``,
     `Thank you and God bless 🙏`,
-  ].filter((line) => line !== "").join("\n");
+  ]);
 
-  const spanish = [
+  const spanish = compactMessage([
     `🙏 Dios te bendiga ${employeeName},`,
     ``,
     `📣 *ASIGNACIÓN DE TRABAJO* 📣`,
@@ -1646,22 +1654,22 @@ function buildAssignmentMessage(assignment: WorkAssignment, employeeName: string
     ``,
     `📍 *PROPIEDAD / DIRECCIÓN*`,
     assignment.property,
-    autoAddress,
+    autoAddress || false,
     ``,
-    unitValue ? `🏠 *UNIDAD:* ${unitValue}` : "",
+    unitValue ? `🏠 *UNIDAD:* ${unitValue}` : false,
     ``,
     `🛠️ *TRABAJO A REALIZAR*`,
     cleanScopeLines || "• Detalles del trabajo por confirmar.",
     ``,
     assignment.priority === "urgent" ? `⚠️ *PRIORIDAD:* URGENTE` : `✅ *PRIORIDAD:* Normal`,
     `📌 *ESTATUS:* ${spanishStatus}`,
-    notes ? `` : "",
-    notes ? `📝 *NOTAS:* ${notes}` : "",
+    notes ? `` : false,
+    notes ? `📝 *NOTAS:* ${notes}` : false,
     ``,
     `Cualquier duda o inconveniente, favor de comunicarte conmigo.`,
     ``,
     `Gracias y Dios te bendiga 🙏`,
-  ].filter((line) => line !== "").join("\n");
+  ]);
 
   if (assignment.language === "english") return english;
   if (assignment.language === "spanish") return spanish;
