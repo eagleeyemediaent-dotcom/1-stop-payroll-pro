@@ -205,7 +205,27 @@ const defaultPropertyAddresses: Record<string, string> = {
 };
 
 function getPropertyAddress(property: string) {
-  return defaultPropertyAddresses[property] || "";
+  const clean = normalizePropertyName(property);
+  if (!clean) return "";
+  if (defaultPropertyAddresses[clean]) return defaultPropertyAddresses[clean];
+
+  const key = clean.toLowerCase();
+  const match = Object.keys(defaultPropertyAddresses).find((name) => name.toLowerCase() === key);
+  if (match) return defaultPropertyAddresses[match] || "";
+
+  // Friendly matching fixes cases where the app shows a shortened/highlighted name
+  // like "Charles Place" instead of the full saved key "Charles Place Apartments".
+  if (key.includes("charles place")) return defaultPropertyAddresses["Charles Place Apartments"] || "";
+  if (key.includes("206") && key.includes("broad")) return defaultPropertyAddresses["206 Broad St"] || "";
+  if (key.includes("220") && key.includes("broad")) return defaultPropertyAddresses["220 Broad St"] || "";
+  if (key.includes("228") && key.includes("broad")) return defaultPropertyAddresses["228 Broad St"] || "";
+  if (key.includes("copley")) return defaultPropertyAddresses["Copley Chambers"] || "";
+
+  const looseMatch = Object.keys(defaultPropertyAddresses).find((name) => {
+    const n = name.toLowerCase();
+    return n.includes(key) || key.includes(n.replace(" apartments", "").replace(" chambers", ""));
+  });
+  return looseMatch ? defaultPropertyAddresses[looseMatch] || "" : "";
 }
 
 function normalizePropertyName(name: string) {
@@ -235,7 +255,21 @@ const defaultPropertyProfiles: Record<string, PropertyContactProfile> = {
 };
 
 function getPropertyProfile(property: string): PropertyContactProfile {
-  return defaultPropertyProfiles[property] || { address: getPropertyAddress(property), contactName: "", email: "", phone: "", billingName: property, notes: "" };
+  const clean = normalizePropertyName(property);
+  const key = clean.toLowerCase();
+  const exactName = Object.keys(defaultPropertyProfiles).find((name) => name.toLowerCase() === key);
+  if (exactName) return defaultPropertyProfiles[exactName];
+  if (key.includes("charles place")) return defaultPropertyProfiles["Charles Place Apartments"];
+  if (key.includes("206") && key.includes("broad")) return defaultPropertyProfiles["206 Broad St"];
+  if (key.includes("220") && key.includes("broad")) return defaultPropertyProfiles["220 Broad St"];
+  if (key.includes("228") && key.includes("broad")) return defaultPropertyProfiles["228 Broad St"];
+  if (key.includes("copley")) return defaultPropertyProfiles["Copley Chambers"];
+  const looseName = Object.keys(defaultPropertyProfiles).find((name) => {
+    const n = name.toLowerCase();
+    return n.includes(key) || key.includes(n.replace(" apartments", "").replace(" chambers", ""));
+  });
+  if (looseName) return defaultPropertyProfiles[looseName];
+  return { address: getPropertyAddress(clean), contactName: "", email: "", phone: "", billingName: clean || property, notes: "" };
 }
 
 function getPropertyBillingName(property: string) {
@@ -988,11 +1022,24 @@ export default function PayrollProEliteOperationsX() {
   }, [state.employees, weekJobs, week.start]);
 
   function getSavedPropertyProfile(property: string): PropertyContactProfile {
-    return state.propertyProfiles?.[property] || getPropertyProfile(property);
+    const clean = normalizePropertyName(property);
+    const fallback = getPropertyProfile(clean);
+    const savedProfiles = state.propertyProfiles || {};
+    const savedKey = Object.keys(savedProfiles).find((name) => name === clean || name.toLowerCase() === clean.toLowerCase());
+    const saved = savedKey ? savedProfiles[savedKey] : undefined;
+
+    // Important: do not let an older saved blank address erase the default/property address.
+    return normalizePropertyProfile(clean, {
+      ...fallback,
+      ...(saved || {}),
+      address: saved?.address?.trim() || fallback.address || getPropertyAddress(clean),
+      billingName: saved?.billingName?.trim() || fallback.billingName || clean,
+    });
   }
 
   function getSavedPropertyAddress(property: string) {
-    return getSavedPropertyProfile(property).address || getPropertyAddress(property);
+    const profileAddress = getSavedPropertyProfile(property).address?.trim();
+    return profileAddress || getPropertyAddress(property);
   }
 
   function getSavedPropertyBillingName(property: string) {
