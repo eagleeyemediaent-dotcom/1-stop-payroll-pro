@@ -43,7 +43,7 @@ import {
 // 1 STOP TURNOVER SPECIALIST PRO ELITE - OPERATIONS X
 // PHASE 13 single-file replacement for app/page.tsx
 // Property address persistence + assignment preset dropdown fix
-// PHASE 19: Work Order Templates dropdown
+// PHASE 21: 4-tab cleanup + Work Orders and Turnover merged into one flow
 
 const STORAGE_KEY = "oneStopPayrollProEliteBlackGoldX_v1";
 const PROPERTY_PROFILES_KEY = "oneStopPropertyProfiles_v1";
@@ -378,7 +378,7 @@ const workOrderTemplates: {
     priority: "normal",
   },
   {
-    label: "Make Ready Touch Ups",
+    label: "Turnover Touch Ups",
     jobTypes: ["Touch Ups", "Finish Painting"],
     customWork: "Complete paint and repair touch-ups as needed.\nCheck details before leaving.\nClean work area when finished.",
     notes: "Confirm unit is ready for final inspection.",
@@ -707,7 +707,7 @@ function printInvoiceDocument(invoice: Invoice, beforePhotos: string[] = [], aft
         <img src="/icon-192.png" alt="1 Stop logo" />
         <div>
           <h1 class="company">1 Stop Turnover Specialist LLC</h1>
-          <p class="tagline">Turnover • Painting • Repairs • Make Ready</p>
+          <p class="tagline">Turnover • Painting • Repairs • Work Orders</p>
         </div>
       </div>
       <div class="invoiceTitle">
@@ -1159,9 +1159,9 @@ Enter the amount you are charging the company for this work.`
 
   function createInvoiceFromMakeReady(item: MakeReadyItem) {
     const chargeText = window.prompt(
-      `Create invoice for this Make Ready
+      `Create invoice for this turnover work order
 
-Unit: ${makeReadyTitle(item)}
+Work Order Unit: ${makeReadyTitle(item)}
 
 Enter the amount you are charging the company.`
     );
@@ -1190,7 +1190,7 @@ Enter the amount you are charging the company.`
       sourceMakeReadyId: item.id,
       lineItems: [{
         id: uid(),
-        description: `Make Ready — ${makeReadyTitle(item)}${completed ? ` — Completed: ${completed}` : ""}`,
+        description: `Turnover Work Order — ${makeReadyTitle(item)}${completed ? ` — Completed: ${completed}` : ""}`,
         qty: 1,
         rate: chargeAmount,
       }],
@@ -1310,7 +1310,7 @@ Enter the amount you are charging the company.`
             <button onClick={() => setShowJobForm(true)} className="mt-5 flex w-full items-center justify-center gap-3 rounded-[1.15rem] border border-green-300/20 bg-gradient-to-r from-green-500 to-green-600 px-5 py-4 text-xl font-black text-white shadow-[0_20px_45px_rgba(34,197,94,0.24)] transition active:scale-[.99]">
               <Plus size={30} /> New Work Order
             </button>
-            <p className="mt-3 text-center text-xs font-semibold text-zinc-500">Payroll, turnovers, make ready, and invoices in one app.</p>
+            <p className="mt-3 text-center text-xs font-semibold text-zinc-500">Payroll, turnovers, work orders, and invoices in one app.</p>
           </>
         )}
 
@@ -1329,7 +1329,7 @@ Enter the amount you are charging the company.`
             </div>
 
             <div className="mt-3 rounded-2xl border border-green-400/20 bg-green-500/10 p-3 text-xs font-semibold text-green-200">
-              Office shows the money side: payroll cost, employee balances, invoices, and company charges. Operations stays clean for job entry and photos.
+              Office shows the money side: payroll cost, employee balances, invoices, and company charges. Work Orders stays clean for job entry and photos.
             </div>
           </>
         )}
@@ -1339,12 +1339,12 @@ Enter the amount you are charging the company.`
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" size={18} />
             <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search employee, property, work order, invoice..." className="w-full rounded-2xl border border-zinc-800 bg-zinc-950 py-2 pl-10 pr-3 text-sm outline-none ring-amber-400/40 placeholder:text-zinc-500 focus:border-green-400/60 focus:ring-4" />
           </div>
-          <p className="mt-2 text-xs text-zinc-500">{activeTab === "field" ? <><span className="font-black text-green-400">Operations mode:</span> jobs, worker pay, units, make ready, and photos.</> : activeTab === "office" || activeTab === "invoices" ? <><span className="font-black text-green-400">Office mode:</span> invoices, company charges, customer balances, and billing.</> : <>Historical work orders stay saved.</>}</p>
+          <p className="mt-2 text-xs text-zinc-500">{activeTab === "field" ? <><span className="font-black text-green-400">Work mode:</span> work orders, worker pay, units, turnover work, and photos.</> : activeTab === "office" || activeTab === "invoices" ? <><span className="font-black text-green-400">Office mode:</span> invoices, company charges, customer balances, and billing.</> : <>Historical work orders stay saved.</>}</p>
         </div>
 
         <main className="mt-5">
           {activeTab === "dashboard" && (
-            <Dashboard employeeTotals={employeeTotals} filteredJobs={filteredJobs} employeesById={employeesById} makeReadyTotals={makeReadyTotals} totals={totals} onAddJob={() => setShowJobForm(true)} onGoEmployees={() => setActiveTab("employees")} onGoReports={() => setActiveTab("reports")} onGoMakeReady={() => { setActiveTab("field"); setOpsView("makeReady"); }} onGoInvoices={() => { setActiveTab("office"); setOpsView("invoices"); }} />
+            <Dashboard employeeTotals={employeeTotals} filteredJobs={filteredJobs} employeesById={employeesById} makeReadyTotals={makeReadyTotals} totals={totals} onAddJob={() => setShowJobForm(true)} onGoEmployees={() => setActiveTab("employees")} onGoReports={() => setActiveTab("reports")} onGoMakeReady={() => { setActiveTab("field"); setOpsView("jobs"); }} onGoInvoices={() => { setActiveTab("office"); setOpsView("invoices"); }} />
           )}
 
           {activeTab === "employees" && (
@@ -1363,15 +1363,12 @@ Enter the amount you are charging the company.`
 
           {(activeTab === "field" || activeTab === "ops" || activeTab === "jobs" || activeTab === "makeReady") && (
             <section className="space-y-4">
-              <SectionTop title="Work Area" subtitle="One place for work orders, assigned employees, photos, make ready, and invoice creation.">
-                <div className="flex flex-col gap-2">
-                  <button onClick={() => setShowJobForm(true)} className="goldButton"><Plus size={18} /> New Work Order</button>
-                  <button onClick={() => { setEditingMakeReady(null); setShowMakeReadyForm(true); }} className="darkButton"><ClipboardCheck size={16} /> Add Make Ready</button>
-                </div>
+              <SectionTop title="Work Orders" subtitle="One field area: regular work, turnover work, assigned employee, photos, pay, and invoice creation.">
+                <button onClick={() => setShowJobForm(true)} className="goldButton"><Plus size={18} /> New Work Order</button>
               </SectionTop>
 
               <div className="rounded-2xl border border-blue-400/20 bg-blue-500/10 p-3 text-sm font-semibold text-blue-200">
-                Simplified: no separate Assign tab. Choose the employee while creating the work order. Tap any card to open details only when you need them.
+                Simplified: no separate Assign or Turnover Work tabs. Create one Work Order, assign the employee inside it, and tap the card only when you need details.
               </div>
 
               <JobList jobs={filteredJobs} employees={state.employees} employeesById={employeesById} properties={state.properties} jobTypeOptions={state.jobTypeOptions} onDelete={(id) => setConfirmDelete({ type: "job", id })} onUpdate={updateJob} onCreateInvoice={createInvoiceFromJob} />
@@ -1490,12 +1487,12 @@ function AppMobileHeader({ companyName, activeTab, setActiveTab }: { companyName
   const [menuOpen, setMenuOpen] = useState(false);
   const menuItems: { tab: ActiveTab; label: string; subtitle: string; icon: React.ReactNode }[] = [
     { tab: "dashboard", label: "Home", subtitle: "Command center", icon: <Home size={20} /> },
-    { tab: "field", label: "Operations", subtitle: "Work orders, make ready, photos", icon: <BriefcaseBusiness size={20} /> },
+    { tab: "field", label: "Work Orders", subtitle: "Jobs, turnover work, photos", icon: <BriefcaseBusiness size={20} /> },
     { tab: "office", label: "Office", subtitle: "Office Pipeline, charges, billing", icon: <ReceiptText size={20} /> },
     { tab: "employees", label: "Employees", subtitle: "Employees and balances", icon: <Users size={20} /> },
-    { tab: "reports", label: "Reports", subtitle: "Payroll closeout", icon: <ClipboardList size={20} /> },
     { tab: "properties", label: "Properties", subtitle: "Property dropdown list", icon: <Building2 size={20} /> },
-    { tab: "more", label: "More", subtitle: "Backup and restore", icon: <MoreVertical size={20} /> },
+    { tab: "reports", label: "Reports", subtitle: "Payroll closeout", icon: <ClipboardList size={20} /> },
+    { tab: "more", label: "Backup / More", subtitle: "Export, import, restore", icon: <MoreVertical size={20} /> },
   ];
   function goTo(tab: ActiveTab) { setActiveTab(tab); setMenuOpen(false); }
   return (
@@ -1505,7 +1502,7 @@ function AppMobileHeader({ companyName, activeTab, setActiveTab }: { companyName
           <div className="flex min-w-0 items-center gap-3">
             <button type="button" aria-label="Open navigation menu" onClick={() => setMenuOpen(true)} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.04] text-zinc-100 shadow-lg transition active:scale-95"><span className="text-2xl leading-none">☰</span></button>
             <img src="/icon-192.png" alt="1 Stop Turnover Specialist logo" className="h-12 w-12 shrink-0 rounded-2xl border border-white/10 bg-black object-cover shadow-[0_0_24px_rgba(34,197,94,0.18)]" />
-            <div className="min-w-0"><h1 className="truncate text-lg font-black leading-tight">1 Stop Ops Pro</h1><p className="truncate text-xs font-semibold text-zinc-400">Work Orders • Employees • Office</p></div>
+            <div className="min-w-0"><h1 className="truncate text-lg font-black leading-tight">1 Stop Ops Pro</h1><p className="truncate text-xs font-semibold text-zinc-400">Home • Work • Office • Employees</p></div>
           </div>
           <div className="flex items-center gap-2 text-zinc-100"><button type="button" aria-label="Go to office" onClick={() => goTo("office")} className="flex h-10 w-10 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.04] transition active:scale-95"><ReceiptText size={21} /></button><button type="button" aria-label="Open more controls" onClick={() => goTo("more")} className="flex h-10 w-10 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.04] transition active:scale-95"><MoreVertical size={21} /></button></div>
         </div>
@@ -1547,7 +1544,7 @@ function Dashboard({ employeeTotals, filteredJobs, employeesById, makeReadyTotal
         <SectionTop title="Command Center" subtitle="Fast view. Tap only what you need." />
         <div className="grid grid-cols-2 gap-3">
           <QuickTile onClick={onAddJob} icon={<Plus />} title="New Work" subtitle="Create order" />
-          <QuickTile onClick={onGoMakeReady} icon={<BriefcaseBusiness />} title="Work Area" subtitle="Orders + make ready" />
+          <QuickTile onClick={onGoMakeReady} icon={<BriefcaseBusiness />} title="Work Orders" subtitle="Jobs + turnover" />
           <QuickTile onClick={onGoInvoices} icon={<ReceiptText />} title="Office" subtitle={`${money(totals.invoiceOpen)} open`} />
           <QuickTile onClick={onGoEmployees} icon={<Users />} title="Employees" subtitle="Names + balances" />
         </div>
@@ -1764,7 +1761,7 @@ function openAssignmentWhatsApp(assignment: WorkAssignment, employee: Employee |
 }
 
 function AssignmentBoard({ assignments, employeesById, onAdd, onEdit, onDelete, onUpdate }: { assignments: WorkAssignment[]; employees: Employee[]; employeesById: Map<string, Employee>; onAdd: () => void; onEdit: (item: WorkAssignment) => void; onDelete: (id: string) => void; onUpdate: (item: WorkAssignment) => void }) {
-  if (assignments.length === 0) return <div className="blackCard p-4"><EmptyText text="No assignments yet. Tap Assign Job to send professional work orders." /><button className="goldButton mt-2 w-full" onClick={onAdd}><Plus size={18} /> Assign Job</button></div>;
+  if (assignments.length === 0) return <div className="blackCard p-4"><EmptyText text="No separate assignments needed. Assign the employee inside the Work Order." /><button className="goldButton mt-2 w-full" onClick={onAdd}><Plus size={18} /> Work Message</button></div>;
   return <div className="grid gap-3">{assignments.map((assignment) => { const employee = employeesById.get(assignment.employeeId); const employeeName = employee?.name || "Employee"; return <div key={assignment.id} className="blackCard p-4"><div className="relative z-10"><div className="flex items-start justify-between gap-3"><div><p className="text-xs font-black uppercase tracking-[0.14em] text-green-400">{assignment.priority === "urgent" ? "Urgent Assignment" : "Work Assignment"}</p><h3 className="mt-1 text-lg font-black">{assignment.property}{assignment.unitNumber ? ` — Unit ${assignment.unitNumber}` : ""}</h3><p className="mt-1 text-xs font-semibold text-zinc-500">{formatAssignmentDate(assignment.date)} • {employeeName}</p></div><span className={`rounded-full border px-3 py-1 text-[10px] font-black uppercase ${assignmentStatusClass(assignment.status)}`}>{assignmentStatusLabel(assignment.status)}</span></div><p className="mt-3 whitespace-pre-wrap rounded-2xl border border-white/10 bg-black/25 p-3 text-sm font-semibold text-zinc-300">{assignment.scope || "No scope added yet."}</p>{assignment.notes && <p className="mt-2 text-xs font-semibold text-zinc-500">Notes: {assignment.notes}</p>}<div className="mt-3 grid grid-cols-2 gap-2"><button className="goldButton" onClick={() => copyAssignmentMessage(assignment, employeeName)}><ClipboardList size={16} /> Copy</button><button className="darkButton" onClick={() => openAssignmentText(assignment, employee)}><FileText size={16} /> Text</button><button className="darkButton" onClick={() => openAssignmentWhatsApp(assignment, employee)}><Mail size={16} /> WhatsApp</button><button className="darkButton" onClick={() => onEdit(assignment)}><Pencil size={16} /> Edit</button></div><div className="mt-2 grid grid-cols-2 gap-2"><select className="inputElite" value={assignment.status} onChange={(e) => onUpdate({ ...assignment, status: e.target.value as AssignmentStatus })}><option value="assigned">Assigned</option><option value="sent">Sent</option><option value="in-progress">In Progress</option><option value="completed">Completed</option><option value="approved">Approved</option><option value="ready-to-invoice">Ready To Invoice</option></select><button className="iconDanger justify-center" onClick={() => onDelete(assignment.id)}><Trash2 size={16} /> Delete</button></div></div></div>; })}</div>;
 }
 
@@ -1785,7 +1782,7 @@ function AssignmentModal({ employees, properties, getAddressForProperty, initial
     setAssignment((prev) => ({ ...prev, language, scope: selectedPreset && selectedPreset !== "Custom" ? assignmentScopeFor(selectedPreset, language) : prev.scope }));
   }
 
-  return <Modal title={initial ? "Edit Assignment" : "Assign Job"} onClose={onClose}><div className="space-y-3"><div className="grid grid-cols-2 gap-2"><Operations label="Employee"><select className="inputElite" value={assignment.employeeId} onChange={(e) => setAssignment({ ...assignment, employeeId: e.target.value })}>{employees.map((employee) => <option key={employee.id} value={employee.id}>{employee.name}</option>)}</select></Operations><Operations label="Date"><input className="inputElite" type="date" value={assignment.date} onChange={(e) => setAssignment({ ...assignment, date: e.target.value })} /></Operations></div><Operations label="Property"><select className="inputElite" value={assignment.property} onChange={(e) => { const selected = e.target.value; setAssignment({ ...assignment, property: selected, address: getAddressForProperty(selected) }); }}>{properties.map((property) => <option key={property} value={property}>{property}</option>)}</select></Operations><Operations label="Address"><input className="inputElite" value={assignment.address} onChange={(e) => setAssignment({ ...assignment, address: e.target.value })} placeholder="460 Charles St, Providence RI" /></Operations><div className="grid grid-cols-2 gap-2"><Operations label="Unit"><input className="inputElite" value={assignment.unitNumber} onChange={(e) => setAssignment({ ...assignment, unitNumber: e.target.value })} placeholder="107" /></Operations><Operations label="Priority"><select className="inputElite" value={assignment.priority} onChange={(e) => setAssignment({ ...assignment, priority: e.target.value as WorkAssignment["priority"] })}><option value="normal">Normal</option><option value="urgent">Urgent</option></select></Operations></div><div className="grid grid-cols-2 gap-2"><Operations label="Language"><select className="inputElite" value={assignment.language} onChange={(e) => updateLanguage(e.target.value as AssignmentLanguage)}><option value="spanish">Español</option><option value="english">English</option><option value="both">Both</option></select></Operations><Operations label="Status"><select className="inputElite" value={assignment.status} onChange={(e) => setAssignment({ ...assignment, status: e.target.value as AssignmentStatus })}><option value="assigned">Assigned</option><option value="sent">Sent</option><option value="in-progress">In Progress</option><option value="completed">Completed</option><option value="approved">Approved</option><option value="ready-to-invoice">Ready To Invoice</option></select></Operations></div><Operations label="Select Job Assignment"><select className="inputElite" value={selectedPreset} onChange={(e) => applyPreset(e.target.value)}><option value="">Choose assignment type...</option>{assignmentPresets.map((preset) => <option key={preset.label} value={preset.label}>{preset.label}</option>)}</select></Operations><Operations label="Scope of Work"><textarea className="inputElite min-h-32" value={assignment.scope} onChange={(e) => { setSelectedPreset("Custom"); setAssignment({ ...assignment, scope: e.target.value }); }} placeholder="Blank until you choose a job assignment or type your custom scope." /></Operations><Operations label="Notes"><textarea className="inputElite min-h-20" value={assignment.notes} onChange={(e) => setAssignment({ ...assignment, notes: e.target.value })} placeholder="Optional notes for employee" /></Operations><div className="rounded-2xl border border-green-400/20 bg-green-500/10 p-3"><p className="mb-2 text-xs font-black uppercase text-green-400">Message Preview</p><pre className="max-h-56 overflow-y-auto whitespace-pre-wrap rounded-xl bg-black/40 p-3 text-xs font-semibold text-zinc-200">{preview}</pre></div><div className="grid grid-cols-2 gap-2"><button className="goldButton" onClick={() => onSave({ ...assignment, address: assignment.address.trim() || getAddressForProperty(assignment.property), createdAt: assignment.createdAt || new Date().toISOString() })}><Check size={18} /> Save</button><button className="darkButton" onClick={() => copyAssignmentMessage(assignment, employeeName)}><ClipboardList size={18} /> Copy</button><button className="darkButton" onClick={() => openAssignmentText(assignment, employee)}><FileText size={18} /> Send Text</button><button className="darkButton" onClick={() => openAssignmentWhatsApp(assignment, employee)}><Mail size={18} /> WhatsApp</button></div></div></Modal>;
+  return <Modal title={initial ? "Edit Assignment" : "Work Message"} onClose={onClose}><div className="space-y-3"><div className="grid grid-cols-2 gap-2"><Operations label="Employee"><select className="inputElite" value={assignment.employeeId} onChange={(e) => setAssignment({ ...assignment, employeeId: e.target.value })}>{employees.map((employee) => <option key={employee.id} value={employee.id}>{employee.name}</option>)}</select></Operations><Operations label="Date"><input className="inputElite" type="date" value={assignment.date} onChange={(e) => setAssignment({ ...assignment, date: e.target.value })} /></Operations></div><Operations label="Property"><select className="inputElite" value={assignment.property} onChange={(e) => { const selected = e.target.value; setAssignment({ ...assignment, property: selected, address: getAddressForProperty(selected) }); }}>{properties.map((property) => <option key={property} value={property}>{property}</option>)}</select></Operations><Operations label="Address"><input className="inputElite" value={assignment.address} onChange={(e) => setAssignment({ ...assignment, address: e.target.value })} placeholder="460 Charles St, Providence RI" /></Operations><div className="grid grid-cols-2 gap-2"><Operations label="Unit"><input className="inputElite" value={assignment.unitNumber} onChange={(e) => setAssignment({ ...assignment, unitNumber: e.target.value })} placeholder="107" /></Operations><Operations label="Priority"><select className="inputElite" value={assignment.priority} onChange={(e) => setAssignment({ ...assignment, priority: e.target.value as WorkAssignment["priority"] })}><option value="normal">Normal</option><option value="urgent">Urgent</option></select></Operations></div><div className="grid grid-cols-2 gap-2"><Operations label="Language"><select className="inputElite" value={assignment.language} onChange={(e) => updateLanguage(e.target.value as AssignmentLanguage)}><option value="spanish">Español</option><option value="english">English</option><option value="both">Both</option></select></Operations><Operations label="Status"><select className="inputElite" value={assignment.status} onChange={(e) => setAssignment({ ...assignment, status: e.target.value as AssignmentStatus })}><option value="assigned">Assigned</option><option value="sent">Sent</option><option value="in-progress">In Progress</option><option value="completed">Completed</option><option value="approved">Approved</option><option value="ready-to-invoice">Ready To Invoice</option></select></Operations></div><Operations label="Select Job Assignment"><select className="inputElite" value={selectedPreset} onChange={(e) => applyPreset(e.target.value)}><option value="">Choose assignment type...</option>{assignmentPresets.map((preset) => <option key={preset.label} value={preset.label}>{preset.label}</option>)}</select></Operations><Operations label="Scope of Work"><textarea className="inputElite min-h-32" value={assignment.scope} onChange={(e) => { setSelectedPreset("Custom"); setAssignment({ ...assignment, scope: e.target.value }); }} placeholder="Blank until you choose a job assignment or type your custom scope." /></Operations><Operations label="Notes"><textarea className="inputElite min-h-20" value={assignment.notes} onChange={(e) => setAssignment({ ...assignment, notes: e.target.value })} placeholder="Optional notes for employee" /></Operations><div className="rounded-2xl border border-green-400/20 bg-green-500/10 p-3"><p className="mb-2 text-xs font-black uppercase text-green-400">Message Preview</p><pre className="max-h-56 overflow-y-auto whitespace-pre-wrap rounded-xl bg-black/40 p-3 text-xs font-semibold text-zinc-200">{preview}</pre></div><div className="grid grid-cols-2 gap-2"><button className="goldButton" onClick={() => onSave({ ...assignment, address: assignment.address.trim() || getAddressForProperty(assignment.property), createdAt: assignment.createdAt || new Date().toISOString() })}><Check size={18} /> Save</button><button className="darkButton" onClick={() => copyAssignmentMessage(assignment, employeeName)}><ClipboardList size={18} /> Copy</button><button className="darkButton" onClick={() => openAssignmentText(assignment, employee)}><FileText size={18} /> Send Text</button><button className="darkButton" onClick={() => openAssignmentWhatsApp(assignment, employee)}><Mail size={18} /> WhatsApp</button></div></div></Modal>;
 }
 
 function JobList({ jobs, employees, employeesById, properties, jobTypeOptions, onDelete, onUpdate, onCreateInvoice }: { jobs: JobEntry[]; employees: Employee[]; employeesById: Map<string, Employee>; properties: string[]; jobTypeOptions: string[]; onDelete: (id: string) => void; onUpdate: (job: JobEntry) => void; onCreateInvoice: (job: JobEntry) => void }) {
@@ -1828,7 +1825,7 @@ Amount: ${money(value)}`)) return; onUpdate({ ...job, paidAmount: value, status:
 function MakeReadyBoard({ items, employees, employeesById, onAdd, onEdit, onDelete, onUpdate, onCreateInvoice, compact = false }: { items: MakeReadyItem[]; employees: Employee[]; employeesById: Map<string, Employee>; onAdd: () => void; onEdit: (item: MakeReadyItem) => void; onDelete: (id: string) => void; onUpdate: (item: MakeReadyItem) => void; onCreateInvoice: (item: MakeReadyItem) => void; compact?: boolean }) {
   const [openBoard, setOpenBoard] = useState(false);
   const urgentCount = items.filter((item) => item.priority === "urgent" && item.status !== "ready").length;
-  return <section className="blackCard overflow-hidden">{!compact && <div className="p-4"><SectionTop title="Make Ready Board" subtitle="Track each unit from move-out to ready for move-in."><button onClick={onAdd} className="goldButton"><Plus size={18} /> Add Unit</button></SectionTop></div>}<button type="button" onClick={() => setOpenBoard(!openBoard)} className="relative z-10 flex w-full items-center justify-between gap-3 p-4 text-left"><div><h3 className="font-black">Make Ready / Turnover</h3><p className="text-xs font-semibold text-zinc-500">{items.length} unit(s) • {urgentCount} urgent • kept inside Work Area</p></div><div className="flex items-center gap-2"><span className="rounded-full border border-blue-400/25 bg-blue-500/10 px-3 py-1 text-xs font-black text-blue-300">Units</span>{openBoard ? <ChevronUp size={18} /> : <ChevronDown size={18} />}</div></button>{openBoard && <div className="relative z-10 grid gap-3 border-t border-white/10 p-3">{items.map((item) => <MakeReadyCard key={item.id} item={item} employee={employeesById.get(item.assignedEmployeeId)} employees={employees} onEdit={() => onEdit(item)} onDelete={() => onDelete(item.id)} onUpdate={onUpdate} onCreateInvoice={() => onCreateInvoice(item)} />)}{items.length === 0 && <div className="p-3"><EmptyText text="No Make Ready units yet. Use Add Make Ready when needed." /></div>}</div>}</section>;
+  return <section className="blackCard overflow-hidden">{!compact && <div className="p-4"><SectionTop title="Turnover Board" subtitle="Track each turnover unit from move-out to ready for move-in."><button onClick={onAdd} className="goldButton"><Plus size={18} /> Add Unit</button></SectionTop></div>}<button type="button" onClick={() => setOpenBoard(!openBoard)} className="relative z-10 flex w-full items-center justify-between gap-3 p-4 text-left"><div><h3 className="font-black">Turnover / Unit Progress</h3><p className="text-xs font-semibold text-zinc-500">{items.length} unit(s) • {urgentCount} urgent • inside Work Orders</p></div><div className="flex items-center gap-2"><span className="rounded-full border border-blue-400/25 bg-blue-500/10 px-3 py-1 text-xs font-black text-blue-300">Units</span>{openBoard ? <ChevronUp size={18} /> : <ChevronDown size={18} />}</div></button>{openBoard && <div className="relative z-10 grid gap-3 border-t border-white/10 p-3">{items.map((item) => <MakeReadyCard key={item.id} item={item} employee={employeesById.get(item.assignedEmployeeId)} employees={employees} onEdit={() => onEdit(item)} onDelete={() => onDelete(item.id)} onUpdate={onUpdate} onCreateInvoice={() => onCreateInvoice(item)} />)}{items.length === 0 && <div className="p-3"><EmptyText text="No turnover units yet. Add them from the Work Orders flow when needed." /></div>}</div>}</section>;
 }
 
 function MakeReadyCard({ item, employee, employees, onEdit, onDelete, onUpdate, onCreateInvoice }: { item: MakeReadyItem; employee?: Employee; employees: Employee[]; onEdit: () => void; onDelete: () => void; onUpdate: (item: MakeReadyItem) => void; onCreateInvoice: () => void }) {
@@ -1968,7 +1965,7 @@ function InvoicePreview({ invoice, total, open, beforePhotos, afterPhotos, onMar
             <img src="/icon-192.png" alt="1 Stop Turnover Specialist LLC logo" className="h-16 w-16 rounded-2xl border border-white/15 bg-black object-cover" />
             <div>
               <h2 className="text-xl font-black leading-tight">1 Stop Turnover Specialist LLC</h2>
-              <p className="text-xs font-semibold text-zinc-400">Turnover • Painting • Repairs • Make Ready</p>
+              <p className="text-xs font-semibold text-zinc-400">Turnover • Painting • Repairs • Work Orders</p>
             </div>
           </div>
           <div className="text-right">
@@ -2040,7 +2037,7 @@ function InvoicePreview({ invoice, total, open, beforePhotos, afterPhotos, onMar
         </div>
 
         <div className="mt-5 rounded-xl border border-zinc-200 bg-zinc-50 p-3 text-center text-xs text-zinc-500">
-          Thank you for your business. God bless. • Your 1 Stop for building repairs, painting, and make ready turnovers.
+          Thank you for your business. God bless. • Your 1 Stop for building repairs, painting, and turnover work turnovers.
         </div>
       </div>
 
@@ -2142,7 +2139,7 @@ function JobModal({ employees, properties, jobTypeOptions, getAddressForProperty
 
 function MakeReadyModal({ employees, properties, initial, onClose, onSave }: { employees: Employee[]; properties: string[]; initial: MakeReadyItem | null; onClose: () => void; onSave: (item: MakeReadyItem) => void }) {
   const [item, setItem] = useState<MakeReadyItem>(initial || { id: uid(), property: properties[0] || "", unitNumber: "", assignedEmployeeId: employees[0]?.id || "", moveOutDate: todayISO(), moveInDate: "", deadline: todayISO(), status: "scheduled", priority: "normal", notes: "", tasks: newMakeReadyTasks() });
-  return <Modal title={initial ? "Edit Make Ready Unit" : "Add Make Ready Unit"} onClose={onClose}><div className="space-y-3"><div className="grid grid-cols-2 gap-3"><Operations label="Property"><select className="inputElite" value={item.property} onChange={(e) => setItem({ ...item, property: e.target.value })}>{properties.map((property) => <option key={property} value={property}>{property}</option>)}</select></Operations><Operations label="Unit #"><input className="inputElite" value={item.unitNumber} onChange={(e) => setItem({ ...item, unitNumber: e.target.value })} /></Operations><Operations label="Assigned"><select className="inputElite" value={item.assignedEmployeeId} onChange={(e) => setItem({ ...item, assignedEmployeeId: e.target.value })}><option value="">Not assigned</option>{employees.map((employee) => <option key={employee.id} value={employee.id}>{employee.name}</option>)}</select></Operations><Operations label="Priority"><select className="inputElite" value={item.priority} onChange={(e) => setItem({ ...item, priority: e.target.value as MakeReadyItem["priority"] })}><option value="normal">Normal</option><option value="urgent">Urgent</option></select></Operations><Operations label="Move-Out"><input className="inputElite" type="date" value={item.moveOutDate} onChange={(e) => setItem({ ...item, moveOutDate: e.target.value })} /></Operations><Operations label="Move-In"><input className="inputElite" type="date" value={item.moveInDate} onChange={(e) => setItem({ ...item, moveInDate: e.target.value })} /></Operations><Operations label="Deadline"><input className="inputElite" type="date" value={item.deadline} onChange={(e) => setItem({ ...item, deadline: e.target.value })} /></Operations><Operations label="Status"><select className="inputElite" value={item.status} onChange={(e) => setItem({ ...item, status: e.target.value as MakeReadyItem["status"] })}><option value="scheduled">Scheduled</option><option value="in-progress">In Progress</option><option value="waiting">Waiting</option><option value="ready">Ready</option></select></Operations></div><Operations label="Checklist"><div className="space-y-2">{item.tasks.map((task) => <div key={task.id} className="grid grid-cols-[auto_1fr_auto] items-center gap-2 rounded-xl border border-zinc-800 bg-black/25 p-2"><input type="checkbox" checked={task.done} onChange={() => setItem({ ...item, tasks: item.tasks.map((row) => row.id === task.id ? { ...row, done: !row.done } : row) })} /><input className="inputElite !py-2" value={task.label} onChange={(e) => setItem({ ...item, tasks: item.tasks.map((row) => row.id === task.id ? { ...row, label: e.target.value } : row) })} /><button className="iconDanger !p-2" onClick={() => setItem({ ...item, tasks: item.tasks.filter((row) => row.id !== task.id) })}><Trash2 size={14} /></button></div>)}<button className="darkButton w-full" onClick={() => setItem({ ...item, tasks: [...item.tasks, { id: uid(), label: "New Task", done: false }] })}><Plus size={16} /> Add Task</button></div></Operations><Operations label="Notes"><textarea className="inputElite min-h-24" value={item.notes} onChange={(e) => setItem({ ...item, notes: e.target.value })} /></Operations><button className="goldButton w-full" onClick={() => onSave(item)}><Check size={18} /> Save Make Ready</button></div></Modal>;
+  return <Modal title={initial ? "Edit Turnover Work Unit" : "Add Turnover Work Unit"} onClose={onClose}><div className="space-y-3"><div className="grid grid-cols-2 gap-3"><Operations label="Property"><select className="inputElite" value={item.property} onChange={(e) => setItem({ ...item, property: e.target.value })}>{properties.map((property) => <option key={property} value={property}>{property}</option>)}</select></Operations><Operations label="Unit #"><input className="inputElite" value={item.unitNumber} onChange={(e) => setItem({ ...item, unitNumber: e.target.value })} /></Operations><Operations label="Assigned"><select className="inputElite" value={item.assignedEmployeeId} onChange={(e) => setItem({ ...item, assignedEmployeeId: e.target.value })}><option value="">Not assigned</option>{employees.map((employee) => <option key={employee.id} value={employee.id}>{employee.name}</option>)}</select></Operations><Operations label="Priority"><select className="inputElite" value={item.priority} onChange={(e) => setItem({ ...item, priority: e.target.value as MakeReadyItem["priority"] })}><option value="normal">Normal</option><option value="urgent">Urgent</option></select></Operations><Operations label="Move-Out"><input className="inputElite" type="date" value={item.moveOutDate} onChange={(e) => setItem({ ...item, moveOutDate: e.target.value })} /></Operations><Operations label="Move-In"><input className="inputElite" type="date" value={item.moveInDate} onChange={(e) => setItem({ ...item, moveInDate: e.target.value })} /></Operations><Operations label="Deadline"><input className="inputElite" type="date" value={item.deadline} onChange={(e) => setItem({ ...item, deadline: e.target.value })} /></Operations><Operations label="Status"><select className="inputElite" value={item.status} onChange={(e) => setItem({ ...item, status: e.target.value as MakeReadyItem["status"] })}><option value="scheduled">Scheduled</option><option value="in-progress">In Progress</option><option value="waiting">Waiting</option><option value="ready">Ready</option></select></Operations></div><Operations label="Checklist"><div className="space-y-2">{item.tasks.map((task) => <div key={task.id} className="grid grid-cols-[auto_1fr_auto] items-center gap-2 rounded-xl border border-zinc-800 bg-black/25 p-2"><input type="checkbox" checked={task.done} onChange={() => setItem({ ...item, tasks: item.tasks.map((row) => row.id === task.id ? { ...row, done: !row.done } : row) })} /><input className="inputElite !py-2" value={task.label} onChange={(e) => setItem({ ...item, tasks: item.tasks.map((row) => row.id === task.id ? { ...row, label: e.target.value } : row) })} /><button className="iconDanger !p-2" onClick={() => setItem({ ...item, tasks: item.tasks.filter((row) => row.id !== task.id) })}><Trash2 size={14} /></button></div>)}<button className="darkButton w-full" onClick={() => setItem({ ...item, tasks: [...item.tasks, { id: uid(), label: "New Task", done: false }] })}><Plus size={16} /> Add Task</button></div></Operations><Operations label="Notes"><textarea className="inputElite min-h-24" value={item.notes} onChange={(e) => setItem({ ...item, notes: e.target.value })} /></Operations><button className="goldButton w-full" onClick={() => onSave(item)}><Check size={18} /> Save Turnover Work</button></div></Modal>;
 }
 
 function InvoiceModal({ invoices, properties, getProfileForProperty, initial, onClose, onSave }: { invoices: Invoice[]; properties: string[]; getProfileForProperty: (property: string) => PropertyContactProfile; initial: Invoice | null; onClose: () => void; onSave: (invoice: Invoice) => void }) {
@@ -2175,10 +2172,9 @@ function ConfirmModal({ title, message, onCancel, onConfirm }: { title: string; 
 function BottomNav({ activeTab, setActiveTab }: { activeTab: ActiveTab; setActiveTab: (tab: ActiveTab) => void }) {
   const tabs: { tab: ActiveTab; label: string; icon: React.ReactNode }[] = [
     { tab: "dashboard", label: "Home", icon: <Home size={20} /> },
-    { tab: "field", label: "Operations", icon: <BriefcaseBusiness size={20} /> },
+    { tab: "field", label: "Work", icon: <BriefcaseBusiness size={20} /> },
     { tab: "office", label: "Office", icon: <ReceiptText size={20} /> },
     { tab: "employees", label: "Employees", icon: <Users size={20} /> },
-    { tab: "more", label: "More", icon: <MoreVertical size={20} /> },
   ];
-  return <nav className="fixed bottom-0 left-0 right-0 z-40 border-t border-white/10 bg-[#02070a]/95 px-2 pb-3 pt-2 backdrop-blur-xl"><div className="mx-auto grid max-w-[540px] grid-cols-5 gap-1">{tabs.map((item) => { const active = activeTab === item.tab; return <button key={item.tab} onClick={() => setActiveTab(item.tab)} className={`flex flex-col items-center justify-center gap-1 rounded-2xl py-2 text-[11px] font-black transition active:scale-95 ${active ? "bg-green-500 text-black" : "text-zinc-500"}`}>{item.icon}<span>{item.label}</span></button>; })}</div></nav>;
+  return <nav className="fixed bottom-0 left-0 right-0 z-40 border-t border-white/10 bg-[#02070a]/95 px-2 pb-3 pt-2 backdrop-blur-xl"><div className="mx-auto grid max-w-[540px] grid-cols-4 gap-1">{tabs.map((item) => { const active = activeTab === item.tab || (item.tab === "field" && (activeTab === "ops" || activeTab === "jobs" || activeTab === "makeReady")) || (item.tab === "office" && (activeTab === "invoices" || activeTab === "reports")); return <button key={item.tab} onClick={() => setActiveTab(item.tab)} className={`flex flex-col items-center justify-center gap-1 rounded-2xl py-2 text-[11px] font-black transition active:scale-95 ${active ? "bg-green-500 text-black" : "text-zinc-500"}`}>{item.icon}<span>{item.label}</span></button>; })}</div></nav>;
 }
