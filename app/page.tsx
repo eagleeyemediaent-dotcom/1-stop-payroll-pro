@@ -43,7 +43,7 @@ import {
 // 1 STOP TURNOVER SPECIALIST PRO ELITE - OPERATIONS X
 // PHASE 13 single-file replacement for app/page.tsx
 // Property address persistence + assignment preset dropdown fix
-// PHASE 21: 4-tab cleanup + Work Orders and Turnover merged into one flow
+// PHASE 22: Work message lives inside Work Orders + professional message format + PDF-first invoice sharing
 
 const STORAGE_KEY = "oneStopPayrollProEliteBlackGoldX_v1";
 const PROPERTY_PROFILES_KEY = "oneStopPropertyProfiles_v1";
@@ -96,6 +96,7 @@ type JobEntry = {
   status: "unpaid" | "partial" | "paid";
   notes: string;
   photos: string[];
+  workMessage?: string;
 };
 
 type MakeReadyTask = {
@@ -615,16 +616,20 @@ function invoiceEmailBody(invoice: Invoice) {
 
 function openInvoiceEmail(invoice: Invoice) {
   invoice = customerSafeInvoice(invoice);
+  alert("The invoice PDF will open first. Save it as a PDF, then attach that clean PDF to your email.");
+  printInvoiceDocument(invoice, invoice.beforePhotos || [], invoice.afterPhotos || []);
   const subject = encodeURIComponent(invoiceEmailSubject(invoice));
-  const body = encodeURIComponent(invoiceEmailBody(invoice));
+  const body = encodeURIComponent(`Hello,\n\nPlease see attached PDF invoice ${invoice.invoiceNumber}.\n\nThank you,\n1 Stop Turnover Specialist LLC`);
   const to = encodeURIComponent(invoice.clientEmail || "");
-  const hasPhotos = (invoice.beforePhotos?.length || 0) + (invoice.afterPhotos?.length || 0) > 0;
+  setTimeout(() => { window.location.href = `mailto:${to}?subject=${subject}&body=${body}`; }, 650);
+}
 
-  if (hasPhotos) {
-    alert("Your email app will open with the invoice details. Browser email links cannot automatically attach photos, so save/print the invoice as PDF and attach the PDF or photos before sending.");
-  }
-
-  window.location.href = `mailto:${to}?subject=${subject}&body=${body}`;
+function openInvoiceMessage(invoice: Invoice) {
+  invoice = customerSafeInvoice(invoice);
+  alert("The invoice PDF will open first. Save it as a PDF, then attach that clean PDF to your text/message.");
+  printInvoiceDocument(invoice, invoice.beforePhotos || [], invoice.afterPhotos || []);
+  const text = encodeURIComponent(`Invoice ${invoice.invoiceNumber} is ready. Please see the attached PDF invoice from 1 Stop Turnover Specialist LLC. Thank you.`);
+  setTimeout(() => { window.location.href = `sms:?&body=${text}`; }, 650);
 }
 
 
@@ -1432,7 +1437,7 @@ Enter the amount you are charging the company.`
               <div className="rounded-2xl border border-green-400/20 bg-green-500/10 p-3 text-sm font-semibold text-green-200">
                 Office is your billing side: what you charge the company is separate from what you pay the employee.
               </div>
-              <InvoicesPanel invoices={filteredInvoices} jobs={state.jobs} weekJobs={weekJobs} onAdd={() => { setEditingInvoice(null); setShowInvoiceForm(true); }} onCreateFromWeek={createInvoiceFromWeekJobs} onEdit={(invoice) => { setEditingInvoice(invoice); setShowInvoiceForm(true); }} onDelete={(id) => setConfirmDelete({ type: "invoice", id })} onUpdate={upsertInvoice} />
+              <InvoicesPanel invoices={filteredInvoices} jobs={state.jobs} weekJobs={weekJobs} onAdd={() => { setEditingInvoice(null); setShowInvoiceForm(true); }} onCreateFromWeek={createInvoiceFromWeekJobs} onCreateFromJob={createInvoiceFromJob} onEdit={(invoice) => { setEditingInvoice(invoice); setShowInvoiceForm(true); }} onDelete={(id) => setConfirmDelete({ type: "invoice", id })} onUpdate={upsertInvoice} />
             </section>
           )}
 
@@ -1688,6 +1693,43 @@ function assignmentStatusClass(status: AssignmentStatus) {
   return "border-zinc-700 bg-zinc-900 text-zinc-300";
 }
 
+
+function buildWorkOrderMessage(job: JobEntry, employeeName: string) {
+  const assignment: WorkAssignment = {
+    id: job.id,
+    employeeId: job.employeeId,
+    date: job.date,
+    property: job.property,
+    address: getPropertyAddress(job.property),
+    unitNumber: job.unitNumber || "",
+    priority: "normal",
+    language: "english",
+    status: "assigned",
+    scope: [...job.jobTypes, job.customWork].filter(Boolean).join("\n") || "Work details to be confirmed.",
+    notes: job.notes || "",
+    photos: job.photos || [],
+    createdAt: new Date().toISOString(),
+  };
+  return buildAssignmentMessage(assignment, employeeName);
+}
+
+async function copyWorkOrderMessage(text: string) {
+  try {
+    await navigator.clipboard.writeText(text);
+    alert("Work order message copied. You can paste it into text, WhatsApp, or email.");
+  } catch {
+    window.prompt("Copy this work order message:", text);
+  }
+}
+
+function textWorkOrderMessage(text: string) {
+  window.location.href = `sms:?&body=${encodeURIComponent(text)}`;
+}
+
+function whatsappWorkOrderMessage(text: string) {
+  window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, "_blank");
+}
+
 function buildAssignmentMessage(assignment: WorkAssignment, employeeName: string) {
   const autoAddress = assignment.address || getPropertyAddress(assignment.property);
   const unitValue = assignment.unitNumber?.trim() || "";
@@ -1727,57 +1769,71 @@ function buildAssignmentMessage(assignment: WorkAssignment, employeeName: string
   }
 
   const english = compactMessage([
-    `🙏 God bless you ${employeeName},`,
-    ``,
-    `📣 *WORK ORDER ASSIGNMENT* 📣`,
+    `1 STOP TURNOVER SPECIALIST LLC`,
+    `WORK ORDER ASSIGNMENT`,
     divider,
+    `Hello ${employeeName || "Team"},`,
+    `Please review the work order assignment below.`,
     ``,
-    `📅 *DATE:* ${formatAssignmentDate(assignment.date)}`,
+    `📅 DATE: ${formatAssignmentDate(assignment.date)}`,
     ``,
-    `📍 *PROPERTY / ADDRESS*`,
+    `📍 PROPERTY / ADDRESS`,
     assignment.property,
     autoAddress || false,
     ``,
-    unitValue ? `🏠 *UNIT:* ${unitValue}` : false,
+    unitValue ? `🏠 UNIT: ${unitValue}` : false,
     ``,
-    `🛠️ *WORK TO BE COMPLETED*`,
+    `🛠️ SCOPE OF WORK`,
     cleanScopeLines || "• Work details to be confirmed.",
     ``,
-    assignment.priority === "urgent" ? `⚠️ *PRIORITY:* URGENT` : `✅ *PRIORITY:* Normal`,
-    `📌 *STATUS:* ${englishStatus}`,
+    assignment.priority === "urgent" ? `⚠️ PRIORITY: URGENT` : `✅ PRIORITY: Normal`,
+    `📌 STATUS: ${englishStatus}`,
+    ``,
+    `📸 REQUIRED PHOTOS`,
+    `• Before photos before starting`,
+    `• After photos when completed`,
     notes ? `` : false,
-    notes ? `📝 *NOTES:* ${notes}` : false,
+    notes ? `📝 NOTES: ${notes}` : false,
     ``,
-    `If you have any questions or issues, please contact me directly.`,
+    `Please protect the unit, keep the work area clean, and report any additional damage or access issue immediately.`,
     ``,
-    `Thank you and God bless 🙏`,
+    `Thank you and God bless.`,
+    divider,
+    `1 Stop Turnover Specialist LLC`,
   ]);
 
   const spanish = compactMessage([
-    `🙏 Dios te bendiga ${employeeName},`,
-    ``,
-    `📣 *ASIGNACIÓN DE TRABAJO* 📣`,
+    `1 STOP TURNOVER SPECIALIST LLC`,
+    `ASIGNACIÓN DE TRABAJO`,
     divider,
+    `Dios te bendiga ${employeeName || "Equipo"},`,
+    `Favor de revisar la asignación de trabajo abajo.`,
     ``,
-    `📅 *FECHA:* ${formatAssignmentDate(assignment.date)}`,
+    `📅 FECHA: ${formatAssignmentDate(assignment.date)}`,
     ``,
-    `📍 *PROPIEDAD / DIRECCIÓN*`,
+    `📍 PROPIEDAD / DIRECCIÓN`,
     assignment.property,
     autoAddress || false,
     ``,
-    unitValue ? `🏠 *UNIDAD:* ${unitValue}` : false,
+    unitValue ? `🏠 UNIDAD: ${unitValue}` : false,
     ``,
-    `🛠️ *TRABAJO A REALIZAR*`,
+    `🛠️ TRABAJO A REALIZAR`,
     cleanScopeLines || "• Detalles del trabajo por confirmar.",
     ``,
-    assignment.priority === "urgent" ? `⚠️ *PRIORIDAD:* URGENTE` : `✅ *PRIORIDAD:* Normal`,
-    `📌 *ESTATUS:* ${spanishStatus}`,
+    assignment.priority === "urgent" ? `⚠️ PRIORIDAD: URGENTE` : `✅ PRIORIDAD: Normal`,
+    `📌 ESTATUS: ${spanishStatus}`,
+    ``,
+    `📸 FOTOS REQUERIDAS`,
+    `• Fotos antes de comenzar`,
+    `• Fotos después de terminar`,
     notes ? `` : false,
-    notes ? `📝 *NOTAS:* ${notes}` : false,
+    notes ? `📝 NOTAS: ${notes}` : false,
     ``,
-    `Cualquier duda o inconveniente, favor de comunicarte conmigo.`,
+    `Favor de proteger la unidad, mantener el área limpia, y reportar cualquier daño adicional o problema de acceso inmediatamente.`,
     ``,
-    `Gracias y Dios te bendiga 🙏`,
+    `Gracias y Dios te bendiga.`,
+    divider,
+    `1 Stop Turnover Specialist LLC`,
   ]);
 
   if (assignment.language === "english") return english;
@@ -1861,12 +1917,13 @@ Amount returning to owed: ${money(job.pay)}
 
 This will move the amount back into owed balance.`); if (!ok) return; onUpdate({ ...job, paidAmount: 0, status: "unpaid" }); }
   async function addPhotos(files: FileList | null) { const newPhotos = await readPhotoFiles(files); if (newPhotos.length) onUpdate({ ...job, photos: [...(job.photos || []), ...newPhotos] }); }
+  const currentWorkMessage = job.workMessage || buildWorkOrderMessage(job, employee?.name || "");
 
   return <div className="blackCard p-3"><button onClick={() => setOpen(!open)} className="w-full text-left"><div className="flex items-center justify-between gap-3"><div className="min-w-0"><p className="truncate font-black">{employee?.name || "Unknown Employee"}</p><p className="truncate text-xs text-zinc-500">{formatJobDate(job.date)} • {propertyWithUnit(job)}</p></div><div className="shrink-0 text-right"><p className="font-black text-green-400">{money(job.pay)}</p><p className={`${owed > 0 ? "text-red-300" : "text-green-300"} text-xs font-black`}>Owed {money(owed)}</p></div></div><div className="mt-2 flex items-center justify-between gap-2"><span className={`rounded-full border px-3 py-1 text-[10px] font-black uppercase ${jobStatusColor(normalizedStatus, owed)}`}>{owed <= 0 ? "PAID" : job.status === "partial" ? "PARTIAL" : "UNPAID"}</span><span className="text-[10px] font-black uppercase text-zinc-500">{open ? "Close" : "Tap to open"}</span></div></button><div className="mt-3 grid grid-cols-2 gap-2"><button className="darkButton !py-2 text-sm" onClick={() => setOpen(!open)}><Pencil size={16} /> Edit</button><button className="goldButton !py-2 text-sm" onClick={onCreateInvoice}><ReceiptText size={16} /> Invoice</button><button className={`${isFullyPaid ? "goldButton shadow-[0_0_28px_rgba(34,197,94,0.45)]" : "darkButton"} !py-2 text-sm`} onClick={confirmJobPaid}><Check size={16} /> {isFullyPaid ? "Paid ✓" : "Paid"}</button><button className={`${isFullyPaid ? "darkButton text-zinc-300" : "flex items-center justify-center gap-1 rounded-2xl border border-red-400/30 bg-red-500/10 px-2 py-2 text-sm font-black text-red-300"}`} onClick={confirmJobUnpaid}><RotateCcw size={15} /> Unpay</button></div>{open && <div className="mt-4 space-y-3 border-t border-zinc-800 pt-4"><div className="grid grid-cols-2 gap-2"><Operations label="Employee"><select className="inputElite" value={job.employeeId} onChange={(e) => onUpdate({ ...job, employeeId: e.target.value })}>{employees.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></Operations><Operations label={`Date — ${formatJobDate(job.date)}`}><input className="inputElite cursor-pointer" type="date" value={job.date} onClick={(e) => e.currentTarget.showPicker?.()} onFocus={(e) => e.currentTarget.showPicker?.()} onChange={(e) => onUpdate({ ...job, date: e.target.value })} /></Operations><Operations label="Property"><select className="inputElite" value={job.property} onChange={(e) => onUpdate({ ...job, property: e.target.value })}>{properties.map((property) => <option key={property} value={property}>{property}</option>)}</select></Operations><Operations label="Unit #"><input className="inputElite" value={job.unitNumber || ""} onChange={(e) => onUpdate({ ...job, unitNumber: e.target.value })} placeholder="Example: 204" /></Operations><Operations label="Pay"><MoneyInput value={job.pay} onValueChange={(value) => onUpdate({ ...job, pay: value, status: statusFrom(value, job.paidAmount) })} placeholder="Enter Amount" /></Operations><Operations label="Paid"><MoneyInput value={job.paidAmount} onValueChange={(value) => { if (value >= job.pay && job.pay > 0 && !confirmAction(`Confirm Payment
 
 Mark this job paid?
 
-Amount: ${money(value)}`)) return; onUpdate({ ...job, paidAmount: value, status: statusFrom(job.pay, value) }); }} placeholder="Enter Amount" /></Operations></div><Operations label="Work Type"><div className="grid grid-cols-2 gap-2">{jobTypeOptions.map((type) => <button type="button" key={type} onClick={() => toggleType(type)} className={`rounded-xl border px-3 py-2 text-left text-xs font-bold ${job.jobTypes.includes(type) ? "border-green-400/50 bg-green-500/20 text-green-300" : "border-zinc-800 bg-black/30 text-zinc-400"}`}>{job.jobTypes.includes(type) ? "✓ " : ""}{type}</button>)}</div></Operations><Operations label="Custom Work"><input className="inputElite" value={job.customWork} onChange={(e) => onUpdate({ ...job, customWork: e.target.value })} placeholder="Edit custom work description..." /></Operations><Operations label="Job Photos"><div className="rounded-2xl border border-dashed border-zinc-800 bg-black/30 p-4"><div className="grid grid-cols-2 gap-2"><label className="goldButton w-full cursor-pointer"><Camera size={18} /> Take Photo<input type="file" accept="image/*" multiple capture="environment" className="hidden" onChange={async (e) => { await addPhotos(e.target.files); e.currentTarget.value = ""; }} /></label><label className="darkButton w-full cursor-pointer"><ImageIcon size={18} /> Upload<input type="file" accept="image/*" multiple className="hidden" onChange={async (e) => { await addPhotos(e.target.files); e.currentTarget.value = ""; }} /></label></div>{(job.photos || []).length > 0 ? <div className="mt-4 grid grid-cols-2 gap-3">{(job.photos || []).map((photo, index) => <div key={`${job.id}-photo-${index}`} className="relative overflow-hidden rounded-2xl border border-white/10 bg-black/40"><img src={photo} alt={`Job photo ${index + 1}`} className="h-32 w-full object-cover" /><button type="button" className="absolute right-2 top-2 rounded-full border border-red-400/30 bg-black/70 p-2 text-red-200" onClick={() => { const ok = window.confirm("Remove this photo from the job?"); if (!ok) return; onUpdate({ ...job, photos: (job.photos || []).filter((_, photoIndex) => photoIndex !== index) }); }}><Trash2 size={15} /></button></div>)}</div> : <p className="mt-3 text-center text-sm font-semibold text-zinc-500">No photos attached yet.</p>}</div></Operations><Operations label="Notes"><textarea className="inputElite min-h-28" value={job.notes} onChange={(e) => onUpdate({ ...job, notes: e.target.value })} placeholder="Edit notes for this saved job..." /></Operations><div className="flex items-center justify-between gap-2"><span className={`rounded-full border px-3 py-1 text-xs font-black ${jobStatusColor(normalizedStatus, owed)}`}>{normalizedStatus.toUpperCase()}</span><button className="iconDanger" onClick={onDelete}><Trash2 size={18} /></button></div></div>}</div>;
+Amount: ${money(value)}`)) return; onUpdate({ ...job, paidAmount: value, status: statusFrom(job.pay, value) }); }} placeholder="Enter Amount" /></Operations></div><Operations label="Work Type"><div className="grid grid-cols-2 gap-2">{jobTypeOptions.map((type) => <button type="button" key={type} onClick={() => toggleType(type)} className={`rounded-xl border px-3 py-2 text-left text-xs font-bold ${job.jobTypes.includes(type) ? "border-green-400/50 bg-green-500/20 text-green-300" : "border-zinc-800 bg-black/30 text-zinc-400"}`}>{job.jobTypes.includes(type) ? "✓ " : ""}{type}</button>)}</div></Operations><Operations label="Custom Work"><input className="inputElite" value={job.customWork} onChange={(e) => onUpdate({ ...job, customWork: e.target.value })} placeholder="Edit custom work description..." /></Operations><Operations label="Work Message"><div className="rounded-2xl border border-green-400/20 bg-green-500/10 p-3"><p className="mb-2 text-xs font-black uppercase text-green-400">Professional message attached to this Work Order</p><textarea className="inputElite min-h-56 text-xs" value={currentWorkMessage} onChange={(e) => onUpdate({ ...job, workMessage: e.target.value })} /><div className="mt-3 grid grid-cols-3 gap-2"><button type="button" className="darkButton !py-2 text-xs" onClick={() => copyWorkOrderMessage(currentWorkMessage)}>Copy</button><button type="button" className="darkButton !py-2 text-xs" onClick={() => textWorkOrderMessage(currentWorkMessage)}>Text</button><button type="button" className="goldButton !py-2 text-xs" onClick={() => whatsappWorkOrderMessage(currentWorkMessage)}>WhatsApp</button></div></div></Operations><Operations label="Job Photos"><div className="rounded-2xl border border-dashed border-zinc-800 bg-black/30 p-4"><div className="grid grid-cols-2 gap-2"><label className="goldButton w-full cursor-pointer"><Camera size={18} /> Take Photo<input type="file" accept="image/*" multiple capture="environment" className="hidden" onChange={async (e) => { await addPhotos(e.target.files); e.currentTarget.value = ""; }} /></label><label className="darkButton w-full cursor-pointer"><ImageIcon size={18} /> Upload<input type="file" accept="image/*" multiple className="hidden" onChange={async (e) => { await addPhotos(e.target.files); e.currentTarget.value = ""; }} /></label></div>{(job.photos || []).length > 0 ? <div className="mt-4 grid grid-cols-2 gap-3">{(job.photos || []).map((photo, index) => <div key={`${job.id}-photo-${index}`} className="relative overflow-hidden rounded-2xl border border-white/10 bg-black/40"><img src={photo} alt={`Job photo ${index + 1}`} className="h-32 w-full object-cover" /><button type="button" className="absolute right-2 top-2 rounded-full border border-red-400/30 bg-black/70 p-2 text-red-200" onClick={() => { const ok = window.confirm("Remove this photo from the job?"); if (!ok) return; onUpdate({ ...job, photos: (job.photos || []).filter((_, photoIndex) => photoIndex !== index) }); }}><Trash2 size={15} /></button></div>)}</div> : <p className="mt-3 text-center text-sm font-semibold text-zinc-500">No photos attached yet.</p>}</div></Operations><Operations label="Notes"><textarea className="inputElite min-h-28" value={job.notes} onChange={(e) => onUpdate({ ...job, notes: e.target.value })} placeholder="Edit notes for this saved job..." /></Operations><div className="flex items-center justify-between gap-2"><span className={`rounded-full border px-3 py-1 text-xs font-black ${jobStatusColor(normalizedStatus, owed)}`}>{normalizedStatus.toUpperCase()}</span><button className="iconDanger" onClick={onDelete}><Trash2 size={18} /></button></div></div>}</div>;
 }
 
 function MakeReadyBoard({ items, employees, employeesById, onAdd, onEdit, onDelete, onUpdate, onCreateInvoice, compact = false }: { items: MakeReadyItem[]; employees: Employee[]; employeesById: Map<string, Employee>; onAdd: () => void; onEdit: (item: MakeReadyItem) => void; onDelete: (id: string) => void; onUpdate: (item: MakeReadyItem) => void; onCreateInvoice: (item: MakeReadyItem) => void; compact?: boolean }) {
@@ -1884,7 +1941,7 @@ function MakeReadyCard({ item, employee, employees, onEdit, onDelete, onUpdate, 
   return <div className="rounded-2xl border border-zinc-800 bg-black/30 p-3"><button type="button" onClick={() => setOpen(!open)} className="flex w-full items-center justify-between gap-3 text-left"><div className="min-w-0"><p className="truncate font-black">{makeReadyTitle(item)}</p><p className="text-xs text-zinc-500">{employee?.name || "Not assigned"} • {percent}% • Deadline {item.deadline || "—"}</p></div><div className="flex shrink-0 items-center gap-2"><span className={`rounded-full px-3 py-1 text-[10px] font-black uppercase ${statusClasses}`}>{item.priority === "urgent" ? "Urgent" : item.status.replace("-", " ")}</span>{open ? <ChevronUp size={17} /> : <ChevronDown size={17} />}</div></button><div className="mt-3 h-2 overflow-hidden rounded-full border border-white/10 bg-black/40"><div className="h-full rounded-full bg-green-500" style={{ width: `${percent}%` }} /></div>{open && <div className="mt-3 border-t border-zinc-800 pt-3"><p className="text-xs font-bold text-zinc-500">Move-out {item.moveOutDate || "—"} • Move-in {item.moveInDate || "—"}</p><div className="mt-3 grid gap-2">{item.tasks.map((task) => <button type="button" key={task.id} onClick={() => { if (!task.done && !confirmAction(`Confirm: mark ${task.label} complete?`)) return; onUpdate({ ...item, tasks: item.tasks.map((row) => row.id === task.id ? { ...row, done: !row.done } : row) }); }} className={`flex items-center gap-2 rounded-xl border px-3 py-2 text-left text-sm font-bold ${task.done ? "border-green-400/25 bg-green-500/10 text-green-300" : "border-zinc-800 bg-black/30 text-zinc-400"}`}><span>{task.done ? "✅" : "⬜"}</span>{task.label}</button>)}</div><div className="mt-3 grid grid-cols-2 gap-2"><Operations label="Status"><select className="inputElite" value={item.status} onChange={(e) => { const nextStatus = e.target.value as MakeReadyItem["status"]; if (nextStatus === "ready" && !confirmAction("Confirm: mark this unit ready?")) return; onUpdate({ ...item, status: nextStatus }); }}><option value="scheduled">Scheduled</option><option value="in-progress">In Progress</option><option value="waiting">Waiting</option><option value="ready">Ready</option></select></Operations><Operations label="Assigned"><select className="inputElite" value={item.assignedEmployeeId} onChange={(e) => onUpdate({ ...item, assignedEmployeeId: e.target.value })}><option value="">Not assigned</option>{employees.map((employee) => <option key={employee.id} value={employee.id}>{employee.name}</option>)}</select></Operations></div>{item.notes && <p className="mt-3 rounded-2xl border border-white/10 bg-black/25 p-3 text-sm text-zinc-400">{item.notes}</p>}<div className="mt-3 grid grid-cols-2 gap-2"><button className="darkButton" onClick={onEdit}><Pencil size={16} /> Edit Unit</button><button className="goldButton" onClick={onCreateInvoice}><ReceiptText size={16} /> Invoice</button></div><div className="mt-2 flex justify-end"><button className="iconDanger" onClick={onDelete}><Trash2 size={18} /></button></div></div>}</div>;
 }
 
-function InvoicesPanel({ invoices, jobs, weekJobs, onAdd, onCreateFromWeek, onEdit, onDelete, onUpdate }: { invoices: Invoice[]; jobs: JobEntry[]; weekJobs: JobEntry[]; onAdd: () => void; onCreateFromWeek: () => void; onEdit: (invoice: Invoice) => void; onDelete: (id: string) => void; onUpdate: (invoice: Invoice) => void }) {
+function InvoicesPanel({ invoices, jobs, weekJobs, onAdd, onCreateFromWeek, onCreateFromJob, onEdit, onDelete, onUpdate }: { invoices: Invoice[]; jobs: JobEntry[]; weekJobs: JobEntry[]; onAdd: () => void; onCreateFromWeek: () => void; onCreateFromJob: (job: JobEntry) => void; onEdit: (invoice: Invoice) => void; onDelete: (id: string) => void; onUpdate: (invoice: Invoice) => void }) {
   const [invoiceFilter, setInvoiceFilter] = useState<"all" | "outstanding" | "paid">("all");
   const invoiceIsPaid = (invoice: Invoice) => invoiceStatusIsPaid(invoice);
   const outstandingInvoices = invoices.filter((invoice) => !invoiceIsPaid(invoice));
@@ -1929,6 +1986,22 @@ function InvoicesPanel({ invoices, jobs, weekJobs, onAdd, onCreateFromWeek, onEd
       </div>
 
       {weekJobs.length > 0 && <div className="rounded-2xl border border-green-400/20 bg-green-500/10 p-3 text-sm font-semibold text-green-200">Selected week has {weekJobs.length} jobs ready to invoice. Enter the company charge amount separately from employee pay.</div>}
+
+      {weekJobs.length > 0 && (
+        <div className="blackCard p-4">
+          <h3 className="font-black">Ready To Invoice</h3>
+          <p className="mt-1 text-xs font-semibold text-zinc-500">Create one clean PDF invoice from any individual work order in Office.</p>
+          <div className="mt-3 space-y-2">
+            {weekJobs.map((job) => (
+              <div key={`ready-invoice-${job.id}`} className="rounded-2xl border border-zinc-800 bg-black/30 p-3">
+                <p className="font-black text-zinc-100">{propertyWithUnit(job)}</p>
+                <p className="text-xs text-zinc-500">{formatJobDate(job.date)} • {[...job.jobTypes, job.customWork].filter(Boolean).join(" / ") || "Labor"}</p>
+                <button type="button" className="goldButton mt-3 w-full" onClick={() => onCreateFromJob(job)}><ReceiptText size={16} /> Create Individual Invoice</button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="space-y-3">
         {visibleInvoices.map((invoice) => <InvoiceCard key={invoice.id} invoice={invoice} jobs={jobs} onEdit={() => onEdit(invoice)} onDelete={() => onDelete(invoice.id)} onUpdate={onUpdate} />)}
@@ -1990,8 +2063,9 @@ function InvoiceCard({ invoice, jobs, onEdit, onDelete, onUpdate }: { invoice: I
         <button className="darkButton" onClick={onEdit}><Pencil size={16} /> Edit</button>
         <button className="darkButton" onClick={() => setPreview(!preview)}><Eye size={16} /> {preview ? "Hide Preview" : "Preview PDF"}</button>
         <button className={`${isPaid ? "goldButton shadow-[0_0_28px_rgba(34,197,94,0.45)]" : "darkButton"}`} onClick={confirmMarkPaid}><Check size={16} /> {isPaid ? "Paid ✓" : "Mark Paid"}</button>
-        <button className="darkButton" onClick={() => { setPreview(true); printInvoiceDocument(invoice, beforePhotos, afterPhotos); }}><Printer size={16} /> Print / Save PDF</button>
-        <button className="goldButton" onClick={() => { setPreview(true); setTimeout(() => openInvoiceEmail(invoice), 200); }}><Mail size={16} /> Email</button>
+        <button className="darkButton" onClick={() => { setPreview(true); printInvoiceDocument(invoice, beforePhotos, afterPhotos); }}><Printer size={16} /> Open PDF</button>
+        <button className="goldButton" onClick={() => { setPreview(true); openInvoiceEmail(invoice); }}><Mail size={16} /> Email PDF</button>
+        <button className="darkButton" onClick={() => { setPreview(true); openInvoiceMessage(invoice); }}><FileText size={16} /> Message PDF</button>
         <button className="iconDanger" onClick={onDelete}><Trash2 size={18} /> Delete</button>
       </div>
 
@@ -2091,7 +2165,7 @@ function InvoicePreview({ invoice, total, open, beforePhotos, afterPhotos, onMar
       <div className="noPrint border-t border-zinc-200 bg-zinc-100 p-3"><p className="mb-2 text-center text-xs font-bold text-zinc-600">Review this invoice before sending. Use Print / Save PDF when it looks correct.</p><div className="grid grid-cols-2 gap-2">
         <button className="goldButton" onClick={() => printInvoiceDocument(invoice, beforePhotos, afterPhotos)}><Printer size={16} /> Print / Save PDF</button>
         <button className={`${isPaid ? "goldButton shadow-[0_0_28px_rgba(34,197,94,0.45)]" : "darkButton"}`} onClick={onMarkPaid}><Check size={16} /> {isPaid ? "Paid ✓" : "Mark Paid"}</button>
-        <button className="darkButton col-span-2" onClick={() => openInvoiceEmail(invoice)}><Mail size={16} /> Email Invoice</button>
+        <button className="darkButton" onClick={() => openInvoiceEmail(invoice)}><Mail size={16} /> Email PDF</button><button className="darkButton" onClick={() => openInvoiceMessage(invoice)}><FileText size={16} /> Message PDF</button>
         </div>
       </div>
     </div>
@@ -2176,6 +2250,7 @@ function JobModal({ employees, properties, jobTypeOptions, getAddressForProperty
       status: statusFrom(pay, cleanPaid),
       notes,
       photos,
+      workMessage: buildAssignmentMessage(assignmentPreview, assignedEmployee?.name || ""),
     };
     const assignment: WorkAssignment | undefined = createAssignment ? { ...assignmentPreview, id: uid(), photos: [...photos], createdAt: new Date().toISOString() } : undefined;
     onSave(job, assignment);
@@ -2192,7 +2267,7 @@ function MakeReadyModal({ employees, properties, initial, onClose, onSave }: { e
 function InvoiceModal({ invoices, properties, getProfileForProperty, initial, onClose, onSave }: { invoices: Invoice[]; properties: string[]; getProfileForProperty: (property: string) => PropertyContactProfile; initial: Invoice | null; onClose: () => void; onSave: (invoice: Invoice) => void }) {
   const [invoice, setInvoice] = useState<Invoice>(initial || { id: uid(), invoiceNumber: nextInvoiceNumber(invoices), clientName: getProfileForProperty(properties[0] || "").billingName || "", clientEmail: getProfileForProperty(properties[0] || "").email || "", property: properties[0] || "", propertyAddress: getProfileForProperty(properties[0] || "").address || "", unitNumber: "", invoiceDate: todayISO(), dueDate: addDaysISO(todayISO(), 14), status: "due", lineItems: [{ id: uid(), description: "Labor and materials", qty: 1, rate: 0 }], notes: "Thank you for your business. God bless.", paidAmount: 0, beforePhotos: [], afterPhotos: [] });
   const total = invoiceTotal(invoice);
-  return <Modal title={initial ? "Edit Invoice" : "New Invoice"} onClose={onClose}><div className="space-y-3"><div className="grid grid-cols-2 gap-3"><Operations label="Invoice #"><input className="inputElite" value={invoice.invoiceNumber} onChange={(e) => setInvoice({ ...invoice, invoiceNumber: e.target.value })} /></Operations><Operations label="Status"><select className="inputElite" value={invoice.status} onChange={(e) => setInvoice({ ...invoice, status: e.target.value as Invoice["status"] })}><option value="due">Due</option><option value="sent">Sent</option><option value="paid">Paid</option><option value="overdue">Overdue</option></select></Operations><Operations label="Client"><input className="inputElite" value={invoice.clientName} onChange={(e) => setInvoice({ ...invoice, clientName: e.target.value })} placeholder="Example: Wingate Companies" /></Operations><Operations label="Client Email"><input className="inputElite" type="email" value={invoice.clientEmail || ""} onChange={(e) => setInvoice({ ...invoice, clientEmail: e.target.value })} placeholder="manager@email.com" /></Operations><Operations label="Property"><select className="inputElite" value={invoice.property} onChange={(e) => { const selected = e.target.value; const profile = getProfileForProperty(selected); setInvoice({ ...invoice, property: selected, propertyAddress: profile.address || "", clientName: invoice.clientName || profile.billingName || selected, clientEmail: invoice.clientEmail || profile.email || "" }); }}>{properties.map((property) => <option key={property} value={property}>{property}</option>)}</select></Operations><Operations label="Unit #"><input className="inputElite" value={invoice.unitNumber} onChange={(e) => setInvoice({ ...invoice, unitNumber: e.target.value })} /></Operations><Operations label="Invoice Date"><input className="inputElite" type="date" value={invoice.invoiceDate} onChange={(e) => setInvoice({ ...invoice, invoiceDate: e.target.value })} /></Operations><Operations label="Due Date"><input className="inputElite" type="date" value={invoice.dueDate} onChange={(e) => setInvoice({ ...invoice, dueDate: e.target.value })} /></Operations><Operations label="Paid Amount"><MoneyInput value={invoice.paidAmount} onValueChange={(value) => { const cleanValue = safeNumber(value); if (cleanValue >= total && total > 0) { if (!confirmAction("Confirm: mark this invoice paid?")) return; setInvoice({ ...invoice, paidAmount: cleanValue, status: "paid" }); return; } setInvoice({ ...invoice, paidAmount: cleanValue, status: invoice.status === "paid" ? "sent" : invoice.status }); }} /></Operations></div><Operations label="Line Items"><div className="space-y-3">{invoice.lineItems.map((line) => <div key={line.id} className="rounded-2xl border border-zinc-800 bg-black/25 p-3"><Operations label="Description"><input className="inputElite" value={line.description} onChange={(e) => setInvoice({ ...invoice, lineItems: invoice.lineItems.map((item) => item.id === line.id ? { ...item, description: e.target.value } : item) })} /></Operations><div className="mt-2 grid grid-cols-[1fr_1fr_auto] gap-2"><Operations label="Qty"><input className="inputElite" type="number" value={line.qty} onChange={(e) => setInvoice({ ...invoice, lineItems: invoice.lineItems.map((item) => item.id === line.id ? { ...item, qty: safeNumber(e.target.value) } : item) })} /></Operations><Operations label="Rate"><MoneyInput value={line.rate} onValueChange={(value) => setInvoice({ ...invoice, lineItems: invoice.lineItems.map((item) => item.id === line.id ? { ...item, rate: value } : item) })} /></Operations><button className="iconDanger self-end" onClick={() => { if (!confirmAction("Remove this line item from the invoice?")) return; setInvoice({ ...invoice, lineItems: invoice.lineItems.filter((item) => item.id !== line.id) }); }}><Trash2 size={16} /></button></div></div>)}<button className="darkButton w-full" onClick={() => setInvoice({ ...invoice, lineItems: [...invoice.lineItems, { id: uid(), description: "New line item", qty: 1, rate: 0 }] })}><Plus size={16} /> Add Line Item</button></div></Operations><div className="rounded-2xl border border-green-400/20 bg-green-500/10 p-3 text-right"><p className="text-xs font-black uppercase text-green-400">Invoice Total</p><p className="text-2xl font-black">{money(total)}</p><p className="mt-1 text-xs font-semibold text-zinc-400">Phase 4 designer will use this amount on the PDF-ready preview.</p></div><div className="rounded-2xl border border-blue-400/20 bg-blue-500/10 p-3 text-xs font-semibold text-blue-100"><b>Preview PDF Tip:</b> Add before/after photos here, then tap Preview PDF on the invoice card to review the professional layout before printing, saving as PDF, or emailing.</div><Operations label="Before Photos"><InvoicePhotoPicker photos={invoice.beforePhotos || []} label="Add Before Photos" onChange={(photos) => setInvoice({ ...invoice, beforePhotos: photos })} /></Operations><Operations label="After / Completed Job Photos"><InvoicePhotoPicker photos={invoice.afterPhotos || []} label="Add After Photos" onChange={(photos) => setInvoice({ ...invoice, afterPhotos: photos })} /></Operations><Operations label="Notes / Terms"><textarea className="inputElite min-h-24" value={invoice.notes} onChange={(e) => setInvoice({ ...invoice, notes: e.target.value })} /></Operations><div className="grid grid-cols-2 gap-2"><button className="goldButton" onClick={() => { const cleanTotal = invoiceTotal(invoice); const cleanPaid = safeNumber(invoice.paidAmount); const cleanStatus = invoice.status === "paid" && !(cleanTotal > 0 && cleanPaid >= cleanTotal) ? "sent" : invoice.status; onSave({ ...invoice, paidAmount: cleanPaid, status: cleanStatus }); }}><Check size={18} /> Save Invoice</button><button className="darkButton" onClick={() => { const cleanTotal = invoiceTotal(invoice); const cleanPaid = safeNumber(invoice.paidAmount); const cleanInvoice = { ...invoice, status: invoice.status === "paid" && !(cleanTotal > 0 && cleanPaid >= cleanTotal) ? "sent" as Invoice["status"] : invoice.status, paidAmount: cleanPaid }; setInvoice(cleanInvoice); printInvoiceDocument(cleanInvoice, cleanInvoice.beforePhotos || [], cleanInvoice.afterPhotos || []); }}><Eye size={18} /> Preview PDF</button><button className="darkButton col-span-2" onClick={() => openInvoiceEmail({ ...invoice, status: invoice.status === "paid" && !(invoiceTotal(invoice) > 0 && safeNumber(invoice.paidAmount) >= invoiceTotal(invoice)) ? "sent" : invoice.status })}><Mail size={18} /> Email After Preview</button></div></div></Modal>;
+  return <Modal title={initial ? "Edit Invoice" : "New Invoice"} onClose={onClose}><div className="space-y-3"><div className="grid grid-cols-2 gap-3"><Operations label="Invoice #"><input className="inputElite" value={invoice.invoiceNumber} onChange={(e) => setInvoice({ ...invoice, invoiceNumber: e.target.value })} /></Operations><Operations label="Status"><select className="inputElite" value={invoice.status} onChange={(e) => setInvoice({ ...invoice, status: e.target.value as Invoice["status"] })}><option value="due">Due</option><option value="sent">Sent</option><option value="paid">Paid</option><option value="overdue">Overdue</option></select></Operations><Operations label="Client"><input className="inputElite" value={invoice.clientName} onChange={(e) => setInvoice({ ...invoice, clientName: e.target.value })} placeholder="Example: Wingate Companies" /></Operations><Operations label="Client Email"><input className="inputElite" type="email" value={invoice.clientEmail || ""} onChange={(e) => setInvoice({ ...invoice, clientEmail: e.target.value })} placeholder="manager@email.com" /></Operations><Operations label="Property"><select className="inputElite" value={invoice.property} onChange={(e) => { const selected = e.target.value; const profile = getProfileForProperty(selected); setInvoice({ ...invoice, property: selected, propertyAddress: profile.address || "", clientName: invoice.clientName || profile.billingName || selected, clientEmail: invoice.clientEmail || profile.email || "" }); }}>{properties.map((property) => <option key={property} value={property}>{property}</option>)}</select></Operations><Operations label="Unit #"><input className="inputElite" value={invoice.unitNumber} onChange={(e) => setInvoice({ ...invoice, unitNumber: e.target.value })} /></Operations><Operations label="Invoice Date"><input className="inputElite" type="date" value={invoice.invoiceDate} onChange={(e) => setInvoice({ ...invoice, invoiceDate: e.target.value })} /></Operations><Operations label="Due Date"><input className="inputElite" type="date" value={invoice.dueDate} onChange={(e) => setInvoice({ ...invoice, dueDate: e.target.value })} /></Operations><Operations label="Paid Amount"><MoneyInput value={invoice.paidAmount} onValueChange={(value) => { const cleanValue = safeNumber(value); if (cleanValue >= total && total > 0) { if (!confirmAction("Confirm: mark this invoice paid?")) return; setInvoice({ ...invoice, paidAmount: cleanValue, status: "paid" }); return; } setInvoice({ ...invoice, paidAmount: cleanValue, status: invoice.status === "paid" ? "sent" : invoice.status }); }} /></Operations></div><Operations label="Line Items"><div className="space-y-3">{invoice.lineItems.map((line) => <div key={line.id} className="rounded-2xl border border-zinc-800 bg-black/25 p-3"><Operations label="Description"><input className="inputElite" value={line.description} onChange={(e) => setInvoice({ ...invoice, lineItems: invoice.lineItems.map((item) => item.id === line.id ? { ...item, description: e.target.value } : item) })} /></Operations><div className="mt-2 grid grid-cols-[1fr_1fr_auto] gap-2"><Operations label="Qty"><input className="inputElite" type="number" value={line.qty} onChange={(e) => setInvoice({ ...invoice, lineItems: invoice.lineItems.map((item) => item.id === line.id ? { ...item, qty: safeNumber(e.target.value) } : item) })} /></Operations><Operations label="Rate"><MoneyInput value={line.rate} onValueChange={(value) => setInvoice({ ...invoice, lineItems: invoice.lineItems.map((item) => item.id === line.id ? { ...item, rate: value } : item) })} /></Operations><button className="iconDanger self-end" onClick={() => { if (!confirmAction("Remove this line item from the invoice?")) return; setInvoice({ ...invoice, lineItems: invoice.lineItems.filter((item) => item.id !== line.id) }); }}><Trash2 size={16} /></button></div></div>)}<button className="darkButton w-full" onClick={() => setInvoice({ ...invoice, lineItems: [...invoice.lineItems, { id: uid(), description: "New line item", qty: 1, rate: 0 }] })}><Plus size={16} /> Add Line Item</button></div></Operations><div className="rounded-2xl border border-green-400/20 bg-green-500/10 p-3 text-right"><p className="text-xs font-black uppercase text-green-400">Invoice Total</p><p className="text-2xl font-black">{money(total)}</p><p className="mt-1 text-xs font-semibold text-zinc-400">Phase 4 designer will use this amount on the PDF-ready preview.</p></div><div className="rounded-2xl border border-blue-400/20 bg-blue-500/10 p-3 text-xs font-semibold text-blue-100"><b>PDF First:</b> Add before/after photos here, then open the professional PDF first before emailing or messaging the invoice.</div><Operations label="Before Photos"><InvoicePhotoPicker photos={invoice.beforePhotos || []} label="Add Before Photos" onChange={(photos) => setInvoice({ ...invoice, beforePhotos: photos })} /></Operations><Operations label="After / Completed Job Photos"><InvoicePhotoPicker photos={invoice.afterPhotos || []} label="Add After Photos" onChange={(photos) => setInvoice({ ...invoice, afterPhotos: photos })} /></Operations><Operations label="Notes / Terms"><textarea className="inputElite min-h-24" value={invoice.notes} onChange={(e) => setInvoice({ ...invoice, notes: e.target.value })} /></Operations><div className="grid grid-cols-2 gap-2"><button className="goldButton" onClick={() => { const cleanTotal = invoiceTotal(invoice); const cleanPaid = safeNumber(invoice.paidAmount); const cleanStatus = invoice.status === "paid" && !(cleanTotal > 0 && cleanPaid >= cleanTotal) ? "sent" : invoice.status; onSave({ ...invoice, paidAmount: cleanPaid, status: cleanStatus }); }}><Check size={18} /> Save Invoice</button><button className="darkButton" onClick={() => { const cleanTotal = invoiceTotal(invoice); const cleanPaid = safeNumber(invoice.paidAmount); const cleanInvoice = { ...invoice, status: invoice.status === "paid" && !(cleanTotal > 0 && cleanPaid >= cleanTotal) ? "sent" as Invoice["status"] : invoice.status, paidAmount: cleanPaid }; setInvoice(cleanInvoice); printInvoiceDocument(cleanInvoice, cleanInvoice.beforePhotos || [], cleanInvoice.afterPhotos || []); }}><Eye size={18} /> Preview PDF</button><button className="darkButton col-span-2" onClick={() => openInvoiceEmail({ ...invoice, status: invoice.status === "paid" && !(invoiceTotal(invoice) > 0 && safeNumber(invoice.paidAmount) >= invoiceTotal(invoice)) ? "sent" : invoice.status })}><Mail size={18} /> Open PDF + Email</button></div></div></Modal>;
 }
 
 function InvoicePhotoPicker({ photos, label, onChange }: { photos: string[]; label: string; onChange: (photos: string[]) => void }) {
