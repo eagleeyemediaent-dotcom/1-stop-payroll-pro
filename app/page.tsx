@@ -44,7 +44,7 @@ import {
 // PHASE 13 single-file replacement for app/page.tsx
 // Property address persistence + assignment preset dropdown fix
 // PHASE 23: One Work Order flow only + message/PDF actions visible inside every Work Order + PDF-first invoice sharing
-// PHASE 24A.1: Final cleanup — Work Orders are the only field workflow; old Make Ready screens disabled
+// PHASE 24A.2: Final cleanup — Work Orders only; old Make Ready data/code removed from app state
 
 const STORAGE_KEY = "oneStopPayrollProEliteBlackGoldX_v1";
 const PROPERTY_PROFILES_KEY = "oneStopPropertyProfiles_v1";
@@ -101,26 +101,6 @@ type JobEntry = {
   workLanguage?: AssignmentLanguage;
 };
 
-type MakeReadyTask = {
-  id: string;
-  label: string;
-  done: boolean;
-};
-
-type MakeReadyItem = {
-  id: string;
-  property: string;
-  unitNumber: string;
-  assignedEmployeeId: string;
-  moveOutDate: string;
-  moveInDate: string;
-  deadline: string;
-  status: "scheduled" | "in-progress" | "waiting" | "ready";
-  priority: "normal" | "urgent";
-  notes: string;
-  tasks: MakeReadyTask[];
-};
-
 type InvoiceLineItem = {
   id: string;
   description: string;
@@ -145,7 +125,6 @@ type Invoice = {
   beforePhotos?: string[];
   afterPhotos?: string[];
   sourceJobIds?: string[];
-  sourceMakeReadyId?: string;
 };
 
 type AssignmentLanguage = "english" | "spanish" | "both";
@@ -170,7 +149,6 @@ type WorkAssignment = {
 type AppState = {
   employees: Employee[];
   jobs: JobEntry[];
-  makeReady: MakeReadyItem[];
   invoices: Invoice[];
   assignments: WorkAssignment[];
   properties: string[];
@@ -448,7 +426,6 @@ const starterState: AppState = {
     },
   ],
   jobs: [],
-  makeReady: [],
   invoices: [],
   assignments: [],
   properties: defaultProperties,
@@ -875,7 +852,6 @@ export default function PayrollProEliteOperationsX() {
             ? parsed.employees.map((employee) => ({ ...employee, borrowed: safeNumber(employee.borrowed || 0), borrowedByWeek: employee.borrowedByWeek || {} }))
             : starterState.employees,
           jobs: Array.isArray(parsed.jobs) ? parsed.jobs : [],
-          makeReady: Array.isArray(parsed.makeReady) ? parsed.makeReady : [],
           invoices: Array.isArray(parsed.invoices) ? parsed.invoices : [],
           assignments: Array.isArray(parsed.assignments) ? parsed.assignments : [],
           properties: Array.isArray(parsed.properties) ? parsed.properties : defaultProperties,
@@ -1201,7 +1177,6 @@ export default function PayrollProEliteOperationsX() {
           companyName: parsed.companyName || starterState.companyName,
           employees: parsed.employees.map((employee) => ({ ...employee, borrowed: safeNumber(employee.borrowed || 0), borrowedByWeek: employee.borrowedByWeek || {} })),
           jobs: parsed.jobs,
-          makeReady: Array.isArray(parsed.makeReady) ? parsed.makeReady : [],
           invoices: Array.isArray(parsed.invoices) ? parsed.invoices : [],
           assignments: Array.isArray(parsed.assignments) ? parsed.assignments : [],
           properties: Array.isArray(parsed.properties) ? parsed.properties : defaultProperties,
