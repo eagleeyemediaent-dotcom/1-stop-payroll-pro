@@ -1244,6 +1244,30 @@ export default function PayrollProEliteOperationsX() {
 
         <WeekHero week={week} selectedWeek={selectedWeek} setSelectedWeek={setSelectedWeek} />
 
+        <section className="mt-4 rounded-[1.25rem] border border-white/10 bg-zinc-950/70 p-3 shadow-[0_18px_45px_rgba(0,0,0,0.25)]">
+          <div className="mb-2 flex items-center justify-between gap-3">
+            <div>
+              <p className="text-xs font-black uppercase tracking-[0.18em] text-green-300">Quick Actions</p>
+              <p className="text-[11px] font-semibold text-zinc-500">One tap to start the main office tasks.</p>
+            </div>
+            <Sparkles size={18} className="text-green-300" />
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <button onClick={() => setShowJobForm(true)} className="flex items-center justify-center gap-2 rounded-2xl border border-green-400/20 bg-green-500/15 px-3 py-3 text-xs font-black text-green-200 active:scale-[.99]">
+              <Plus size={17} /> Work Order
+            </button>
+            <button onClick={() => { setActiveTab("office"); setEditingInvoice(null); setShowInvoiceForm(true); }} className="flex items-center justify-center gap-2 rounded-2xl border border-blue-400/20 bg-blue-500/15 px-3 py-3 text-xs font-black text-blue-200 active:scale-[.99]">
+              <ReceiptText size={17} /> Invoice
+            </button>
+            <button onClick={() => { setActiveTab("employees"); setShowEmployeeForm(true); }} className="flex items-center justify-center gap-2 rounded-2xl border border-amber-400/20 bg-amber-500/15 px-3 py-3 text-xs font-black text-amber-200 active:scale-[.99]">
+              <UserPlus size={17} /> Employee
+            </button>
+            <button onClick={() => { setActiveTab("properties"); setEditingPropertyName(null); setShowPropertyForm(true); }} className="flex items-center justify-center gap-2 rounded-2xl border border-purple-400/20 bg-purple-500/15 px-3 py-3 text-xs font-black text-purple-200 active:scale-[.99]">
+              <Building2 size={17} /> Property
+            </button>
+          </div>
+        </section>
+
         {activeTab === "dashboard" && (
           <>
             <button onClick={() => setShowJobForm(true)} className="mt-5 flex w-full items-center justify-center gap-3 rounded-[1.15rem] border border-green-300/20 bg-gradient-to-r from-green-500 to-green-600 px-5 py-4 text-xl font-black text-white shadow-[0_20px_45px_rgba(34,197,94,0.24)] transition active:scale-[.99]">
