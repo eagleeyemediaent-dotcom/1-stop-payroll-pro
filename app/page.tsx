@@ -44,7 +44,7 @@ import {
 // PHASE 13 single-file replacement for app/page.tsx
 // Property address persistence + assignment preset dropdown fix
 // PHASE 23: One Work Order flow only + message/PDF actions visible inside every Work Order + PDF-first invoice sharing
-// PHASE 24D: Collapsible Dashboard Sections — dashboard cards collapsed by default
+// PHASE 24E: Work Order Status Pipeline — Open / Assigned / In Progress / Completed / Ready To Invoice / All
 
 const STORAGE_KEY = "oneStopPayrollProEliteBlackGoldX_v1";
 const PROPERTY_PROFILES_KEY = "oneStopPropertyProfiles_v1";
@@ -99,6 +99,7 @@ type JobEntry = {
   photos: string[];
   workMessage?: string;
   workLanguage?: AssignmentLanguage;
+  workStatus?: WorkOrderStatus;
 };
 
 type InvoiceLineItem = {
@@ -129,6 +130,7 @@ type Invoice = {
 
 type AssignmentLanguage = "english" | "spanish" | "both";
 type AssignmentStatus = "assigned" | "sent" | "in-progress" | "completed" | "approved" | "ready-to-invoice";
+type WorkOrderStatus = "open" | "assigned" | "in-progress" | "completed" | "ready-to-invoice";
 
 type WorkAssignment = {
   id: string;
@@ -1305,7 +1307,7 @@ export default function PayrollProEliteOperationsX() {
               </SectionTop>
 
               <div className="rounded-2xl border border-blue-400/20 bg-blue-500/10 p-3 text-sm font-semibold text-blue-200">
-                Phase 24D: Dashboard sections are now collapsible to reduce scrolling. Work Orders and Invoice Center remain unchanged and stable.
+                Phase 24E: Work Orders now have a status pipeline: Open, Assigned, In Progress, Completed, and Ready To Invoice. Dashboard and Invoice Center remain stable.
               </div>
 
               <JobList jobs={filteredJobs} employees={state.employees} employeesById={employeesById} properties={state.properties} jobTypeOptions={state.jobTypeOptions} onDelete={(id) => setConfirmDelete({ type: "job", id })} onUpdate={updateJob} onCreateInvoice={createInvoiceFromJob} />
@@ -1882,15 +1884,45 @@ function AssignmentModal({ employees, properties, getAddressForProperty, initial
   return <Modal title={initial ? "Edit Assignment" : "Work Message"} onClose={onClose}><div className="space-y-3"><div className="grid grid-cols-2 gap-2"><Operations label="Employee"><select className="inputElite" value={assignment.employeeId} onChange={(e) => setAssignment({ ...assignment, employeeId: e.target.value })}>{employees.map((employee) => <option key={employee.id} value={employee.id}>{employee.name}</option>)}</select></Operations><Operations label="Date"><input className="inputElite" type="date" value={assignment.date} onChange={(e) => setAssignment({ ...assignment, date: e.target.value })} /></Operations></div><Operations label="Property"><select className="inputElite" value={assignment.property} onChange={(e) => { const selected = e.target.value; setAssignment({ ...assignment, property: selected, address: getAddressForProperty(selected) }); }}>{properties.map((property) => <option key={property} value={property}>{property}</option>)}</select></Operations><Operations label="Address"><input className="inputElite" value={assignment.address} onChange={(e) => setAssignment({ ...assignment, address: e.target.value })} placeholder="460 Charles St, Providence RI" /></Operations><div className="grid grid-cols-2 gap-2"><Operations label="Unit"><input className="inputElite" value={assignment.unitNumber} onChange={(e) => setAssignment({ ...assignment, unitNumber: e.target.value })} placeholder="107" /></Operations><Operations label="Priority"><select className="inputElite" value={assignment.priority} onChange={(e) => setAssignment({ ...assignment, priority: e.target.value as WorkAssignment["priority"] })}><option value="normal">Normal</option><option value="urgent">Urgent</option></select></Operations></div><div className="grid grid-cols-2 gap-2"><Operations label="Language"><select className="inputElite" value={assignment.language} onChange={(e) => updateLanguage(e.target.value as AssignmentLanguage)}><option value="spanish">Español</option><option value="english">English</option><option value="both">Both</option></select></Operations><Operations label="Status"><select className="inputElite" value={assignment.status} onChange={(e) => setAssignment({ ...assignment, status: e.target.value as AssignmentStatus })}><option value="assigned">Assigned</option><option value="sent">Sent</option><option value="in-progress">In Progress</option><option value="completed">Completed</option><option value="approved">Approved</option><option value="ready-to-invoice">Ready To Invoice</option></select></Operations></div><Operations label="Select Job Assignment"><select className="inputElite" value={selectedPreset} onChange={(e) => applyPreset(e.target.value)}><option value="">Choose assignment type...</option>{assignmentPresets.map((preset) => <option key={preset.label} value={preset.label}>{preset.label}</option>)}</select></Operations><Operations label="Scope of Work"><textarea className="inputElite min-h-32" value={assignment.scope} onChange={(e) => { setSelectedPreset("Custom"); setAssignment({ ...assignment, scope: e.target.value }); }} placeholder="Blank until you choose a job assignment or type your custom scope." /></Operations><Operations label="Notes"><textarea className="inputElite min-h-20" value={assignment.notes} onChange={(e) => setAssignment({ ...assignment, notes: e.target.value })} placeholder="Optional notes for employee" /></Operations><div className="rounded-2xl border border-green-400/20 bg-green-500/10 p-3"><p className="mb-2 text-xs font-black uppercase text-green-400">Message Preview</p><pre className="max-h-56 overflow-y-auto whitespace-pre-wrap rounded-xl bg-black/40 p-3 text-xs font-semibold text-zinc-200">{preview}</pre></div><div className="grid grid-cols-2 gap-2"><button className="goldButton" onClick={() => onSave({ ...assignment, address: assignment.address.trim() || getAddressForProperty(assignment.property), createdAt: assignment.createdAt || new Date().toISOString() })}><Check size={18} /> Save</button><button className="darkButton" onClick={() => copyAssignmentMessage(assignment, employeeName)}><ClipboardList size={18} /> Copy</button><button className="darkButton" onClick={() => openAssignmentText(assignment, employee)}><FileText size={18} /> Send Text</button><button className="darkButton" onClick={() => openAssignmentWhatsApp(assignment, employee)}><Mail size={18} /> WhatsApp</button></div></div></Modal>;
 }
 
+
+function getWorkOrderStatus(job: JobEntry): WorkOrderStatus {
+  if (job.workStatus) return job.workStatus;
+  if (job.status === "paid") return "completed";
+  if (job.workMessage) return "assigned";
+  return "open";
+}
+
+function workOrderStatusLabel(status: WorkOrderStatus) {
+  if (status === "open") return "OPEN";
+  if (status === "assigned") return "ASSIGNED";
+  if (status === "in-progress") return "IN PROGRESS";
+  if (status === "completed") return "COMPLETED";
+  return "READY TO INVOICE";
+}
+
+function workOrderStatusBadge(status: WorkOrderStatus) {
+  if (status === "open") return "border-zinc-700 bg-zinc-900/70 text-zinc-300";
+  if (status === "assigned") return "border-yellow-400/40 bg-yellow-500/10 text-yellow-300";
+  if (status === "in-progress") return "border-blue-400/40 bg-blue-500/10 text-blue-300";
+  if (status === "completed") return "border-green-400/40 bg-green-500/10 text-green-300";
+  return "border-purple-400/40 bg-purple-500/10 text-purple-300";
+}
+
 function JobList({ jobs, employees, employeesById, properties, jobTypeOptions, onDelete, onUpdate, onCreateInvoice }: { jobs: JobEntry[]; employees: Employee[]; employeesById: Map<string, Employee>; properties: string[]; jobTypeOptions: string[]; onDelete: (id: string) => void; onUpdate: (job: JobEntry) => void; onCreateInvoice: (job: JobEntry) => void }) {
   const [openList, setOpenList] = useState(true);
-  const [filter, setFilter] = useState<"all" | "open" | "paid">("all");
+  const [filter, setFilter] = useState<"all" | WorkOrderStatus>("all");
   const totalPay = jobs.reduce((sum, job) => sum + safeNumber(job.pay), 0);
-  const openJobs = jobs.filter((job) => Math.max(safeNumber(job.pay) - safeNumber(job.paidAmount), 0) > 0 && job.status !== "paid");
-  const paidJobs = jobs.filter((job) => Math.max(safeNumber(job.pay) - safeNumber(job.paidAmount), 0) <= 0 || job.status === "paid");
-  const visibleJobs = filter === "open" ? openJobs : filter === "paid" ? paidJobs : jobs;
+  const counts = {
+    all: jobs.length,
+    open: jobs.filter((job) => getWorkOrderStatus(job) === "open").length,
+    assigned: jobs.filter((job) => getWorkOrderStatus(job) === "assigned").length,
+    "in-progress": jobs.filter((job) => getWorkOrderStatus(job) === "in-progress").length,
+    completed: jobs.filter((job) => getWorkOrderStatus(job) === "completed").length,
+    "ready-to-invoice": jobs.filter((job) => getWorkOrderStatus(job) === "ready-to-invoice").length,
+  };
+  const visibleJobs = filter === "all" ? jobs : jobs.filter((job) => getWorkOrderStatus(job) === filter);
 
-  return <section className="blackCard overflow-hidden"><button type="button" onClick={() => setOpenList(!openList)} className="relative z-10 flex w-full items-center justify-between gap-3 p-4 text-left"><div><h3 className="font-black">Work Orders</h3><p className="text-xs font-semibold text-zinc-500">{jobs.length} job(s) • {money(totalPay)} employee pay</p></div><div className="flex items-center gap-2"><span className="rounded-full border border-green-400/25 bg-green-500/10 px-3 py-1 text-xs font-black text-green-300">Tap</span>{openList ? <ChevronUp size={18} /> : <ChevronDown size={18} />}</div></button>{openList && <div className="relative z-10 space-y-3 border-t border-white/10 p-3"><div className="grid grid-cols-3 gap-2"><FilterChip label={`All ${jobs.length}`} active={filter === "all"} onClick={() => setFilter("all")} /><FilterChip label={`Open ${openJobs.length}`} active={filter === "open"} danger={openJobs.length > 0} onClick={() => setFilter("open")} /><FilterChip label={`Paid ${paidJobs.length}`} active={filter === "paid"} onClick={() => setFilter("paid")} /></div>{visibleJobs.map((job) => <JobRow key={job.id} job={job} employees={employees} employee={employeesById.get(job.employeeId)} properties={properties} jobTypeOptions={jobTypeOptions} onDelete={() => onDelete(job.id)} onUpdate={onUpdate} onCreateInvoice={() => onCreateInvoice(job)} />)}{visibleJobs.length === 0 && <div className="p-3"><EmptyText text={filter === "open" ? "No open/unpaid work orders for this selected week." : filter === "paid" ? "No paid work orders for this selected week." : "No work orders found for this selected week."} /></div>}</div>}</section>;
+  return <section className="blackCard overflow-hidden"><button type="button" onClick={() => setOpenList(!openList)} className="relative z-10 flex w-full items-center justify-between gap-3 p-4 text-left"><div><h3 className="font-black">Work Orders</h3><p className="text-xs font-semibold text-zinc-500">{jobs.length} job(s) • {money(totalPay)} employee pay</p></div><div className="flex items-center gap-2"><span className="rounded-full border border-green-400/25 bg-green-500/10 px-3 py-1 text-xs font-black text-green-300">Tap</span>{openList ? <ChevronUp size={18} /> : <ChevronDown size={18} />}</div></button>{openList && <div className="relative z-10 space-y-3 border-t border-white/10 p-3"><div className="grid grid-cols-2 gap-2"><FilterChip label={`All ${counts.all}`} active={filter === "all"} onClick={() => setFilter("all")} /><FilterChip label={`Open ${counts.open}`} active={filter === "open"} onClick={() => setFilter("open")} /><FilterChip label={`Assigned ${counts.assigned}`} active={filter === "assigned"} onClick={() => setFilter("assigned")} /><FilterChip label={`In Progress ${counts["in-progress"]}`} active={filter === "in-progress"} onClick={() => setFilter("in-progress")} /><FilterChip label={`Completed ${counts.completed}`} active={filter === "completed"} onClick={() => setFilter("completed")} /><FilterChip label={`Ready Invoice ${counts["ready-to-invoice"]}`} active={filter === "ready-to-invoice"} onClick={() => setFilter("ready-to-invoice")} /></div>{visibleJobs.map((job) => <JobRow key={job.id} job={job} employees={employees} employee={employeesById.get(job.employeeId)} properties={properties} jobTypeOptions={jobTypeOptions} onDelete={() => onDelete(job.id)} onUpdate={onUpdate} onCreateInvoice={() => onCreateInvoice(job)} />)}{visibleJobs.length === 0 && <div className="p-3"><EmptyText text={filter === "all" ? "No work orders found for this selected week." : `No ${String(filter).replace("-", " ")} work orders for this selected week.`} /></div>}</div>}</section>;
 }
 
 function FilterChip({ label, active, danger, onClick }: { label: string; active: boolean; danger?: boolean; onClick: () => void }) {
@@ -1902,6 +1934,7 @@ function JobRow({ job, employees, employee, properties, jobTypeOptions, onDelete
   const owed = Math.max(safeNumber(job.pay) - safeNumber(job.paidAmount), 0);
   const isFullyPaid = owed <= 0 || job.status === "paid";
   const normalizedStatus: JobEntry["status"] = owed <= 0 ? "paid" : job.status === "partial" ? "partial" : "unpaid";
+  const pipelineStatus = getWorkOrderStatus(job);
   function toggleType(type: string) { const next = job.jobTypes.includes(type) ? job.jobTypes.filter((item) => item !== type) : [...job.jobTypes, type]; onUpdate({ ...job, jobTypes: next }); }
   function confirmJobPaid() { const ok = confirmAction(`Confirm Payment
 
@@ -1909,7 +1942,7 @@ Employee: ${employee?.name || "Unknown Employee"}
 Property: ${propertyWithUnit(job)}
 Amount: ${money(job.pay)}
 
-Only confirm if payment was actually made.`); if (!ok) return; onUpdate({ ...job, paidAmount: job.pay, status: "paid" }); }
+Only confirm if payment was actually made.`); if (!ok) return; onUpdate({ ...job, paidAmount: job.pay, status: "paid", workStatus: "completed" }); }
   function confirmJobUnpaid() { const ok = confirmAction(`Warning: Revert Payment
 
 Mark this job as UNPAID?
@@ -1918,7 +1951,7 @@ Employee: ${employee?.name || "Unknown Employee"}
 Property: ${propertyWithUnit(job)}
 Amount returning to owed: ${money(job.pay)}
 
-This will move the amount back into owed balance.`); if (!ok) return; onUpdate({ ...job, paidAmount: 0, status: "unpaid" }); }
+This will move the amount back into owed balance.`); if (!ok) return; onUpdate({ ...job, paidAmount: 0, status: "unpaid", workStatus: job.workStatus === "completed" ? "open" : job.workStatus }); }
   async function addPhotos(files: FileList | null) { const newPhotos = await readPhotoFiles(files); if (newPhotos.length) onUpdate({ ...job, photos: [...(job.photos || []), ...newPhotos] }); }
   const currentLanguage: AssignmentLanguage = job.workLanguage || "both";
   const generatedWorkMessage = buildWorkOrderMessage(job, employee?.name || "Employee", currentLanguage);
@@ -1930,7 +1963,7 @@ This will move the amount back into owed balance.`); if (!ok) return; onUpdate({
     onUpdate({ ...job, workMessage: generatedWorkMessage });
   }
 
-  return <div className="blackCard p-3"><button onClick={() => setOpen(!open)} className="w-full text-left"><div className="flex items-center justify-between gap-3"><div className="min-w-0"><p className="truncate font-black">{employee?.name || "Unknown Employee"}</p><p className="truncate text-xs text-zinc-500">{formatJobDate(job.date)} • {propertyWithUnit(job)}</p></div><div className="shrink-0 text-right"><p className="font-black text-green-400">{money(job.pay)}</p><p className={`${owed > 0 ? "text-red-300" : "text-green-300"} text-xs font-black`}>Owed {money(owed)}</p></div></div><div className="mt-2 flex items-center justify-between gap-2"><span className={`rounded-full border px-3 py-1 text-[10px] font-black uppercase ${jobStatusColor(normalizedStatus, owed)}`}>{owed <= 0 ? "PAID" : job.status === "partial" ? "PARTIAL" : "UNPAID"}</span><span className="text-[10px] font-black uppercase text-zinc-500">{open ? "Close" : "Tap to open"}</span></div></button><div className="mt-3 grid grid-cols-2 gap-2"><button className="goldButton !py-2 text-sm" onClick={() => setOpen(true)}><FileText size={16} /> Message</button><button className="darkButton !py-2 text-sm" onClick={() => setOpen(!open)}><Pencil size={16} /> Edit</button><button className="goldButton !py-2 text-sm" onClick={onCreateInvoice}><ReceiptText size={16} /> Invoice</button><button className={`${isFullyPaid ? "goldButton shadow-[0_0_28px_rgba(34,197,94,0.45)]" : "darkButton"} !py-2 text-sm`} onClick={confirmJobPaid}><Check size={16} /> {isFullyPaid ? "Paid ✓" : "Paid"}</button><button className={`${isFullyPaid ? "darkButton text-zinc-300" : "flex items-center justify-center gap-1 rounded-2xl border border-red-400/30 bg-red-500/10 px-2 py-2 text-sm font-black text-red-300"} col-span-2`} onClick={confirmJobUnpaid}><RotateCcw size={15} /> Unpay</button></div>{open && <div className="mt-4 space-y-3 border-t border-zinc-800 pt-4"><div className="grid grid-cols-2 gap-2"><Operations label="Employee"><select className="inputElite" value={job.employeeId} onChange={(e) => onUpdate({ ...job, employeeId: e.target.value })}>{employees.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></Operations><Operations label={`Date — ${formatJobDate(job.date)}`}><input className="inputElite cursor-pointer" type="date" value={job.date} onClick={(e) => e.currentTarget.showPicker?.()} onFocus={(e) => e.currentTarget.showPicker?.()} onChange={(e) => onUpdate({ ...job, date: e.target.value })} /></Operations><Operations label="Property"><select className="inputElite" value={job.property} onChange={(e) => onUpdate({ ...job, property: e.target.value })}>{properties.map((property) => <option key={property} value={property}>{property}</option>)}</select></Operations><Operations label="Unit #"><input className="inputElite" value={job.unitNumber || ""} onChange={(e) => onUpdate({ ...job, unitNumber: e.target.value })} placeholder="Example: 204" /></Operations><Operations label="Pay"><MoneyInput value={job.pay} onValueChange={(value) => onUpdate({ ...job, pay: value, status: statusFrom(value, job.paidAmount) })} placeholder="Enter Amount" /></Operations><Operations label="Paid"><MoneyInput value={job.paidAmount} onValueChange={(value) => { if (value >= job.pay && job.pay > 0 && !confirmAction(`Confirm Payment
+  return <div className="blackCard p-3"><button onClick={() => setOpen(!open)} className="w-full text-left"><div className="flex items-center justify-between gap-3"><div className="min-w-0"><p className="truncate font-black">{employee?.name || "Unknown Employee"}</p><p className="truncate text-xs text-zinc-500">{formatJobDate(job.date)} • {propertyWithUnit(job)}</p></div><div className="shrink-0 text-right"><p className="font-black text-green-400">{money(job.pay)}</p><p className={`${owed > 0 ? "text-red-300" : "text-green-300"} text-xs font-black`}>Owed {money(owed)}</p></div></div><div className="mt-2 flex flex-wrap items-center justify-between gap-2"><div className="flex flex-wrap gap-2"><span className={`rounded-full border px-3 py-1 text-[10px] font-black uppercase ${workOrderStatusBadge(pipelineStatus)}`}>{workOrderStatusLabel(pipelineStatus)}</span><span className={`rounded-full border px-3 py-1 text-[10px] font-black uppercase ${jobStatusColor(normalizedStatus, owed)}`}>{owed <= 0 ? "PAID" : job.status === "partial" ? "PARTIAL" : "UNPAID"}</span></div><span className="text-[10px] font-black uppercase text-zinc-500">{open ? "Close" : "Tap to open"}</span></div></button><div className="mt-3 grid grid-cols-2 gap-2"><button className="goldButton !py-2 text-sm" onClick={() => setOpen(true)}><FileText size={16} /> Message</button><button className="darkButton !py-2 text-sm" onClick={() => setOpen(!open)}><Pencil size={16} /> Edit</button><button className="goldButton !py-2 text-sm" onClick={onCreateInvoice}><ReceiptText size={16} /> Invoice</button><button className={`${isFullyPaid ? "goldButton shadow-[0_0_28px_rgba(34,197,94,0.45)]" : "darkButton"} !py-2 text-sm`} onClick={confirmJobPaid}><Check size={16} /> {isFullyPaid ? "Paid ✓" : "Paid"}</button><button className={`${isFullyPaid ? "darkButton text-zinc-300" : "flex items-center justify-center gap-1 rounded-2xl border border-red-400/30 bg-red-500/10 px-2 py-2 text-sm font-black text-red-300"} col-span-2`} onClick={confirmJobUnpaid}><RotateCcw size={15} /> Unpay</button></div>{open && <div className="mt-4 space-y-3 border-t border-zinc-800 pt-4"><Operations label="Work Order Status"><select className="inputElite" value={pipelineStatus} onChange={(e) => onUpdate({ ...job, workStatus: e.target.value as WorkOrderStatus })}><option value="open">Open</option><option value="assigned">Assigned</option><option value="in-progress">In Progress</option><option value="completed">Completed</option><option value="ready-to-invoice">Ready To Invoice</option></select></Operations><div className="grid grid-cols-2 gap-2"><Operations label="Employee"><select className="inputElite" value={job.employeeId} onChange={(e) => onUpdate({ ...job, employeeId: e.target.value })}>{employees.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></Operations><Operations label={`Date — ${formatJobDate(job.date)}`}><input className="inputElite cursor-pointer" type="date" value={job.date} onClick={(e) => e.currentTarget.showPicker?.()} onFocus={(e) => e.currentTarget.showPicker?.()} onChange={(e) => onUpdate({ ...job, date: e.target.value })} /></Operations><Operations label="Property"><select className="inputElite" value={job.property} onChange={(e) => onUpdate({ ...job, property: e.target.value })}>{properties.map((property) => <option key={property} value={property}>{property}</option>)}</select></Operations><Operations label="Unit #"><input className="inputElite" value={job.unitNumber || ""} onChange={(e) => onUpdate({ ...job, unitNumber: e.target.value })} placeholder="Example: 204" /></Operations><Operations label="Pay"><MoneyInput value={job.pay} onValueChange={(value) => onUpdate({ ...job, pay: value, status: statusFrom(value, job.paidAmount) })} placeholder="Enter Amount" /></Operations><Operations label="Paid"><MoneyInput value={job.paidAmount} onValueChange={(value) => { if (value >= job.pay && job.pay > 0 && !confirmAction(`Confirm Payment
 
 Mark this job paid?
 
