@@ -44,8 +44,7 @@ import {
 // PHASE 13 single-file replacement for app/page.tsx
 // Property address persistence + assignment preset dropdown fix
 // PHASE 23: One Work Order flow only + message/PDF actions visible inside every Work Order + PDF-first invoice sharing
-// PHASE 24C: Invoice Center cleanup — All / Due / Sent / Paid / Overdue filters + outstanding balance
-// PHASE 24D: Smart Ready-To-Invoice queue — hides already invoiced jobs, shows linked invoices, and auto-updates sent/overdue status
+// PHASE 24D: Collapsible Dashboard Sections — dashboard cards collapsed by default
 
 const STORAGE_KEY = "oneStopPayrollProEliteBlackGoldX_v1";
 const PROPERTY_PROFILES_KEY = "oneStopPropertyProfiles_v1";
@@ -620,21 +619,6 @@ function stripInternalInvoiceText(text: string) {
     .filter((part) => part && !/(employee\s*pay|worker\s*pay|payroll|pay\s+the\s+employee|paid\s+to\s+workers|kept\s+separate|separate\s+from\s+employee|separate\s+from\s+what\s+you\s+pay)/i.test(part))
     .join(" ")
     .trim();
-}
-
-
-function invoiceOpenBalance(invoice: Invoice) {
-  return Math.max(invoiceTotal(invoice) - safeNumber(invoice.paidAmount), 0);
-}
-
-function invoiceSmartStatus(invoice: Invoice): Invoice["status"] {
-  if (invoiceStatusIsPaid(invoice)) return "paid";
-  if (invoice.dueDate && invoice.dueDate < todayISO()) return "overdue";
-  return invoice.status;
-}
-
-function invoiceHasJob(invoice: Invoice, jobId: string) {
-  return Array.isArray(invoice.sourceJobIds) && invoice.sourceJobIds.includes(jobId);
 }
 
 function customerSafeInvoice(invoice: Invoice): Invoice {
@@ -1321,7 +1305,7 @@ export default function PayrollProEliteOperationsX() {
               </SectionTop>
 
               <div className="rounded-2xl border border-blue-400/20 bg-blue-500/10 p-3 text-sm font-semibold text-blue-200">
-                Phase 24D: Office now has a smart Ready-To-Invoice queue. Work Orders remain unchanged and stable.
+                Phase 24D: Dashboard sections are now collapsible to reduce scrolling. Work Orders and Invoice Center remain unchanged and stable.
               </div>
 
               <JobList jobs={filteredJobs} employees={state.employees} employeesById={employeesById} properties={state.properties} jobTypeOptions={state.jobTypeOptions} onDelete={(id) => setConfirmDelete({ type: "job", id })} onUpdate={updateJob} onCreateInvoice={createInvoiceFromJob} />
@@ -1483,14 +1467,21 @@ function SectionTop({ title, subtitle, children }: { title: string; subtitle: st
 }
 
 function Dashboard({ employeeTotals, filteredJobs, employeesById, workOrderTotals, totals, onAddJob, onGoEmployees, onGoReports, onGoWorkOrders, onGoInvoices }: { employeeTotals: { employee: Employee; jobs: JobEntry[]; earned: number; paid: number; borrowed: number; owed: number }[]; filteredJobs: JobEntry[]; employeesById: Map<string, Employee>; workOrderTotals: { total: number; unpaid: number; paid: number; photos: number }; totals: { invoiceOpen: number }; onAddJob: () => void; onGoEmployees: () => void; onGoReports: () => void; onGoWorkOrders: () => void; onGoInvoices: () => void }) {
+  // PHASE 24D: Dashboard sections collapsed by default to reduce scrolling on phones.
   const [openBalances, setOpenBalances] = useState(false);
   const [openWeekWork, setOpenWeekWork] = useState(false);
+  const [openRecentActivity, setOpenRecentActivity] = useState(false);
+  const [openInvoiceSummary, setOpenInvoiceSummary] = useState(false);
+
   const topOwed = [...employeeTotals].sort((a, b) => b.owed - a.owed).slice(0, 6);
   const openBalanceCount = topOwed.filter((row) => row.owed > 0).length;
+  const totalEmployeeOwed = employeeTotals.reduce((sum, row) => sum + safeNumber(row.owed), 0);
+  const recentJobs = filteredJobs.slice(0, 5);
+
   return (
     <section className="grid gap-4">
       <div className="space-y-4">
-        <SectionTop title="Command Center" subtitle="Fast view. Tap only what you need." />
+        <SectionTop title="Command Center" subtitle="Clean dashboard. Tap a section to open only what you need." />
         <div className="grid grid-cols-2 gap-3">
           <QuickTile onClick={onAddJob} icon={<Plus />} title="New Work" subtitle="Create order" />
           <QuickTile onClick={onGoWorkOrders} icon={<BriefcaseBusiness />} title="Work Orders" subtitle="All jobs in one place" />
@@ -1503,20 +1494,44 @@ function Dashboard({ employeeTotals, filteredJobs, employeesById, workOrderTotal
           <MiniMetric label="Paid" value={workOrderTotals.paid} />
           <MiniMetric label="Photos" value={workOrderTotals.photos} />
         </div>
-        <div className="blackCard overflow-hidden">
-          <button type="button" onClick={() => setOpenBalances(!openBalances)} className="relative z-10 flex w-full items-center justify-between gap-3 p-4 text-left">
-            <div>
-              <h3 className="font-black">Balances by Employee</h3>
-              <p className="text-xs font-semibold text-zinc-500">{openBalanceCount} employee(s) with open balance. Tap to view details.</p>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="rounded-full border border-red-400/25 bg-red-500/10 px-3 py-1 text-xs font-black text-red-300">{openBalanceCount}</span>
-              {openBalances ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
-            </div>
-          </button>
-          {openBalances && <div className="relative z-10 space-y-2 border-t border-white/10 p-3">{topOwed.map(({ employee, earned, paid, owed, borrowed }) => <button key={employee.id} type="button" onClick={onGoEmployees} className="w-full rounded-2xl border border-zinc-800 bg-black/30 p-3 text-left transition active:scale-[.99]"><div className="flex items-center justify-between gap-3"><p className="font-black">{employee.name}</p><p className={`${owed > 0 ? "text-red-300" : "text-green-400"} font-black`}>{money(owed)}</p></div><div className="mt-2 grid grid-cols-4 gap-2 text-[11px] text-zinc-400"><span>Earned {money(earned)}</span><span>Paid {money(paid)}</span><span>Borrowed {money(borrowed)}</span><span>Owed {money(owed)}</span></div></button>)}{topOwed.length === 0 && <EmptyText text="No employee payroll yet this week." />}</div>}
-        </div>
       </div>
+
+      <div className="blackCard overflow-hidden">
+        <button type="button" onClick={() => setOpenInvoiceSummary(!openInvoiceSummary)} className="relative z-10 flex w-full items-center justify-between gap-3 p-4 text-left">
+          <div>
+            <h3 className="font-black">Invoice Summary</h3>
+            <p className="text-xs font-semibold text-zinc-500">Outstanding Balance: <span className="font-black text-green-400">{money(totals.invoiceOpen)}</span></p>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className={`rounded-full border px-3 py-1 text-xs font-black ${totals.invoiceOpen > 0 ? "border-orange-400/30 bg-orange-500/10 text-orange-300" : "border-green-400/25 bg-green-500/10 text-green-300"}`}>{money(totals.invoiceOpen)}</span>
+            {openInvoiceSummary ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+          </div>
+        </button>
+        {openInvoiceSummary && (
+          <div className="relative z-10 space-y-3 border-t border-white/10 p-3">
+            <div className="grid grid-cols-2 gap-2">
+              <button type="button" onClick={onGoInvoices} className="goldButton w-full"><ReceiptText size={18} /> Open Invoices</button>
+              <button type="button" onClick={onGoReports} className="darkButton w-full"><FileText size={18} /> Reports</button>
+            </div>
+            <p className="rounded-2xl border border-green-400/20 bg-green-500/10 p-3 text-xs font-semibold text-green-200">Invoice tools stay in Office. Dashboard only shows the quick summary so the home page stays clean.</p>
+          </div>
+        )}
+      </div>
+
+      <div className="blackCard overflow-hidden">
+        <button type="button" onClick={() => setOpenBalances(!openBalances)} className="relative z-10 flex w-full items-center justify-between gap-3 p-4 text-left">
+          <div>
+            <h3 className="font-black">Balances by Employee</h3>
+            <p className="text-xs font-semibold text-zinc-500">{openBalanceCount} employee(s) with open balance • Total owed {money(totalEmployeeOwed)}</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="rounded-full border border-red-400/25 bg-red-500/10 px-3 py-1 text-xs font-black text-red-300">{openBalanceCount}</span>
+            {openBalances ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+          </div>
+        </button>
+        {openBalances && <div className="relative z-10 space-y-2 border-t border-white/10 p-3">{topOwed.map(({ employee, earned, paid, owed, borrowed }) => <button key={employee.id} type="button" onClick={onGoEmployees} className="w-full rounded-2xl border border-zinc-800 bg-black/30 p-3 text-left transition active:scale-[.99]"><div className="flex items-center justify-between gap-3"><p className="font-black">{employee.name}</p><p className={`${owed > 0 ? "text-red-300" : "text-green-400"} font-black`}>{money(owed)}</p></div><div className="mt-2 grid grid-cols-4 gap-2 text-[11px] text-zinc-400"><span>Earned {money(earned)}</span><span>Paid {money(paid)}</span><span>Borrowed {money(borrowed)}</span><span>Owed {money(owed)}</span></div></button>)}{topOwed.length === 0 && <EmptyText text="No employee payroll yet this week." />}</div>}
+      </div>
+
       <div className="blackCard overflow-hidden">
         <button type="button" onClick={() => setOpenWeekWork(!openWeekWork)} className="relative z-10 flex w-full items-center justify-between gap-3 p-4 text-left">
           <div>
@@ -1529,6 +1544,20 @@ function Dashboard({ employeeTotals, filteredJobs, employeesById, workOrderTotal
           </div>
         </button>
         {openWeekWork && <div className="relative z-10 divide-y divide-white/10 border-t border-white/10">{filteredJobs.slice(0, 7).map((job) => <JobMini key={job.id} job={job} employee={employeesById.get(job.employeeId)} onClick={onGoWorkOrders} />)}{filteredJobs.length === 0 && <EmptyText text="No work orders found for this selected week." />}</div>}
+      </div>
+
+      <div className="blackCard overflow-hidden">
+        <button type="button" onClick={() => setOpenRecentActivity(!openRecentActivity)} className="relative z-10 flex w-full items-center justify-between gap-3 p-4 text-left">
+          <div>
+            <h3 className="text-sm font-black uppercase tracking-wide text-zinc-300">Recent Activity</h3>
+            <p className="text-xs font-semibold text-zinc-500">Latest {recentJobs.length} work order update(s). Tap to view.</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="rounded-full border border-blue-400/25 bg-blue-500/10 px-3 py-1 text-xs font-black text-blue-300">{recentJobs.length}</span>
+            {openRecentActivity ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+          </div>
+        </button>
+        {openRecentActivity && <div className="relative z-10 divide-y divide-white/10 border-t border-white/10">{recentJobs.map((job) => <JobMini key={`recent-${job.id}`} job={job} employee={employeesById.get(job.employeeId)} onClick={onGoWorkOrders} />)}{recentJobs.length === 0 && <EmptyText text="No recent activity for this selected week." />}</div>}
       </div>
     </section>
   );
@@ -1910,18 +1939,16 @@ Amount: ${money(value)}`)) return; onUpdate({ ...job, paidAmount: value, status:
 
 function InvoicesPanel({ invoices, jobs, weekJobs, onAdd, onCreateFromWeek, onCreateFromJob, onEdit, onDelete, onUpdate }: { invoices: Invoice[]; jobs: JobEntry[]; weekJobs: JobEntry[]; onAdd: () => void; onCreateFromWeek: () => void; onCreateFromJob: (job: JobEntry) => void; onEdit: (invoice: Invoice) => void; onDelete: (id: string) => void; onUpdate: (invoice: Invoice) => void }) {
   const [invoiceFilter, setInvoiceFilter] = useState<"all" | "due" | "sent" | "paid" | "overdue">("all");
-  const normalizedInvoices = invoices.map((invoice) => ({ ...invoice, status: invoiceSmartStatus(invoice) }));
-  const dueInvoices = normalizedInvoices.filter((invoice) => invoice.status === "due");
-  const sentInvoices = normalizedInvoices.filter((invoice) => invoice.status === "sent");
-  const paidInvoices = normalizedInvoices.filter((invoice) => invoice.status === "paid");
-  const overdueInvoices = normalizedInvoices.filter((invoice) => invoice.status === "overdue");
-  const visibleInvoices = invoiceFilter === "paid" ? paidInvoices : invoiceFilter === "due" ? dueInvoices : invoiceFilter === "sent" ? sentInvoices : invoiceFilter === "overdue" ? overdueInvoices : normalizedInvoices;
-  const invoicedJobIds = new Set(normalizedInvoices.flatMap((invoice) => invoice.sourceJobIds || []));
-  const readyJobs = weekJobs.filter((job) => !invoicedJobIds.has(job.id));
-  const alreadyInvoicedWeekJobs = weekJobs.filter((job) => invoicedJobIds.has(job.id));
-  const outstandingBalance = normalizedInvoices.reduce((sum, invoice) => sum + invoiceOpenBalance(invoice), 0);
-  const dueBalance = dueInvoices.reduce((sum, invoice) => sum + invoiceOpenBalance(invoice), 0);
-  const overdueBalance = overdueInvoices.reduce((sum, invoice) => sum + invoiceOpenBalance(invoice), 0);
+  const invoiceIsPaid = (invoice: Invoice) => invoiceStatusIsPaid(invoice);
+  const invoiceIsOverdue = (invoice: Invoice) => !invoiceIsPaid(invoice) && (invoice.status === "overdue" || (!!invoice.dueDate && invoice.dueDate < todayISO()));
+  const dueInvoices = invoices.filter((invoice) => !invoiceIsPaid(invoice) && !invoiceIsOverdue(invoice) && invoice.status === "due");
+  const sentInvoices = invoices.filter((invoice) => !invoiceIsPaid(invoice) && !invoiceIsOverdue(invoice) && invoice.status === "sent");
+  const paidInvoices = invoices.filter((invoice) => invoiceIsPaid(invoice));
+  const overdueInvoices = invoices.filter((invoice) => invoiceIsOverdue(invoice));
+  const visibleInvoices = invoiceFilter === "paid" ? paidInvoices : invoiceFilter === "due" ? dueInvoices : invoiceFilter === "sent" ? sentInvoices : invoiceFilter === "overdue" ? overdueInvoices : invoices;
+  const outstandingBalance = invoices.reduce((sum, invoice) => sum + Math.max(invoiceTotal(invoice) - safeNumber(invoice.paidAmount), 0), 0);
+  const dueBalance = dueInvoices.reduce((sum, invoice) => sum + Math.max(invoiceTotal(invoice) - safeNumber(invoice.paidAmount), 0), 0);
+  const overdueBalance = overdueInvoices.reduce((sum, invoice) => sum + Math.max(invoiceTotal(invoice) - safeNumber(invoice.paidAmount), 0), 0);
   const paidTotal = paidInvoices.reduce((sum, invoice) => sum + invoiceTotal(invoice), 0);
 
   const filterButtons = [
@@ -1934,7 +1961,7 @@ function InvoicesPanel({ invoices, jobs, weekJobs, onAdd, onCreateFromWeek, onCr
 
   return (
     <section className="space-y-4">
-      <SectionTop title="Invoice Center" subtitle="Phase 24D: Smart Ready-To-Invoice queue hides jobs already linked to an invoice and keeps sent/overdue/paid status cleaner.">
+      <SectionTop title="Invoice Center" subtitle="Phase 24C: filter invoices by All, Due, Sent, Paid, or Overdue and manage PDF, email, text, and payments from one place.">
         <div className="flex flex-col gap-2">
           <button onClick={onAdd} className="goldButton"><Plus size={18} /> New Invoice</button>
           <button onClick={onCreateFromWeek} className="darkButton"><Sparkles size={16} /> Invoice This Week</button>
@@ -1973,39 +2000,20 @@ function InvoicesPanel({ invoices, jobs, weekJobs, onAdd, onCreateFromWeek, onCr
         ))}
       </div>
 
-      {weekJobs.length > 0 && <div className="rounded-2xl border border-green-400/20 bg-green-500/10 p-3 text-sm font-semibold text-green-200">Selected week has {readyJobs.length} job(s) ready to invoice and {alreadyInvoicedWeekJobs.length} already linked to an invoice. Company charges stay separate from employee pay.</div>}
+      {weekJobs.length > 0 && <div className="rounded-2xl border border-green-400/20 bg-green-500/10 p-3 text-sm font-semibold text-green-200">Selected week has {weekJobs.length} jobs ready to invoice. Enter the company charge amount separately from employee pay.</div>}
 
       {weekJobs.length > 0 && (
-        <details className="blackCard p-4" open={readyJobs.length > 0}>
-          <summary className="cursor-pointer list-none font-black">Ready To Invoice <span className="text-xs font-semibold text-zinc-500">— {readyJobs.length} open</span></summary>
-          <p className="mt-2 text-xs font-semibold text-zinc-500">Phase 24D keeps this list clean by removing jobs after they are linked to an invoice. Tap a job, enter the company charge, preview the PDF, then email/text/print from that invoice screen.</p>
+        <details className="blackCard p-4">
+          <summary className="cursor-pointer list-none font-black">Ready To Invoice <span className="text-xs font-semibold text-zinc-500">— tap to open</span></summary>
+          <p className="mt-2 text-xs font-semibold text-zinc-500">Tap a job to open the full Invoice Center. No pop-up. Enter the company charge, preview the PDF, then email/text/print from that invoice screen.</p>
           <div className="mt-3 space-y-2">
-            {readyJobs.map((job) => (
+            {weekJobs.map((job) => (
               <div key={`ready-invoice-${job.id}`} className="rounded-2xl border border-zinc-800 bg-black/30 p-3">
                 <p className="font-black text-zinc-100">{propertyWithUnit(job)}</p>
                 <p className="text-xs text-zinc-500">{formatJobDate(job.date)} • {[...job.jobTypes, job.customWork].filter(Boolean).join(" / ") || "Labor"}</p>
                 <button type="button" className="goldButton mt-3 w-full" onClick={() => onCreateFromJob(job)}><ReceiptText size={16} /> Open Invoice Center</button>
               </div>
             ))}
-            {readyJobs.length === 0 && <EmptyText text="No open jobs left to invoice for this selected week." />}
-          </div>
-        </details>
-      )}
-
-      {alreadyInvoicedWeekJobs.length > 0 && (
-        <details className="blackCard p-4">
-          <summary className="cursor-pointer list-none font-black">Already Invoiced <span className="text-xs font-semibold text-zinc-500">— {alreadyInvoicedWeekJobs.length} linked</span></summary>
-          <div className="mt-3 space-y-2">
-            {alreadyInvoicedWeekJobs.map((job) => {
-              const linkedInvoice = normalizedInvoices.find((invoice) => invoiceHasJob(invoice, job.id));
-              return (
-                <div key={`already-invoiced-${job.id}`} className="rounded-2xl border border-green-400/20 bg-green-500/10 p-3">
-                  <p className="font-black text-zinc-100">{propertyWithUnit(job)}</p>
-                  <p className="text-xs text-zinc-500">{formatJobDate(job.date)} • {linkedInvoice?.invoiceNumber || "Linked invoice"}</p>
-                  {linkedInvoice && <button type="button" className="darkButton mt-3 w-full" onClick={() => onEdit(linkedInvoice)}><Eye size={16} /> Open Linked Invoice</button>}
-                </div>
-              );
-            })}
           </div>
         </details>
       )}
@@ -2020,10 +2028,9 @@ function InvoicesPanel({ invoices, jobs, weekJobs, onAdd, onCreateFromWeek, onCr
 
 function InvoiceCard({ invoice, jobs, onEdit, onDelete, onUpdate }: { invoice: Invoice; jobs: JobEntry[]; onEdit: () => void; onDelete: () => void; onUpdate: (invoice: Invoice) => void }) {
   const [preview, setPreview] = useState(false);
-  invoice = { ...invoice, status: invoiceSmartStatus(invoice) };
   const total = invoiceTotal(invoice);
-  const open = invoiceOpenBalance(invoice);
-  const isPaid = invoice.status === "paid";
+  const open = Math.max(total - invoice.paidAmount, 0);
+  const isPaid = invoice.status === "paid" && total > 0 && safeNumber(invoice.paidAmount) >= total;
   const sourcePhotos = jobs.filter((job) => invoice.sourceJobIds?.includes(job.id)).flatMap((job) => job.photos || []);
   const beforePhotos = invoice.beforePhotos || [];
   const afterPhotos = [...(invoice.afterPhotos || []), ...sourcePhotos];
@@ -2072,8 +2079,8 @@ function InvoiceCard({ invoice, jobs, onEdit, onDelete, onUpdate }: { invoice: I
         <button className="darkButton" onClick={() => setPreview(!preview)}><Eye size={16} /> {preview ? "Hide Preview" : "Preview PDF"}</button>
         <button className={`${isPaid ? "goldButton shadow-[0_0_28px_rgba(34,197,94,0.45)]" : "darkButton"}`} onClick={confirmMarkPaid}><Check size={16} /> {isPaid ? "Paid ✓" : "Mark Paid"}</button>
         <button className="darkButton" onClick={() => { setPreview(true); printInvoiceDocument(invoice, beforePhotos, afterPhotos); }}><Printer size={16} /> Open PDF</button>
-        <button className="goldButton" onClick={() => { const nextInvoice = isPaid ? invoice : { ...invoice, status: "sent" as const }; if (!isPaid) onUpdate(nextInvoice); setPreview(true); openInvoiceEmail(nextInvoice); }}><Mail size={16} /> Email PDF</button>
-        <button className="darkButton" onClick={() => { const nextInvoice = isPaid ? invoice : { ...invoice, status: "sent" as const }; if (!isPaid) onUpdate(nextInvoice); setPreview(true); openInvoiceMessage(nextInvoice); }}><FileText size={16} /> Message PDF</button>
+        <button className="goldButton" onClick={() => { setPreview(true); openInvoiceEmail(invoice); }}><Mail size={16} /> Email PDF</button>
+        <button className="darkButton" onClick={() => { setPreview(true); openInvoiceMessage(invoice); }}><FileText size={16} /> Message PDF</button>
         <button className="iconDanger" onClick={onDelete}><Trash2 size={18} /> Delete</button>
       </div>
 
