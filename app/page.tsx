@@ -44,7 +44,7 @@ import {
 // PHASE 13 single-file replacement for app/page.tsx
 // Property address persistence + assignment preset dropdown fix
 // PHASE 23: One Work Order flow only + message/PDF actions visible inside every Work Order + PDF-first invoice sharing
-// PHASE 24A.2: Final cleanup — Work Orders only; old Make Ready data/code removed from app state
+// PHASE 24B: Work Order filters added — All / Open / Paid, dashboard remains light and clean
 
 const STORAGE_KEY = "oneStopPayrollProEliteBlackGoldX_v1";
 const PROPERTY_PROFILES_KEY = "oneStopPropertyProfiles_v1";
@@ -1305,7 +1305,7 @@ export default function PayrollProEliteOperationsX() {
               </SectionTop>
 
               <div className="rounded-2xl border border-blue-400/20 bg-blue-500/10 p-3 text-sm font-semibold text-blue-200">
-                Phase 24A.1: Use New Work Order for every job, unit, employee assignment, photos, message, and invoice. The old Make Ready screen is fully hidden.
+                Phase 24B: Work Orders now have quick filters for All, Open, and Paid jobs. Use New Work Order for every job, unit, employee assignment, photos, message, and invoice.
               </div>
 
               <JobList jobs={filteredJobs} employees={state.employees} employeesById={employeesById} properties={state.properties} jobTypeOptions={state.jobTypeOptions} onDelete={(id) => setConfirmDelete({ type: "job", id })} onUpdate={updateJob} onCreateInvoice={createInvoiceFromJob} />
@@ -1839,8 +1839,17 @@ function AssignmentModal({ employees, properties, getAddressForProperty, initial
 
 function JobList({ jobs, employees, employeesById, properties, jobTypeOptions, onDelete, onUpdate, onCreateInvoice }: { jobs: JobEntry[]; employees: Employee[]; employeesById: Map<string, Employee>; properties: string[]; jobTypeOptions: string[]; onDelete: (id: string) => void; onUpdate: (job: JobEntry) => void; onCreateInvoice: (job: JobEntry) => void }) {
   const [openList, setOpenList] = useState(true);
+  const [filter, setFilter] = useState<"all" | "open" | "paid">("all");
   const totalPay = jobs.reduce((sum, job) => sum + safeNumber(job.pay), 0);
-  return <section className="blackCard overflow-hidden"><button type="button" onClick={() => setOpenList(!openList)} className="relative z-10 flex w-full items-center justify-between gap-3 p-4 text-left"><div><h3 className="font-black">Work Orders</h3><p className="text-xs font-semibold text-zinc-500">{jobs.length} job(s) • {money(totalPay)} employee pay</p></div><div className="flex items-center gap-2"><span className="rounded-full border border-green-400/25 bg-green-500/10 px-3 py-1 text-xs font-black text-green-300">Tap</span>{openList ? <ChevronUp size={18} /> : <ChevronDown size={18} />}</div></button>{openList && <div className="relative z-10 space-y-3 border-t border-white/10 p-3">{jobs.map((job) => <JobRow key={job.id} job={job} employees={employees} employee={employeesById.get(job.employeeId)} properties={properties} jobTypeOptions={jobTypeOptions} onDelete={() => onDelete(job.id)} onUpdate={onUpdate} onCreateInvoice={() => onCreateInvoice(job)} />)}{jobs.length === 0 && <div className="p-3"><EmptyText text="No work orders found for this selected week." /></div>}</div>}</section>;
+  const openJobs = jobs.filter((job) => Math.max(safeNumber(job.pay) - safeNumber(job.paidAmount), 0) > 0 && job.status !== "paid");
+  const paidJobs = jobs.filter((job) => Math.max(safeNumber(job.pay) - safeNumber(job.paidAmount), 0) <= 0 || job.status === "paid");
+  const visibleJobs = filter === "open" ? openJobs : filter === "paid" ? paidJobs : jobs;
+
+  return <section className="blackCard overflow-hidden"><button type="button" onClick={() => setOpenList(!openList)} className="relative z-10 flex w-full items-center justify-between gap-3 p-4 text-left"><div><h3 className="font-black">Work Orders</h3><p className="text-xs font-semibold text-zinc-500">{jobs.length} job(s) • {money(totalPay)} employee pay</p></div><div className="flex items-center gap-2"><span className="rounded-full border border-green-400/25 bg-green-500/10 px-3 py-1 text-xs font-black text-green-300">Tap</span>{openList ? <ChevronUp size={18} /> : <ChevronDown size={18} />}</div></button>{openList && <div className="relative z-10 space-y-3 border-t border-white/10 p-3"><div className="grid grid-cols-3 gap-2"><FilterChip label={`All ${jobs.length}`} active={filter === "all"} onClick={() => setFilter("all")} /><FilterChip label={`Open ${openJobs.length}`} active={filter === "open"} danger={openJobs.length > 0} onClick={() => setFilter("open")} /><FilterChip label={`Paid ${paidJobs.length}`} active={filter === "paid"} onClick={() => setFilter("paid")} /></div>{visibleJobs.map((job) => <JobRow key={job.id} job={job} employees={employees} employee={employeesById.get(job.employeeId)} properties={properties} jobTypeOptions={jobTypeOptions} onDelete={() => onDelete(job.id)} onUpdate={onUpdate} onCreateInvoice={() => onCreateInvoice(job)} />)}{visibleJobs.length === 0 && <div className="p-3"><EmptyText text={filter === "open" ? "No open/unpaid work orders for this selected week." : filter === "paid" ? "No paid work orders for this selected week." : "No work orders found for this selected week."} /></div>}</div>}</section>;
+}
+
+function FilterChip({ label, active, danger, onClick }: { label: string; active: boolean; danger?: boolean; onClick: () => void }) {
+  return <button type="button" onClick={onClick} className={`${active ? "border-green-400/40 bg-green-500/15 text-green-300" : danger ? "border-red-400/30 bg-red-500/10 text-red-300" : "border-zinc-800 bg-black/30 text-zinc-400"} rounded-2xl border px-3 py-2 text-xs font-black transition active:scale-[.98]`}>{label}</button>;
 }
 
 function JobRow({ job, employees, employee, properties, jobTypeOptions, onDelete, onUpdate, onCreateInvoice }: { job: JobEntry; employees: Employee[]; employee?: Employee; properties: string[]; jobTypeOptions: string[]; onDelete: () => void; onUpdate: (job: JobEntry) => void; onCreateInvoice: () => void }) {
