@@ -44,7 +44,7 @@ import {
 // PHASE 13 single-file replacement for app/page.tsx
 // Property address persistence + assignment preset dropdown fix
 // PHASE 23: One Work Order flow only + message/PDF actions visible inside every Work Order + PDF-first invoice sharing
-// PHASE 24A: Make Ready UI removed/disabled, Dashboard cleaned, Work Orders are the only field workflow
+// PHASE 24A.1: Final cleanup — Work Orders are the only field workflow; old Make Ready screens disabled
 
 const STORAGE_KEY = "oneStopPayrollProEliteBlackGoldX_v1";
 const PROPERTY_PROFILES_KEY = "oneStopPropertyProfiles_v1";
@@ -179,7 +179,7 @@ type AppState = {
   companyName: string;
 };
 
-type ActiveTab = "dashboard" | "field" | "office" | "ops" | "employees" | "jobs" | "makeReady" | "assignments" | "invoices" | "properties" | "reports" | "more";
+type ActiveTab = "dashboard" | "field" | "office" | "ops" | "employees" | "jobs" | "assignments" | "invoices" | "properties" | "reports" | "more";
 
 const defaultProperties = [
   "Charles Place Apartments",
@@ -432,16 +432,6 @@ function assignmentScopeFor(label: string, language: AssignmentLanguage) {
   return preset.spanish;
 }
 
-const defaultMakeReadyTasks = [
-  "Move-Out Confirmed",
-  "Trash Out",
-  "Repairs",
-  "Sheetrock / Plaster",
-  "Paint",
-  "Cleaning",
-  "Final Inspection",
-  "Ready for Move-In",
-];
 
 const starterState: AppState = {
   companyName: "1 Stop Turnover Specialist LLC",
@@ -488,10 +478,6 @@ function setBorrowedForWeek(employee: Employee, weekStart: string, amount: numbe
 function propertyWithUnit(job: Pick<JobEntry, "property" | "unitNumber">) {
   const unit = (job.unitNumber || "").trim();
   return unit ? `${job.property} — Unit ${unit}` : job.property;
-}
-
-function makeReadyTitle(item: Pick<MakeReadyItem, "property" | "unitNumber">) {
-  return item.unitNumber?.trim() ? `${item.property} — Unit ${item.unitNumber}` : item.property;
 }
 
 function getWeekRange(dateISO: string) {
@@ -851,10 +837,6 @@ async function readPhotoFiles(files: FileList | null): Promise<string[]> {
   }
 }
 
-function newMakeReadyTasks() {
-  return defaultMakeReadyTasks.map((label) => ({ id: uid(), label, done: false }));
-}
-
 function nextInvoiceNumber(existing: Invoice[]) {
   const next = existing.length + 1;
   return `INV-${String(next).padStart(5, "0")}`;
@@ -864,7 +846,6 @@ export default function PayrollProEliteOperationsX() {
   const [state, setState] = useState<AppState>(starterState);
   const [hydrated, setHydrated] = useState(false);
   const [activeTab, setActiveTab] = useState<ActiveTab>("dashboard");
-  const [opsView, setOpsView] = useState<"jobs" | "makeReady" | "assignments" | "invoices">("jobs");
   const [selectedWeek, setSelectedWeek] = useState(todayISO());
   const [search, setSearch] = useState("");
   const [expandedEmployeeId, setExpandedEmployeeId] = useState<string | null>(null);
@@ -874,11 +855,9 @@ export default function PayrollProEliteOperationsX() {
   const [editingAssignment, setEditingAssignment] = useState<WorkAssignment | null>(null);
   const [showPropertyForm, setShowPropertyForm] = useState(false);
   const [editingPropertyName, setEditingPropertyName] = useState<string | null>(null);
-  const [showMakeReadyForm, setShowMakeReadyForm] = useState(false);
-  const [editingMakeReady, setEditingMakeReady] = useState<MakeReadyItem | null>(null);
   const [showInvoiceForm, setShowInvoiceForm] = useState(false);
   const [editingInvoice, setEditingInvoice] = useState<Invoice | null>(null);
-  const [confirmDelete, setConfirmDelete] = useState<{ type: "employee" | "job" | "property" | "makeReady" | "invoice" | "assignment"; id: string } | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<{ type: "employee" | "job" | "property" | "invoice" | "assignment"; id: string } | null>(null);
   const importRef = useRef<HTMLInputElement | null>(null);
 
   const week = useMemo(() => getWeekRange(selectedWeek), [selectedWeek]);
@@ -958,20 +937,6 @@ export default function PayrollProEliteOperationsX() {
       })
       .sort((a, b) => b.date.localeCompare(a.date));
   }, [weekJobs, search, employeesById]);
-
-  const filteredMakeReady = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    return state.makeReady
-      .filter((item) => {
-        if (!q) return true;
-        const employeeName = employeesById.get(item.assignedEmployeeId)?.name || "";
-        return [employeeName, item.property, item.unitNumber, item.status, item.priority, item.notes]
-          .join(" ")
-          .toLowerCase()
-          .includes(q);
-      })
-      .sort((a, b) => a.deadline.localeCompare(b.deadline));
-  }, [state.makeReady, search, employeesById]);
 
   const filteredAssignments = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -1105,13 +1070,6 @@ export default function PayrollProEliteOperationsX() {
     setState((prev) => ({ ...prev, jobs: prev.jobs.map((item) => (item.id === job.id ? job : item)) }));
   }
 
-  function upsertMakeReady(item: MakeReadyItem) {
-    setState((prev) => {
-      const exists = prev.makeReady.some((row) => row.id === item.id);
-      return { ...prev, makeReady: exists ? prev.makeReady.map((row) => (row.id === item.id ? item : row)) : [item, ...prev.makeReady] };
-    });
-  }
-
   function upsertAssignment(assignment: WorkAssignment) {
     setState((prev) => {
       const exists = prev.assignments.some((row) => row.id === assignment.id);
@@ -1163,14 +1121,14 @@ export default function PayrollProEliteOperationsX() {
     setEditingInvoice(invoice);
     setShowInvoiceForm(true);
     setActiveTab("office");
-    setOpsView("invoices");
+    
   }
 
   function openInvoiceDraft(invoice: Invoice) {
     setEditingInvoice(invoice);
     setShowInvoiceForm(true);
     setActiveTab("office");
-    setOpsView("invoices");
+    
   }
 
   function createInvoiceFromJob(job: JobEntry) {
@@ -1203,47 +1161,6 @@ export default function PayrollProEliteOperationsX() {
     openInvoiceDraft(invoice);
   }
 
-  function createInvoiceFromMakeReady(item: MakeReadyItem) {
-    const chargeText = window.prompt(
-      `Create invoice for this turnover work order
-
-Work Order Unit: ${makeReadyTitle(item)}
-
-Enter the amount you are charging the company.`
-    );
-    if (chargeText === null) return;
-    const chargeAmount = safeNumber(chargeText.replace(/[^0-9.-]/g, ""));
-    if (chargeAmount <= 0) {
-      alert("Please enter the company charge amount for the invoice.");
-      return;
-    }
-    const completed = item.tasks.filter((task) => task.done).map((task) => task.label).join(" / ");
-    const invoice: Invoice = {
-      id: uid(),
-      invoiceNumber: nextInvoiceNumber(state.invoices),
-      clientName: getSavedPropertyBillingName(item.property),
-      clientEmail: getSavedPropertyEmail(item.property),
-      property: item.property,
-      propertyAddress: getSavedPropertyAddress(item.property),
-      unitNumber: item.unitNumber || "",
-      invoiceDate: todayISO(),
-      dueDate: addDaysISO(todayISO(), 14),
-      status: "due",
-      paidAmount: 0,
-      beforePhotos: [],
-      afterPhotos: [],
-      notes: item.notes || `Thank you for your business. God bless.`,
-      sourceMakeReadyId: item.id,
-      lineItems: [{
-        id: uid(),
-        description: `Turnover Work Order — ${makeReadyTitle(item)}${completed ? ` — Completed: ${completed}` : ""}`,
-        qty: 1,
-        rate: chargeAmount,
-      }],
-    };
-    openInvoiceDraft(invoice);
-  }
-
   function deleteConfirmed() {
     if (!confirmDelete) return;
     setState((prev) => {
@@ -1251,7 +1168,6 @@ Enter the amount you are charging the company.`
         return { ...prev, employees: prev.employees.filter((employee) => employee.id !== confirmDelete.id), jobs: prev.jobs.filter((job) => job.employeeId !== confirmDelete.id) };
       }
       if (confirmDelete.type === "job") return { ...prev, jobs: prev.jobs.filter((job) => job.id !== confirmDelete.id) };
-      if (confirmDelete.type === "makeReady") return { ...prev, makeReady: prev.makeReady.filter((item) => item.id !== confirmDelete.id) };
       if (confirmDelete.type === "invoice") return { ...prev, invoices: prev.invoices.filter((item) => item.id !== confirmDelete.id) };
       if (confirmDelete.type === "assignment") return { ...prev, assignments: prev.assignments.filter((item) => item.id !== confirmDelete.id) };
       const nextProfiles = { ...(prev.propertyProfiles || {}) };
@@ -1356,7 +1272,7 @@ Enter the amount you are charging the company.`
             <button onClick={() => setShowJobForm(true)} className="mt-5 flex w-full items-center justify-center gap-3 rounded-[1.15rem] border border-green-300/20 bg-gradient-to-r from-green-500 to-green-600 px-5 py-4 text-xl font-black text-white shadow-[0_20px_45px_rgba(34,197,94,0.24)] transition active:scale-[.99]">
               <Plus size={30} /> New Work Order
             </button>
-            <p className="mt-3 text-center text-xs font-semibold text-zinc-500">Payroll, turnovers, work orders, and invoices in one app.</p>
+            <p className="mt-3 text-center text-xs font-semibold text-zinc-500">Payroll, work orders, photos, messages, and invoices in one app.</p>
           </>
         )}
 
@@ -1390,7 +1306,7 @@ Enter the amount you are charging the company.`
 
         <main className="mt-5">
           {activeTab === "dashboard" && (
-            <Dashboard employeeTotals={employeeTotals} filteredJobs={filteredJobs} employeesById={employeesById} workOrderTotals={workOrderTotals} totals={totals} onAddJob={() => setShowJobForm(true)} onGoEmployees={() => setActiveTab("employees")} onGoReports={() => setActiveTab("reports")} onGoMakeReady={() => { setActiveTab("field"); setOpsView("jobs"); }} onGoInvoices={() => { setActiveTab("office"); setOpsView("invoices"); }} />
+            <Dashboard employeeTotals={employeeTotals} filteredJobs={filteredJobs} employeesById={employeesById} workOrderTotals={workOrderTotals} totals={totals} onAddJob={() => setShowJobForm(true)} onGoEmployees={() => setActiveTab("employees")} onGoReports={() => setActiveTab("reports")} onGoWorkOrders={() => setActiveTab("field")} onGoInvoices={() => setActiveTab("office")} />
           )}
 
           {activeTab === "employees" && (
@@ -1407,14 +1323,14 @@ Enter the amount you are charging the company.`
             </section>
           )}
 
-          {(activeTab === "field" || activeTab === "ops" || activeTab === "jobs" || activeTab === "makeReady") && (
+          {(activeTab === "field" || activeTab === "ops" || activeTab === "jobs") && (
             <section className="space-y-4">
-              <SectionTop title="Work Orders" subtitle="One field area for every job: regular work, turnover units, assigned employee, photos, pay, message, and invoice creation.">
+              <SectionTop title="Work Orders" subtitle="One clean field area for every job: unit, assigned employee, photos, pay, message, and invoice creation.">
                 <button onClick={() => setShowJobForm(true)} className="goldButton"><Plus size={18} /> New Work Order</button>
               </SectionTop>
 
               <div className="rounded-2xl border border-blue-400/20 bg-blue-500/10 p-3 text-sm font-semibold text-blue-200">
-                Phase 24A: Make Ready has been removed from the workflow. Use New Work Order for every job, turnover unit, employee assignment, photos, message, and invoice.
+                Phase 24A.1: Use New Work Order for every job, unit, employee assignment, photos, message, and invoice. The old Make Ready screen is fully hidden.
               </div>
 
               <JobList jobs={filteredJobs} employees={state.employees} employeesById={employeesById} properties={state.properties} jobTypeOptions={state.jobTypeOptions} onDelete={(id) => setConfirmDelete({ type: "job", id })} onUpdate={updateJob} onCreateInvoice={createInvoiceFromJob} />
@@ -1575,7 +1491,7 @@ function SectionTop({ title, subtitle, children }: { title: string; subtitle: st
   return <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between"><div><h2 className="text-2xl font-black">{title}</h2><p className="text-sm text-zinc-500">{subtitle}</p></div>{children}</div>;
 }
 
-function Dashboard({ employeeTotals, filteredJobs, employeesById, workOrderTotals, totals, onAddJob, onGoEmployees, onGoReports, onGoMakeReady, onGoInvoices }: { employeeTotals: { employee: Employee; jobs: JobEntry[]; earned: number; paid: number; borrowed: number; owed: number }[]; filteredJobs: JobEntry[]; employeesById: Map<string, Employee>; workOrderTotals: { total: number; unpaid: number; paid: number; photos: number }; totals: { invoiceOpen: number }; onAddJob: () => void; onGoEmployees: () => void; onGoReports: () => void; onGoMakeReady: () => void; onGoInvoices: () => void }) {
+function Dashboard({ employeeTotals, filteredJobs, employeesById, workOrderTotals, totals, onAddJob, onGoEmployees, onGoReports, onGoWorkOrders, onGoInvoices }: { employeeTotals: { employee: Employee; jobs: JobEntry[]; earned: number; paid: number; borrowed: number; owed: number }[]; filteredJobs: JobEntry[]; employeesById: Map<string, Employee>; workOrderTotals: { total: number; unpaid: number; paid: number; photos: number }; totals: { invoiceOpen: number }; onAddJob: () => void; onGoEmployees: () => void; onGoReports: () => void; onGoWorkOrders: () => void; onGoInvoices: () => void }) {
   const [openBalances, setOpenBalances] = useState(false);
   const [openWeekWork, setOpenWeekWork] = useState(false);
   const topOwed = [...employeeTotals].sort((a, b) => b.owed - a.owed).slice(0, 6);
@@ -1586,7 +1502,7 @@ function Dashboard({ employeeTotals, filteredJobs, employeesById, workOrderTotal
         <SectionTop title="Command Center" subtitle="Fast view. Tap only what you need." />
         <div className="grid grid-cols-2 gap-3">
           <QuickTile onClick={onAddJob} icon={<Plus />} title="New Work" subtitle="Create order" />
-          <QuickTile onClick={onGoMakeReady} icon={<BriefcaseBusiness />} title="Work Orders" subtitle="All jobs in one" />
+          <QuickTile onClick={onGoWorkOrders} icon={<BriefcaseBusiness />} title="Work Orders" subtitle="All jobs in one place" />
           <QuickTile onClick={onGoInvoices} icon={<ReceiptText />} title="Office" subtitle={`${money(totals.invoiceOpen)} open`} />
           <QuickTile onClick={onGoEmployees} icon={<Users />} title="Employees" subtitle="Names + balances" />
         </div>
@@ -1621,7 +1537,7 @@ function Dashboard({ employeeTotals, filteredJobs, employeesById, workOrderTotal
             {openWeekWork ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
           </div>
         </button>
-        {openWeekWork && <div className="relative z-10 divide-y divide-white/10 border-t border-white/10">{filteredJobs.slice(0, 7).map((job) => <JobMini key={job.id} job={job} employee={employeesById.get(job.employeeId)} onClick={onGoMakeReady} />)}{filteredJobs.length === 0 && <EmptyText text="No work orders found for this selected week." />}</div>}
+        {openWeekWork && <div className="relative z-10 divide-y divide-white/10 border-t border-white/10">{filteredJobs.slice(0, 7).map((job) => <JobMini key={job.id} job={job} employee={employeesById.get(job.employeeId)} onClick={onGoWorkOrders} />)}{filteredJobs.length === 0 && <EmptyText text="No work orders found for this selected week." />}</div>}
       </div>
     </section>
   );
@@ -1992,21 +1908,6 @@ Mark this job paid?
 Amount: ${money(value)}`)) return; onUpdate({ ...job, paidAmount: value, status: statusFrom(job.pay, value) }); }} placeholder="Enter Amount" /></Operations></div><Operations label="Work Type"><div className="grid grid-cols-2 gap-2">{jobTypeOptions.map((type) => <button type="button" key={type} onClick={() => toggleType(type)} className={`rounded-xl border px-3 py-2 text-left text-xs font-bold ${job.jobTypes.includes(type) ? "border-green-400/50 bg-green-500/20 text-green-300" : "border-zinc-800 bg-black/30 text-zinc-400"}`}>{job.jobTypes.includes(type) ? "✓ " : ""}{type}</button>)}</div></Operations><Operations label="Custom Work"><input className="inputElite" value={job.customWork} onChange={(e) => onUpdate({ ...job, customWork: e.target.value })} placeholder="Edit custom work description..." /></Operations><Operations label="Communication Center"><div className="rounded-2xl border border-green-400/20 bg-green-500/10 p-3"><div className="flex items-start justify-between gap-3"><div><p className="text-xs font-black uppercase text-green-400">Work Order Message</p><p className="mt-1 text-xs font-semibold text-zinc-400">View, edit, translate, print, email, text, WhatsApp, or copy from inside this Work Order.</p></div><button type="button" className="goldButton !py-2 text-xs" onClick={() => printWorkOrderDocument({ ...job, workLanguage: currentLanguage }, employee?.name || "Employee", currentWorkMessage)}>Preview PDF</button></div><div className="mt-3 grid grid-cols-3 gap-2"><button type="button" onClick={() => changeWorkMessageLanguage("english")} className={`${currentLanguage === "english" ? "goldButton" : "darkButton"} !py-2 text-xs`}>English</button><button type="button" onClick={() => changeWorkMessageLanguage("spanish")} className={`${currentLanguage === "spanish" ? "goldButton" : "darkButton"} !py-2 text-xs`}>Español</button><button type="button" onClick={() => changeWorkMessageLanguage("both")} className={`${currentLanguage === "both" ? "goldButton" : "darkButton"} !py-2 text-xs`}>Both</button></div><textarea className="inputElite mt-3 min-h-64 text-xs" value={currentWorkMessage} onChange={(e) => onUpdate({ ...job, workMessage: e.target.value })} /><div className="mt-3 grid grid-cols-2 gap-2"><button type="button" className="goldButton !py-2 text-xs" onClick={() => printWorkOrderDocument({ ...job, workLanguage: currentLanguage }, employee?.name || "Employee", currentWorkMessage)}>Print / Save PDF</button><button type="button" className="darkButton !py-2 text-xs" onClick={resetWorkMessage}>Regenerate</button><button type="button" className="darkButton !py-2 text-xs" onClick={() => copyWorkOrderMessage(currentWorkMessage)}>Copy Message</button><button type="button" className="darkButton !py-2 text-xs" onClick={() => textWorkOrderMessage(currentWorkMessage)}>Text Message</button><button type="button" className="darkButton !py-2 text-xs" onClick={() => whatsappWorkOrderMessage(currentWorkMessage)}>WhatsApp</button><button type="button" className="goldButton !py-2 text-xs" onClick={() => emailWorkOrderPdf({ ...job, workLanguage: currentLanguage }, employee?.name || "Employee", currentWorkMessage)}>Email PDF</button><button type="button" className="goldButton !py-2 text-xs" onClick={() => messageWorkOrderPdf({ ...job, workLanguage: currentLanguage }, employee?.name || "Employee", currentWorkMessage)}>Message PDF</button></div><p className="mt-3 text-[11px] font-semibold leading-relaxed text-zinc-400">PDF opens first so you can save, print, or share the clean work order file from your phone/computer.</p></div></Operations><Operations label="Job Photos"><div className="rounded-2xl border border-dashed border-zinc-800 bg-black/30 p-4"><div className="grid grid-cols-2 gap-2"><label className="goldButton w-full cursor-pointer"><Camera size={18} /> Take Photo<input type="file" accept="image/*" multiple capture="environment" className="hidden" onChange={async (e) => { await addPhotos(e.target.files); e.currentTarget.value = ""; }} /></label><label className="darkButton w-full cursor-pointer"><ImageIcon size={18} /> Upload<input type="file" accept="image/*" multiple className="hidden" onChange={async (e) => { await addPhotos(e.target.files); e.currentTarget.value = ""; }} /></label></div>{(job.photos || []).length > 0 ? <div className="mt-4 grid grid-cols-2 gap-3">{(job.photos || []).map((photo, index) => <div key={`${job.id}-photo-${index}`} className="relative overflow-hidden rounded-2xl border border-white/10 bg-black/40"><img src={photo} alt={`Job photo ${index + 1}`} className="h-32 w-full object-cover" /><button type="button" className="absolute right-2 top-2 rounded-full border border-red-400/30 bg-black/70 p-2 text-red-200" onClick={() => { const ok = window.confirm("Remove this photo from the job?"); if (!ok) return; onUpdate({ ...job, photos: (job.photos || []).filter((_, photoIndex) => photoIndex !== index) }); }}><Trash2 size={15} /></button></div>)}</div> : <p className="mt-3 text-center text-sm font-semibold text-zinc-500">No photos attached yet.</p>}</div></Operations><Operations label="Notes"><textarea className="inputElite min-h-28" value={job.notes} onChange={(e) => onUpdate({ ...job, notes: e.target.value })} placeholder="Edit notes for this saved job..." /></Operations><div className="flex items-center justify-between gap-2"><span className={`rounded-full border px-3 py-1 text-xs font-black ${jobStatusColor(normalizedStatus, owed)}`}>{normalizedStatus.toUpperCase()}</span><button className="iconDanger" onClick={onDelete}><Trash2 size={18} /></button></div></div>}</div>;
 }
 
-function MakeReadyBoard({ items, employees, employeesById, onAdd, onEdit, onDelete, onUpdate, onCreateInvoice, compact = false }: { items: MakeReadyItem[]; employees: Employee[]; employeesById: Map<string, Employee>; onAdd: () => void; onEdit: (item: MakeReadyItem) => void; onDelete: (id: string) => void; onUpdate: (item: MakeReadyItem) => void; onCreateInvoice: (item: MakeReadyItem) => void; compact?: boolean }) {
-  const [openBoard, setOpenBoard] = useState(false);
-  const urgentCount = items.filter((item) => item.priority === "urgent" && item.status !== "ready").length;
-  return <section className="blackCard overflow-hidden">{!compact && <div className="p-4"><SectionTop title="Turnover Board" subtitle="Track each turnover unit from move-out to ready for move-in."><button onClick={onAdd} className="goldButton"><Plus size={18} /> Add Unit</button></SectionTop></div>}<button type="button" onClick={() => setOpenBoard(!openBoard)} className="relative z-10 flex w-full items-center justify-between gap-3 p-4 text-left"><div><h3 className="font-black">Turnover / Unit Progress</h3><p className="text-xs font-semibold text-zinc-500">{items.length} unit(s) • {urgentCount} urgent • inside Work Orders</p></div><div className="flex items-center gap-2"><span className="rounded-full border border-blue-400/25 bg-blue-500/10 px-3 py-1 text-xs font-black text-blue-300">Units</span>{openBoard ? <ChevronUp size={18} /> : <ChevronDown size={18} />}</div></button>{openBoard && <div className="relative z-10 grid gap-3 border-t border-white/10 p-3">{items.map((item) => <MakeReadyCard key={item.id} item={item} employee={employeesById.get(item.assignedEmployeeId)} employees={employees} onEdit={() => onEdit(item)} onDelete={() => onDelete(item.id)} onUpdate={onUpdate} onCreateInvoice={() => onCreateInvoice(item)} />)}{items.length === 0 && <div className="p-3"><EmptyText text="No turnover units yet. Add them from the Work Orders flow when needed." /></div>}</div>}</section>;
-}
-
-function MakeReadyCard({ item, employee, employees, onEdit, onDelete, onUpdate, onCreateInvoice }: { item: MakeReadyItem; employee?: Employee; employees: Employee[]; onEdit: () => void; onDelete: () => void; onUpdate: (item: MakeReadyItem) => void; onCreateInvoice: () => void }) {
-  const [open, setOpen] = useState(false);
-  const done = item.tasks.filter((task) => task.done).length;
-  const total = item.tasks.length || 1;
-  const percent = Math.round((done / total) * 100);
-  const statusClasses = item.status === "ready" ? "bg-emerald-500/15 text-emerald-300" : item.priority === "urgent" ? "bg-red-500/15 text-red-300" : item.status === "in-progress" ? "bg-amber-500/15 text-amber-300" : "bg-blue-500/15 text-blue-300";
-  return <div className="rounded-2xl border border-zinc-800 bg-black/30 p-3"><button type="button" onClick={() => setOpen(!open)} className="flex w-full items-center justify-between gap-3 text-left"><div className="min-w-0"><p className="truncate font-black">{makeReadyTitle(item)}</p><p className="text-xs text-zinc-500">{employee?.name || "Not assigned"} • {percent}% • Deadline {item.deadline || "—"}</p></div><div className="flex shrink-0 items-center gap-2"><span className={`rounded-full px-3 py-1 text-[10px] font-black uppercase ${statusClasses}`}>{item.priority === "urgent" ? "Urgent" : item.status.replace("-", " ")}</span>{open ? <ChevronUp size={17} /> : <ChevronDown size={17} />}</div></button><div className="mt-3 h-2 overflow-hidden rounded-full border border-white/10 bg-black/40"><div className="h-full rounded-full bg-green-500" style={{ width: `${percent}%` }} /></div>{open && <div className="mt-3 border-t border-zinc-800 pt-3"><p className="text-xs font-bold text-zinc-500">Move-out {item.moveOutDate || "—"} • Move-in {item.moveInDate || "—"}</p><div className="mt-3 grid gap-2">{item.tasks.map((task) => <button type="button" key={task.id} onClick={() => { if (!task.done && !confirmAction(`Confirm: mark ${task.label} complete?`)) return; onUpdate({ ...item, tasks: item.tasks.map((row) => row.id === task.id ? { ...row, done: !row.done } : row) }); }} className={`flex items-center gap-2 rounded-xl border px-3 py-2 text-left text-sm font-bold ${task.done ? "border-green-400/25 bg-green-500/10 text-green-300" : "border-zinc-800 bg-black/30 text-zinc-400"}`}><span>{task.done ? "✅" : "⬜"}</span>{task.label}</button>)}</div><div className="mt-3 grid grid-cols-2 gap-2"><Operations label="Status"><select className="inputElite" value={item.status} onChange={(e) => { const nextStatus = e.target.value as MakeReadyItem["status"]; if (nextStatus === "ready" && !confirmAction("Confirm: mark this unit ready?")) return; onUpdate({ ...item, status: nextStatus }); }}><option value="scheduled">Scheduled</option><option value="in-progress">In Progress</option><option value="waiting">Waiting</option><option value="ready">Ready</option></select></Operations><Operations label="Assigned"><select className="inputElite" value={item.assignedEmployeeId} onChange={(e) => onUpdate({ ...item, assignedEmployeeId: e.target.value })}><option value="">Not assigned</option>{employees.map((employee) => <option key={employee.id} value={employee.id}>{employee.name}</option>)}</select></Operations></div>{item.notes && <p className="mt-3 rounded-2xl border border-white/10 bg-black/25 p-3 text-sm text-zinc-400">{item.notes}</p>}<div className="mt-3 grid grid-cols-2 gap-2"><button className="darkButton" onClick={onEdit}><Pencil size={16} /> Edit Unit</button><button className="goldButton" onClick={onCreateInvoice}><ReceiptText size={16} /> Invoice</button></div><div className="mt-2 flex justify-end"><button className="iconDanger" onClick={onDelete}><Trash2 size={18} /></button></div></div>}</div>;
-}
-
 function InvoicesPanel({ invoices, jobs, weekJobs, onAdd, onCreateFromWeek, onCreateFromJob, onEdit, onDelete, onUpdate }: { invoices: Invoice[]; jobs: JobEntry[]; weekJobs: JobEntry[]; onAdd: () => void; onCreateFromWeek: () => void; onCreateFromJob: (job: JobEntry) => void; onEdit: (invoice: Invoice) => void; onDelete: (id: string) => void; onUpdate: (invoice: Invoice) => void }) {
   const [invoiceFilter, setInvoiceFilter] = useState<"all" | "outstanding" | "paid">("all");
   const invoiceIsPaid = (invoice: Invoice) => invoiceStatusIsPaid(invoice);
@@ -2323,11 +2224,6 @@ function JobModal({ employees, properties, jobTypeOptions, getAddressForProperty
   }
 
   return <Modal title="New Work Order Entry" onClose={onClose}><div className="space-y-3"><div className="rounded-2xl border border-green-400/20 bg-green-500/10 p-3 text-sm font-semibold text-green-100"><b>One entry workflow:</b> this saves the payroll job and can create the employee assignment message at the same time.</div><Operations label="Employee / Assigned To"><select className="inputElite" value={employeeId} onChange={(e) => setEmployeeId(e.target.value)}>{employees.map((employee) => <option key={employee.id} value={employee.id}>{employee.name}</option>)}</select></Operations><div className="grid grid-cols-2 gap-3"><Operations label="Date"><input className="inputElite cursor-pointer" type="date" value={date} onClick={(e) => e.currentTarget.showPicker?.()} onFocus={(e) => e.currentTarget.showPicker?.()} onChange={(e) => setDate(e.target.value)} /></Operations><Operations label="Property"><select className="inputElite" value={property} onChange={(e) => { const selected = e.target.value; if (selected === "__add_new_property__") { const entered = window.prompt("Enter new property name:"); const cleanProperty = entered?.trim() || ""; if (cleanProperty) { onAddProperty(cleanProperty); setProperty(cleanProperty); setAssignmentAddress(""); } return; } setProperty(selected); setAssignmentAddress(getAddressForProperty(selected)); }}>{properties.map((item) => <option key={item} value={item}>{item}</option>)}<option value="__add_new_property__">+ Add New Property</option></select></Operations></div><Operations label="Unit #"><input className="inputElite" value={unitNumber} onChange={(e) => setUnitNumber(e.target.value)} placeholder="Example: 212" /></Operations><Operations label="Work Order Template"><select className="inputElite" value={selectedWorkTemplate} onChange={(e) => applyWorkOrderTemplate(e.target.value)}><option value="">Choose quick template...</option>{workOrderTemplates.map((template) => <option key={template.label} value={template.label}>{template.label}</option>)}</select></Operations><Operations label="Work Type"><div className="grid grid-cols-2 gap-2">{jobTypeOptions.map((type) => <button type="button" key={type} onClick={() => toggleType(type)} className={`rounded-xl border px-3 py-2 text-left text-xs font-bold ${selectedTypes.includes(type) ? "border-green-400/50 bg-green-500/20 text-green-300" : "border-zinc-800 bg-black/30 text-zinc-400"}`}>{selectedTypes.includes(type) ? "✓ " : ""}{type}</button>)}</div></Operations><Operations label="Custom Work"><input className="inputElite" value={customWork} onChange={(e) => setCustomWork(e.target.value)} placeholder="Extra scope or work description" /></Operations><div className="grid grid-cols-2 gap-3"><Operations label="Pay"><MoneyInput value={pay} onValueChange={setPay} placeholder="Enter Amount" /></Operations><Operations label="Paid"><MoneyInput value={paidAmount} onValueChange={setPaidAmount} placeholder="Enter Amount" /></Operations></div><div className="rounded-2xl border border-white/10 bg-black/25 p-3"><label className="flex items-center gap-3 text-sm font-black text-zinc-100"><input type="checkbox" checked={createAssignment} onChange={(e) => setCreateAssignment(e.target.checked)} /> Create employee assignment message</label>{createAssignment && <div className="mt-3 space-y-3"><Operations label="Job Address for Message"><input className="inputElite" value={assignmentAddress} onChange={(e) => setAssignmentAddress(e.target.value)} placeholder="460 Charles St, Providence RI" /></Operations><div className="grid grid-cols-2 gap-3"><Operations label="Priority"><select className="inputElite" value={assignmentPriority} onChange={(e) => setAssignmentPriority(e.target.value as WorkAssignment["priority"])}><option value="normal">Normal</option><option value="urgent">Urgent</option></select></Operations><Operations label="Language"><select className="inputElite" value={assignmentLanguage} onChange={(e) => setAssignmentLanguage(e.target.value as AssignmentLanguage)}><option value="spanish">Español</option><option value="english">English</option><option value="both">Both</option></select></Operations></div><div className="rounded-2xl border border-green-400/20 bg-green-500/10 p-3"><p className="mb-2 text-xs font-black uppercase text-green-400">Message Preview</p><pre className="max-h-48 overflow-y-auto whitespace-pre-wrap rounded-xl bg-black/40 p-3 text-xs font-semibold text-zinc-200">{buildAssignmentMessage(assignmentPreview, assignedEmployee?.name || "")}</pre></div></div>}</div><Operations label="Photos"><div className="rounded-2xl border border-dashed border-zinc-800 bg-black/30 p-4"><div className="grid grid-cols-2 gap-2"><label className="goldButton w-full cursor-pointer"><Camera size={18} /> Take Photo<input type="file" accept="image/*" multiple capture="environment" className="hidden" onChange={async (e) => { const newPhotos = await readPhotoFiles(e.target.files); setPhotos((prev) => [...prev, ...newPhotos]); e.currentTarget.value = ""; }} /></label><label className="darkButton w-full cursor-pointer"><ImageIcon size={18} /> Upload<input type="file" accept="image/*" multiple className="hidden" onChange={async (e) => { const newPhotos = await readPhotoFiles(e.target.files); setPhotos((prev) => [...prev, ...newPhotos]); e.currentTarget.value = ""; }} /></label></div>{photos.length > 0 && <p className="mt-3 text-center text-sm text-zinc-400">{photos.length} photo(s) attached.</p>}</div></Operations><Operations label="Notes"><textarea className="inputElite min-h-24" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Notes" /></Operations><button className="goldButton w-full" onClick={saveJobAndAssignment}><Check size={18} /> Save Job{createAssignment ? " + Assignment" : ""}</button></div></Modal>;
-}
-
-function MakeReadyModal({ employees, properties, initial, onClose, onSave }: { employees: Employee[]; properties: string[]; initial: MakeReadyItem | null; onClose: () => void; onSave: (item: MakeReadyItem) => void }) {
-  const [item, setItem] = useState<MakeReadyItem>(initial || { id: uid(), property: properties[0] || "", unitNumber: "", assignedEmployeeId: employees[0]?.id || "", moveOutDate: todayISO(), moveInDate: "", deadline: todayISO(), status: "scheduled", priority: "normal", notes: "", tasks: newMakeReadyTasks() });
-  return <Modal title={initial ? "Edit Turnover Work Unit" : "Add Turnover Work Unit"} onClose={onClose}><div className="space-y-3"><div className="grid grid-cols-2 gap-3"><Operations label="Property"><select className="inputElite" value={item.property} onChange={(e) => setItem({ ...item, property: e.target.value })}>{properties.map((property) => <option key={property} value={property}>{property}</option>)}</select></Operations><Operations label="Unit #"><input className="inputElite" value={item.unitNumber} onChange={(e) => setItem({ ...item, unitNumber: e.target.value })} /></Operations><Operations label="Assigned"><select className="inputElite" value={item.assignedEmployeeId} onChange={(e) => setItem({ ...item, assignedEmployeeId: e.target.value })}><option value="">Not assigned</option>{employees.map((employee) => <option key={employee.id} value={employee.id}>{employee.name}</option>)}</select></Operations><Operations label="Priority"><select className="inputElite" value={item.priority} onChange={(e) => setItem({ ...item, priority: e.target.value as MakeReadyItem["priority"] })}><option value="normal">Normal</option><option value="urgent">Urgent</option></select></Operations><Operations label="Move-Out"><input className="inputElite" type="date" value={item.moveOutDate} onChange={(e) => setItem({ ...item, moveOutDate: e.target.value })} /></Operations><Operations label="Move-In"><input className="inputElite" type="date" value={item.moveInDate} onChange={(e) => setItem({ ...item, moveInDate: e.target.value })} /></Operations><Operations label="Deadline"><input className="inputElite" type="date" value={item.deadline} onChange={(e) => setItem({ ...item, deadline: e.target.value })} /></Operations><Operations label="Status"><select className="inputElite" value={item.status} onChange={(e) => setItem({ ...item, status: e.target.value as MakeReadyItem["status"] })}><option value="scheduled">Scheduled</option><option value="in-progress">In Progress</option><option value="waiting">Waiting</option><option value="ready">Ready</option></select></Operations></div><Operations label="Checklist"><div className="space-y-2">{item.tasks.map((task) => <div key={task.id} className="grid grid-cols-[auto_1fr_auto] items-center gap-2 rounded-xl border border-zinc-800 bg-black/25 p-2"><input type="checkbox" checked={task.done} onChange={() => setItem({ ...item, tasks: item.tasks.map((row) => row.id === task.id ? { ...row, done: !row.done } : row) })} /><input className="inputElite !py-2" value={task.label} onChange={(e) => setItem({ ...item, tasks: item.tasks.map((row) => row.id === task.id ? { ...row, label: e.target.value } : row) })} /><button className="iconDanger !p-2" onClick={() => setItem({ ...item, tasks: item.tasks.filter((row) => row.id !== task.id) })}><Trash2 size={14} /></button></div>)}<button className="darkButton w-full" onClick={() => setItem({ ...item, tasks: [...item.tasks, { id: uid(), label: "New Task", done: false }] })}><Plus size={16} /> Add Task</button></div></Operations><Operations label="Notes"><textarea className="inputElite min-h-24" value={item.notes} onChange={(e) => setItem({ ...item, notes: e.target.value })} /></Operations><button className="goldButton w-full" onClick={() => onSave(item)}><Check size={18} /> Save Turnover Work</button></div></Modal>;
 }
 
 function InvoiceModal({ invoices, properties, getProfileForProperty, initial, onClose, onSave }: { invoices: Invoice[]; properties: string[]; getProfileForProperty: (property: string) => PropertyContactProfile; initial: Invoice | null; onClose: () => void; onSave: (invoice: Invoice) => void }) {
