@@ -44,6 +44,7 @@ import {
 // PHASE 13 single-file replacement for app/page.tsx
 // Property address persistence + assignment preset dropdown fix
 // PHASE 23: One Work Order flow only + message/PDF actions visible inside every Work Order + PDF-first invoice sharing
+// PHASE 24A: Make Ready UI removed/disabled, Dashboard cleaned, Work Orders are the only field workflow
 
 const STORAGE_KEY = "oneStopPayrollProEliteBlackGoldX_v1";
 const PROPERTY_PROFILES_KEY = "oneStopPropertyProfiles_v1";
@@ -1008,13 +1009,13 @@ export default function PayrollProEliteOperationsX() {
     return { earned, paid, borrowed, owed, invoiceOpen };
   }, [weekJobs, state.employees, state.invoices, week.start]);
 
-  const makeReadyTotals = useMemo(() => {
-    const ready = state.makeReady.filter((item) => item.status === "ready").length;
-    const inProgress = state.makeReady.filter((item) => item.status === "in-progress").length;
-    const urgent = state.makeReady.filter((item) => item.priority === "urgent" && item.status !== "ready").length;
-    const scheduled = state.makeReady.filter((item) => item.status === "scheduled" || item.status === "waiting").length;
-    return { ready, inProgress, urgent, scheduled };
-  }, [state.makeReady]);
+  const workOrderTotals = useMemo(() => {
+    const total = weekJobs.length;
+    const unpaid = weekJobs.filter((job) => job.status !== "paid").length;
+    const paid = weekJobs.filter((job) => job.status === "paid").length;
+    const photos = weekJobs.reduce((sum, job) => sum + (job.photos?.length || 0), 0);
+    return { total, unpaid, paid, photos };
+  }, [weekJobs]);
 
   const employeeTotals = useMemo(() => {
     return state.employees.map((employee) => {
@@ -1389,7 +1390,7 @@ Enter the amount you are charging the company.`
 
         <main className="mt-5">
           {activeTab === "dashboard" && (
-            <Dashboard employeeTotals={employeeTotals} filteredJobs={filteredJobs} employeesById={employeesById} makeReadyTotals={makeReadyTotals} totals={totals} onAddJob={() => setShowJobForm(true)} onGoEmployees={() => setActiveTab("employees")} onGoReports={() => setActiveTab("reports")} onGoMakeReady={() => { setActiveTab("field"); setOpsView("jobs"); }} onGoInvoices={() => { setActiveTab("office"); setOpsView("invoices"); }} />
+            <Dashboard employeeTotals={employeeTotals} filteredJobs={filteredJobs} employeesById={employeesById} workOrderTotals={workOrderTotals} totals={totals} onAddJob={() => setShowJobForm(true)} onGoEmployees={() => setActiveTab("employees")} onGoReports={() => setActiveTab("reports")} onGoMakeReady={() => { setActiveTab("field"); setOpsView("jobs"); }} onGoInvoices={() => { setActiveTab("office"); setOpsView("invoices"); }} />
           )}
 
           {activeTab === "employees" && (
@@ -1413,7 +1414,7 @@ Enter the amount you are charging the company.`
               </SectionTop>
 
               <div className="rounded-2xl border border-blue-400/20 bg-blue-500/10 p-3 text-sm font-semibold text-blue-200">
-                Simplified: everything is now inside one Work Order. No separate Turnover or Unit section.
+                Phase 24A: Make Ready has been removed from the workflow. Use New Work Order for every job, turnover unit, employee assignment, photos, message, and invoice.
               </div>
 
               <JobList jobs={filteredJobs} employees={state.employees} employeesById={employeesById} properties={state.properties} jobTypeOptions={state.jobTypeOptions} onDelete={(id) => setConfirmDelete({ type: "job", id })} onUpdate={updateJob} onCreateInvoice={createInvoiceFromJob} />
@@ -1487,9 +1488,7 @@ Enter the amount you are charging the company.`
 
       {showPropertyForm && <PropertyModal initialName={editingPropertyName || ""} initialProfile={editingPropertyName ? getSavedPropertyProfile(editingPropertyName) : undefined} onClose={() => { setShowPropertyForm(false); setEditingPropertyName(null); }} onSave={(property, profile) => { savePropertyProfile(property, profile, editingPropertyName); setShowPropertyForm(false); setEditingPropertyName(null); }} />}
 
-      {showMakeReadyForm && (
-        <MakeReadyModal employees={state.employees} properties={state.properties} initial={editingMakeReady} onClose={() => { setShowMakeReadyForm(false); setEditingMakeReady(null); }} onSave={(item) => { upsertMakeReady(item); setShowMakeReadyForm(false); setEditingMakeReady(null); }} />
-      )}
+      {/* Phase 24A: Make Ready modal removed. All turnover/unit work now starts from New Work Order. */}
 
       {showInvoiceForm && (
         <InvoiceModal invoices={state.invoices} properties={state.properties} getProfileForProperty={getSavedPropertyProfile} initial={editingInvoice} onClose={() => { setShowInvoiceForm(false); setEditingInvoice(null); }} onSave={(invoice) => { upsertInvoice(invoice); setShowInvoiceForm(false); setEditingInvoice(null); }} />
@@ -1576,7 +1575,7 @@ function SectionTop({ title, subtitle, children }: { title: string; subtitle: st
   return <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between"><div><h2 className="text-2xl font-black">{title}</h2><p className="text-sm text-zinc-500">{subtitle}</p></div>{children}</div>;
 }
 
-function Dashboard({ employeeTotals, filteredJobs, employeesById, makeReadyTotals, totals, onAddJob, onGoEmployees, onGoReports, onGoMakeReady, onGoInvoices }: { employeeTotals: { employee: Employee; jobs: JobEntry[]; earned: number; paid: number; borrowed: number; owed: number }[]; filteredJobs: JobEntry[]; employeesById: Map<string, Employee>; makeReadyTotals: { ready: number; inProgress: number; urgent: number; scheduled: number }; totals: { invoiceOpen: number }; onAddJob: () => void; onGoEmployees: () => void; onGoReports: () => void; onGoMakeReady: () => void; onGoInvoices: () => void }) {
+function Dashboard({ employeeTotals, filteredJobs, employeesById, workOrderTotals, totals, onAddJob, onGoEmployees, onGoReports, onGoMakeReady, onGoInvoices }: { employeeTotals: { employee: Employee; jobs: JobEntry[]; earned: number; paid: number; borrowed: number; owed: number }[]; filteredJobs: JobEntry[]; employeesById: Map<string, Employee>; workOrderTotals: { total: number; unpaid: number; paid: number; photos: number }; totals: { invoiceOpen: number }; onAddJob: () => void; onGoEmployees: () => void; onGoReports: () => void; onGoMakeReady: () => void; onGoInvoices: () => void }) {
   const [openBalances, setOpenBalances] = useState(false);
   const [openWeekWork, setOpenWeekWork] = useState(false);
   const topOwed = [...employeeTotals].sort((a, b) => b.owed - a.owed).slice(0, 6);
@@ -1592,10 +1591,10 @@ function Dashboard({ employeeTotals, filteredJobs, employeesById, makeReadyTotal
           <QuickTile onClick={onGoEmployees} icon={<Users />} title="Employees" subtitle="Names + balances" />
         </div>
         <div className="grid grid-cols-4 gap-2">
-          <MiniMetric label="Ready" value={makeReadyTotals.ready} />
-          <MiniMetric label="Progress" value={makeReadyTotals.inProgress} />
-          <MiniMetric label="Urgent" value={makeReadyTotals.urgent} danger />
-          <MiniMetric label="Waiting" value={makeReadyTotals.scheduled} />
+          <MiniMetric label="Orders" value={workOrderTotals.total} />
+          <MiniMetric label="Unpaid" value={workOrderTotals.unpaid} danger={workOrderTotals.unpaid > 0} />
+          <MiniMetric label="Paid" value={workOrderTotals.paid} />
+          <MiniMetric label="Photos" value={workOrderTotals.photos} />
         </div>
         <div className="blackCard overflow-hidden">
           <button type="button" onClick={() => setOpenBalances(!openBalances)} className="relative z-10 flex w-full items-center justify-between gap-3 p-4 text-left">
@@ -2365,5 +2364,5 @@ function BottomNav({ activeTab, setActiveTab }: { activeTab: ActiveTab; setActiv
     { tab: "office", label: "Office", icon: <ReceiptText size={20} /> },
     { tab: "employees", label: "Employees", icon: <Users size={20} /> },
   ];
-  return <nav className="fixed bottom-0 left-0 right-0 z-40 border-t border-white/10 bg-[#02070a]/95 px-2 pb-3 pt-2 backdrop-blur-xl"><div className="mx-auto grid max-w-[540px] grid-cols-4 gap-1">{tabs.map((item) => { const active = activeTab === item.tab || (item.tab === "field" && (activeTab === "ops" || activeTab === "jobs" || activeTab === "makeReady")) || (item.tab === "office" && (activeTab === "invoices" || activeTab === "reports")); return <button key={item.tab} onClick={() => setActiveTab(item.tab)} className={`flex flex-col items-center justify-center gap-1 rounded-2xl py-2 text-[11px] font-black transition active:scale-95 ${active ? "bg-green-500 text-black" : "text-zinc-500"}`}>{item.icon}<span>{item.label}</span></button>; })}</div></nav>;
+  return <nav className="fixed bottom-0 left-0 right-0 z-40 border-t border-white/10 bg-[#02070a]/95 px-2 pb-3 pt-2 backdrop-blur-xl"><div className="mx-auto grid max-w-[540px] grid-cols-4 gap-1">{tabs.map((item) => { const active = activeTab === item.tab || (item.tab === "field" && (activeTab === "ops" || activeTab === "jobs")) || (item.tab === "office" && (activeTab === "invoices" || activeTab === "reports")); return <button key={item.tab} onClick={() => setActiveTab(item.tab)} className={`flex flex-col items-center justify-center gap-1 rounded-2xl py-2 text-[11px] font-black transition active:scale-95 ${active ? "bg-green-500 text-black" : "text-zinc-500"}`}>{item.icon}<span>{item.label}</span></button>; })}</div></nav>;
 }
