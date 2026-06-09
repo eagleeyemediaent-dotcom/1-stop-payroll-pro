@@ -44,7 +44,7 @@ import {
 // PHASE 13 single-file replacement for app/page.tsx
 // Property address persistence + assignment preset dropdown fix
 // PHASE 23: One Work Order flow only + message/PDF actions visible inside every Work Order + PDF-first invoice sharing
-// PHASE 24B: Work Order filters added — All / Open / Paid, dashboard remains light and clean
+// PHASE 24C: Invoice Center cleanup — All / Due / Sent / Paid / Overdue filters + outstanding balance
 
 const STORAGE_KEY = "oneStopPayrollProEliteBlackGoldX_v1";
 const PROPERTY_PROFILES_KEY = "oneStopPropertyProfiles_v1";
@@ -1305,7 +1305,7 @@ export default function PayrollProEliteOperationsX() {
               </SectionTop>
 
               <div className="rounded-2xl border border-blue-400/20 bg-blue-500/10 p-3 text-sm font-semibold text-blue-200">
-                Phase 24B: Work Orders now have quick filters for All, Open, and Paid jobs. Use New Work Order for every job, unit, employee assignment, photos, message, and invoice.
+                Phase 24C: Invoice Center has been cleaned up with All, Due, Sent, Paid, and Overdue filters. Work Orders remain unchanged and stable.
               </div>
 
               <JobList jobs={filteredJobs} employees={state.employees} employeesById={employeesById} properties={state.properties} jobTypeOptions={state.jobTypeOptions} onDelete={(id) => setConfirmDelete({ type: "job", id })} onUpdate={updateJob} onCreateInvoice={createInvoiceFromJob} />
@@ -1893,42 +1893,61 @@ Amount: ${money(value)}`)) return; onUpdate({ ...job, paidAmount: value, status:
 }
 
 function InvoicesPanel({ invoices, jobs, weekJobs, onAdd, onCreateFromWeek, onCreateFromJob, onEdit, onDelete, onUpdate }: { invoices: Invoice[]; jobs: JobEntry[]; weekJobs: JobEntry[]; onAdd: () => void; onCreateFromWeek: () => void; onCreateFromJob: (job: JobEntry) => void; onEdit: (invoice: Invoice) => void; onDelete: (id: string) => void; onUpdate: (invoice: Invoice) => void }) {
-  const [invoiceFilter, setInvoiceFilter] = useState<"all" | "outstanding" | "paid">("all");
+  const [invoiceFilter, setInvoiceFilter] = useState<"all" | "due" | "sent" | "paid" | "overdue">("all");
   const invoiceIsPaid = (invoice: Invoice) => invoiceStatusIsPaid(invoice);
-  const outstandingInvoices = invoices.filter((invoice) => !invoiceIsPaid(invoice));
+  const invoiceIsOverdue = (invoice: Invoice) => !invoiceIsPaid(invoice) && (invoice.status === "overdue" || (!!invoice.dueDate && invoice.dueDate < todayISO()));
+  const dueInvoices = invoices.filter((invoice) => !invoiceIsPaid(invoice) && !invoiceIsOverdue(invoice) && invoice.status === "due");
+  const sentInvoices = invoices.filter((invoice) => !invoiceIsPaid(invoice) && !invoiceIsOverdue(invoice) && invoice.status === "sent");
   const paidInvoices = invoices.filter((invoice) => invoiceIsPaid(invoice));
-  const visibleInvoices = invoiceFilter === "paid" ? paidInvoices : invoiceFilter === "outstanding" ? outstandingInvoices : invoices;
-  const openBalance = invoices.reduce((sum, invoice) => sum + Math.max(invoiceTotal(invoice) - safeNumber(invoice.paidAmount), 0), 0);
-  const paidCount = paidInvoices.length;
+  const overdueInvoices = invoices.filter((invoice) => invoiceIsOverdue(invoice));
+  const visibleInvoices = invoiceFilter === "paid" ? paidInvoices : invoiceFilter === "due" ? dueInvoices : invoiceFilter === "sent" ? sentInvoices : invoiceFilter === "overdue" ? overdueInvoices : invoices;
+  const outstandingBalance = invoices.reduce((sum, invoice) => sum + Math.max(invoiceTotal(invoice) - safeNumber(invoice.paidAmount), 0), 0);
+  const dueBalance = dueInvoices.reduce((sum, invoice) => sum + Math.max(invoiceTotal(invoice) - safeNumber(invoice.paidAmount), 0), 0);
+  const overdueBalance = overdueInvoices.reduce((sum, invoice) => sum + Math.max(invoiceTotal(invoice) - safeNumber(invoice.paidAmount), 0), 0);
+  const paidTotal = paidInvoices.reduce((sum, invoice) => sum + invoiceTotal(invoice), 0);
 
   const filterButtons = [
-    { id: "all" as const, label: "All Office Pipeline", count: invoices.length },
-    { id: "outstanding" as const, label: "Outstanding", count: outstandingInvoices.length },
+    { id: "all" as const, label: "All", count: invoices.length },
+    { id: "due" as const, label: "Due", count: dueInvoices.length },
+    { id: "sent" as const, label: "Sent", count: sentInvoices.length },
     { id: "paid" as const, label: "Paid", count: paidInvoices.length },
+    { id: "overdue" as const, label: "Overdue", count: overdueInvoices.length },
   ];
 
   return (
     <section className="space-y-4">
-      <SectionTop title="Office Pipeline" subtitle="View all invoices, outstanding balances, paid invoices, preview PDF, print, email, and track payments.">
+      <SectionTop title="Invoice Center" subtitle="Phase 24C: filter invoices by All, Due, Sent, Paid, or Overdue and manage PDF, email, text, and payments from one place.">
         <div className="flex flex-col gap-2">
           <button onClick={onAdd} className="goldButton"><Plus size={18} /> New Invoice</button>
           <button onClick={onCreateFromWeek} className="darkButton"><Sparkles size={16} /> Invoice This Week</button>
         </div>
       </SectionTop>
 
-      <div className="grid grid-cols-3 gap-2">
-        <MiniMetric label="Office Pipeline" value={invoices.length} />
-        <MiniMetric label="Paid" value={paidCount} />
-        <div className="rounded-2xl border border-red-400/25 bg-red-500/10 p-3 text-center"><p className="text-lg font-black text-red-300">{money(openBalance)}</p><p className="text-[10px] font-black uppercase text-zinc-500">Open</p></div>
+      <div className="rounded-[1.3rem] border border-red-400/25 bg-gradient-to-br from-red-500/15 to-orange-500/10 p-4 shadow-[0_0_28px_rgba(239,68,68,0.10)]">
+        <p className="text-[10px] font-black uppercase tracking-wide text-red-200">Outstanding Balance</p>
+        <p className="mt-1 text-3xl font-black text-white">{money(outstandingBalance)}</p>
+        <p className="mt-1 text-xs font-semibold text-zinc-400">Total still open across due, sent, and overdue invoices.</p>
       </div>
 
-      <div className="grid grid-cols-3 gap-1 rounded-[1.2rem] border border-white/10 bg-black/30 p-1">
+      <div className="grid grid-cols-3 gap-2">
+        <MiniMetric label="Due" value={dueInvoices.length} />
+        <MiniMetric label="Sent" value={sentInvoices.length} />
+        <MiniMetric label="Paid" value={paidInvoices.length} />
+      </div>
+
+      <div className="grid grid-cols-3 gap-2">
+        <div className="rounded-2xl border border-amber-400/25 bg-amber-500/10 p-3 text-center"><p className="text-sm font-black text-amber-200">{money(dueBalance)}</p><p className="text-[10px] font-black uppercase text-zinc-500">Due</p></div>
+        <div className="rounded-2xl border border-red-400/25 bg-red-500/10 p-3 text-center"><p className="text-sm font-black text-red-200">{money(overdueBalance)}</p><p className="text-[10px] font-black uppercase text-zinc-500">Overdue</p></div>
+        <div className="rounded-2xl border border-green-400/25 bg-green-500/10 p-3 text-center"><p className="text-sm font-black text-green-200">{money(paidTotal)}</p><p className="text-[10px] font-black uppercase text-zinc-500">Paid Total</p></div>
+      </div>
+
+      <div className="grid grid-cols-5 gap-1 rounded-[1.2rem] border border-white/10 bg-black/30 p-1">
         {filterButtons.map((button) => (
           <button
             key={button.id}
             type="button"
             onClick={() => setInvoiceFilter(button.id)}
-            className={`rounded-2xl px-2 py-3 text-xs font-black transition ${invoiceFilter === button.id ? "bg-green-500 text-black shadow-[0_10px_25px_rgba(34,197,94,0.22)]" : "text-zinc-400"}`}
+            className={`rounded-2xl px-1 py-3 text-[11px] font-black transition ${invoiceFilter === button.id ? "bg-green-500 text-black shadow-[0_10px_25px_rgba(34,197,94,0.22)]" : "text-zinc-400"}`}
           >
             <span className="block">{button.label}</span>
             <span className="mt-1 block text-[10px] font-black opacity-75">{button.count}</span>
@@ -1939,9 +1958,9 @@ function InvoicesPanel({ invoices, jobs, weekJobs, onAdd, onCreateFromWeek, onCr
       {weekJobs.length > 0 && <div className="rounded-2xl border border-green-400/20 bg-green-500/10 p-3 text-sm font-semibold text-green-200">Selected week has {weekJobs.length} jobs ready to invoice. Enter the company charge amount separately from employee pay.</div>}
 
       {weekJobs.length > 0 && (
-        <div className="blackCard p-4">
-          <h3 className="font-black">Ready To Invoice</h3>
-          <p className="mt-1 text-xs font-semibold text-zinc-500">Tap a job to open the full Invoice Center. No pop-up. Enter the company charge, preview the PDF, then email/text/WhatsApp/print from that invoice screen.</p>
+        <details className="blackCard p-4">
+          <summary className="cursor-pointer list-none font-black">Ready To Invoice <span className="text-xs font-semibold text-zinc-500">— tap to open</span></summary>
+          <p className="mt-2 text-xs font-semibold text-zinc-500">Tap a job to open the full Invoice Center. No pop-up. Enter the company charge, preview the PDF, then email/text/print from that invoice screen.</p>
           <div className="mt-3 space-y-2">
             {weekJobs.map((job) => (
               <div key={`ready-invoice-${job.id}`} className="rounded-2xl border border-zinc-800 bg-black/30 p-3">
@@ -1951,12 +1970,12 @@ function InvoicesPanel({ invoices, jobs, weekJobs, onAdd, onCreateFromWeek, onCr
               </div>
             ))}
           </div>
-        </div>
+        </details>
       )}
 
       <div className="space-y-3">
         {visibleInvoices.map((invoice) => <InvoiceCard key={invoice.id} invoice={invoice} jobs={jobs} onEdit={() => onEdit(invoice)} onDelete={() => onDelete(invoice.id)} onUpdate={onUpdate} />)}
-        {visibleInvoices.length === 0 && <div className="blackCard p-6"><EmptyText text={invoiceFilter === "paid" ? "No paid invoices yet." : invoiceFilter === "outstanding" ? "No outstanding invoices right now." : "No invoices yet. Create one manually or from this week’s jobs."} /></div>}
+        {visibleInvoices.length === 0 && <div className="blackCard p-6"><EmptyText text={invoiceFilter === "paid" ? "No paid invoices yet." : invoiceFilter === "overdue" ? "No overdue invoices right now." : invoiceFilter === "sent" ? "No sent invoices yet." : invoiceFilter === "due" ? "No due invoices right now." : "No invoices yet. Create one manually or from this week’s jobs."} /></div>}
       </div>
     </section>
   );
