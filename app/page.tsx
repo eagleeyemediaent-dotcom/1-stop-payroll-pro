@@ -44,7 +44,7 @@ import {
 // PHASE 13 single-file replacement for app/page.tsx
 // Property address persistence + assignment preset dropdown fix
 // PHASE 23: One Work Order flow only + message/PDF actions visible inside every Work Order + PDF-first invoice sharing
-// PHASE 24E: Work Order Status Pipeline — Open / Assigned / In Progress / Completed / Ready To Invoice / All
+// PHASE 25: Launch Polish — Quick Actions + Work Order Status Pipeline + stable Office/Field workflow
 
 const STORAGE_KEY = "oneStopPayrollProEliteBlackGoldX_v1";
 const PROPERTY_PROFILES_KEY = "oneStopPropertyProfiles_v1";
@@ -1248,7 +1248,7 @@ export default function PayrollProEliteOperationsX() {
           <div className="mb-2 flex items-center justify-between gap-3">
             <div>
               <p className="text-xs font-black uppercase tracking-[0.18em] text-green-300">Quick Actions</p>
-              <p className="text-[11px] font-semibold text-zinc-500">One tap to start the main office tasks.</p>
+              <p className="text-[11px] font-semibold text-zinc-500">One tap access to your daily workflow.</p>
             </div>
             <Sparkles size={18} className="text-green-300" />
           </div>
@@ -1331,7 +1331,7 @@ export default function PayrollProEliteOperationsX() {
               </SectionTop>
 
               <div className="rounded-2xl border border-blue-400/20 bg-blue-500/10 p-3 text-sm font-semibold text-blue-200">
-                Phase 24E: Work Orders now have a status pipeline: Open, Assigned, In Progress, Completed, and Ready To Invoice. Dashboard and Invoice Center remain stable.
+                Phase 25: Launch polish is active. Quick Actions, Work Order Status Pipeline, Dashboard, Invoice Center, Property Profiles, and Payroll are stable.
               </div>
 
               <JobList jobs={filteredJobs} employees={state.employees} employeesById={employeesById} properties={state.properties} jobTypeOptions={state.jobTypeOptions} onDelete={(id) => setConfirmDelete({ type: "job", id })} onUpdate={updateJob} onCreateInvoice={createInvoiceFromJob} />
