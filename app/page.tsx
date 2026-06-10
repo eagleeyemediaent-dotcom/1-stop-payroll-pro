@@ -44,7 +44,7 @@ import {
 // PHASE 13 single-file replacement for app/page.tsx
 // Property address persistence + assignment preset dropdown fix
 // PHASE 23: One Work Order flow only + message/PDF actions visible inside every Work Order + PDF-first invoice sharing
-// PHASE 25: Launch Polish — Quick Actions + Work Order Status Pipeline + stable Office/Field workflow
+// PHASE 25B: Field Test Fixes + Work Types tab — invoice labels, safer Bill To, and editable work type list
 
 const STORAGE_KEY = "oneStopPayrollProEliteBlackGoldX_v1";
 const PROPERTY_PROFILES_KEY = "oneStopPropertyProfiles_v1";
@@ -132,6 +132,15 @@ type AssignmentLanguage = "english" | "spanish" | "both";
 type AssignmentStatus = "assigned" | "sent" | "in-progress" | "completed" | "approved" | "ready-to-invoice";
 type WorkOrderStatus = "open" | "assigned" | "in-progress" | "completed" | "ready-to-invoice";
 
+type WorkTypeOption = {
+  id: string;
+  name: string;
+  defaultScope: string;
+  defaultNotes: string;
+  defaultPriority: "normal" | "urgent";
+  active: boolean;
+};
+
 type WorkAssignment = {
   id: string;
   employeeId: string;
@@ -156,10 +165,11 @@ type AppState = {
   properties: string[];
   propertyProfiles: Record<string, PropertyContactProfile>;
   jobTypeOptions: string[];
+  workTypes?: WorkTypeOption[];
   companyName: string;
 };
 
-type ActiveTab = "dashboard" | "field" | "office" | "ops" | "employees" | "jobs" | "assignments" | "invoices" | "properties" | "reports" | "more";
+type ActiveTab = "dashboard" | "field" | "office" | "ops" | "employees" | "jobs" | "assignments" | "invoices" | "properties" | "workTypes" | "reports" | "more";
 
 const defaultProperties = [
   "Charles Place Apartments",
@@ -320,6 +330,15 @@ const defaultJobTypes = [
   "Touch Ups",
 ];
 
+const defaultWorkTypes: WorkTypeOption[] = defaultJobTypes.map((name) => ({
+  id: uid(),
+  name,
+  defaultScope: "",
+  defaultNotes: "",
+  defaultPriority: "normal",
+  active: true,
+}));
+
 const assignmentPresets: { label: string; english: string; spanish: string }[] = [
   {
     label: "Sheetrock Repair",
@@ -433,6 +452,7 @@ const starterState: AppState = {
   properties: defaultProperties,
   propertyProfiles: defaultPropertyProfiles,
   jobTypeOptions: defaultJobTypes,
+  workTypes: defaultWorkTypes,
 };
 
 function safeNumber(value: string | number): number {
@@ -547,7 +567,7 @@ function invoiceEmailBody(invoice: Invoice) {
   const invoiceAddress = invoice.propertyAddress || getPropertyAddress(invoice.property);
   const balance = Math.max(total - safeNumber(invoice.paidAmount), 0);
   const lines = invoice.lineItems
-    .map((item) => `- ${item.description} | Qty: ${item.qty} | Rate: ${money(item.rate)} | Total: ${money(item.qty * item.rate)}`)
+    .map((item) => `- ${item.description} | Qty: ${item.qty} | Amount: ${money(item.rate)} | Total: ${money(item.qty * item.rate)}`)
     .join("\n");
 
   const beforeCount = invoice.beforePhotos?.length || 0;
@@ -728,7 +748,6 @@ function printInvoiceDocument(invoice: Invoice, beforePhotos: string[] = [], aft
         <p class="label">Bill To</p>
         <p class="strong">${escapePrintHtml(invoice.clientName || "Client Name")}</p>
         ${invoice.clientEmail ? `<p>${escapePrintHtml(invoice.clientEmail)}</p>` : ""}
-        <p>${escapePrintHtml(invoice.property)}${invoice.unitNumber ? ` — Unit ${escapePrintHtml(invoice.unitNumber)}` : ""}</p>
         ${invoiceAddress ? `<p>${escapePrintHtml(invoiceAddress)}</p>` : ""}
       </div>
       <div class="right">
@@ -739,7 +758,7 @@ function printInvoiceDocument(invoice: Invoice, beforePhotos: string[] = [], aft
     </section>
 
     <table>
-      <thead><tr><th>Description</th><th class="center">Qty</th><th class="right">Rate</th><th class="right">Amount</th></tr></thead>
+      <thead><tr><th>Description</th><th class="center">Qty</th><th class="right">Amount</th><th class="right">Total</th></tr></thead>
       <tbody>${lineRows || `<tr><td colspan="4">No line items added.</td></tr>`}</tbody>
     </table>
 
@@ -859,6 +878,7 @@ export default function PayrollProEliteOperationsX() {
           properties: Array.isArray(parsed.properties) ? parsed.properties : defaultProperties,
           propertyProfiles: mergedPropertyProfiles,
           jobTypeOptions: Array.isArray(parsed.jobTypeOptions) ? parsed.jobTypeOptions : defaultJobTypes,
+          workTypes: Array.isArray(parsed.workTypes) ? parsed.workTypes : defaultWorkTypes,
         });
       } else if (Object.keys(savedPropertyProfiles).length > 0) {
         setState((prev) => ({
@@ -1184,6 +1204,7 @@ export default function PayrollProEliteOperationsX() {
           properties: Array.isArray(parsed.properties) ? parsed.properties : defaultProperties,
           propertyProfiles: { ...defaultPropertyProfiles, ...(parsed.propertyProfiles || {}), ...loadSavedPropertyProfiles() },
           jobTypeOptions: Array.isArray(parsed.jobTypeOptions) ? parsed.jobTypeOptions : defaultJobTypes,
+          workTypes: Array.isArray(parsed.workTypes) ? parsed.workTypes : defaultWorkTypes,
         });
       } catch {
         alert("Could not import this file.");
@@ -1265,6 +1286,9 @@ export default function PayrollProEliteOperationsX() {
             <button onClick={() => { setActiveTab("properties"); setEditingPropertyName(null); setShowPropertyForm(true); }} className="flex items-center justify-center gap-2 rounded-2xl border border-purple-400/20 bg-purple-500/15 px-3 py-3 text-xs font-black text-purple-200 active:scale-[.99]">
               <Building2 size={17} /> Property
             </button>
+            <button onClick={() => setActiveTab("workTypes")} className="col-span-2 flex items-center justify-center gap-2 rounded-2xl border border-emerald-400/20 bg-emerald-500/15 px-3 py-3 text-xs font-black text-emerald-200 active:scale-[.99]">
+              <ClipboardList size={17} /> Work Types
+            </button>
           </div>
         </section>
 
@@ -1331,10 +1355,10 @@ export default function PayrollProEliteOperationsX() {
               </SectionTop>
 
               <div className="rounded-2xl border border-blue-400/20 bg-blue-500/10 p-3 text-sm font-semibold text-blue-200">
-                Phase 25: Launch polish is active. Quick Actions, Work Order Status Pipeline, Dashboard, Invoice Center, Property Profiles, and Payroll are stable.
+                Phase 25B: Field test fixes are active. Work Types has been added so you can create new common job categories as your work changes.
               </div>
 
-              <JobList jobs={filteredJobs} employees={state.employees} employeesById={employeesById} properties={state.properties} jobTypeOptions={state.jobTypeOptions} onDelete={(id) => setConfirmDelete({ type: "job", id })} onUpdate={updateJob} onCreateInvoice={createInvoiceFromJob} />
+              <JobList jobs={filteredJobs} employees={state.employees} employeesById={employeesById} properties={state.properties} jobTypeOptions={state.workTypes?.length ? state.workTypes.filter((type) => type.active).map((type) => type.name) : state.jobTypeOptions} onDelete={(id) => setConfirmDelete({ type: "job", id })} onUpdate={updateJob} onCreateInvoice={createInvoiceFromJob} />
             </section>
           )}
 
@@ -1379,6 +1403,82 @@ export default function PayrollProEliteOperationsX() {
                     </div>
                   );
                 })}
+              </div>
+            </section>
+          )}
+
+
+          {activeTab === "workTypes" && (
+            <section className="space-y-4">
+              <SectionTop title="Work Types" subtitle="Create and manage common job types used inside New Work Order.">
+                <button
+                  onClick={() => {
+                    const name = prompt("Enter new Work Type name:");
+                    const cleanName = normalizePropertyName(name || "");
+                    if (!cleanName) return;
+                    setState((prev) => ({
+                      ...prev,
+                      jobTypeOptions: [...new Set([...(prev.jobTypeOptions || []), cleanName])],
+                      workTypes: [
+                        ...((prev.workTypes && prev.workTypes.length ? prev.workTypes : defaultWorkTypes)),
+                        { id: uid(), name: cleanName, defaultScope: "", defaultNotes: "", defaultPriority: "normal", active: true },
+                      ],
+                    }));
+                  }}
+                  className="goldButton"
+                >
+                  <Plus size={18} /> Add Work Type
+                </button>
+              </SectionTop>
+
+              <div className="rounded-2xl border border-green-400/20 bg-green-500/10 p-3 text-sm font-semibold text-green-200">
+                Work Types are your reusable job categories. Add new ones here as new common jobs come into play.
+              </div>
+
+              <div className="grid gap-3">
+                {((state.workTypes && state.workTypes.length ? state.workTypes : defaultWorkTypes)).map((workType) => (
+                  <div key={workType.id} className="blackCard p-4">
+                    <div className="relative z-10 flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="font-bold text-zinc-50">{workType.name}</p>
+                        <p className="mt-1 text-xs font-semibold text-zinc-400">
+                          Priority: {workType.defaultPriority === "urgent" ? "Urgent" : "Normal"} • {workType.active ? "Active" : "Inactive"}
+                        </p>
+                        {workType.defaultScope ? <p className="mt-2 whitespace-pre-wrap text-xs text-zinc-500">{workType.defaultScope}</p> : <p className="mt-2 text-xs text-zinc-600">No default scope saved yet.</p>}
+                      </div>
+                      <div className="flex shrink-0 items-center gap-2">
+                        <button
+                          onClick={() => {
+                            const nextName = prompt("Edit Work Type name:", workType.name);
+                            const cleanName = normalizePropertyName(nextName || "");
+                            if (!cleanName) return;
+                            setState((prev) => ({
+                              ...prev,
+                              jobTypeOptions: [...new Set((prev.jobTypeOptions || []).map((name) => name === workType.name ? cleanName : name))],
+                              workTypes: ((prev.workTypes && prev.workTypes.length ? prev.workTypes : defaultWorkTypes)).map((item) => item.id === workType.id ? { ...item, name: cleanName } : item),
+                            }));
+                          }}
+                          className="darkButton !p-3"
+                        >
+                          <Pencil size={16} />
+                        </button>
+                        <button
+                          onClick={() => {
+                            if (!confirm("Delete this Work Type? Existing work orders will not be deleted.")) return;
+                            setState((prev) => ({
+                              ...prev,
+                              jobTypeOptions: (prev.jobTypeOptions || []).filter((name) => name !== workType.name),
+                              workTypes: ((prev.workTypes && prev.workTypes.length ? prev.workTypes : defaultWorkTypes)).filter((item) => item.id !== workType.id),
+                            }));
+                          }}
+                          className="iconDanger"
+                        >
+                          <Trash2 size={17} />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
               </div>
             </section>
           )}
