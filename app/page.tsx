@@ -44,7 +44,7 @@ import {
 // PHASE 13 single-file replacement for app/page.tsx
 // Property address persistence + assignment preset dropdown fix
 // PHASE 23: One Work Order flow only + message/PDF actions visible inside every Work Order + PDF-first invoice sharing
-// PHASE 25B: Field Test Fixes + Work Types tab — invoice labels, safer Bill To, and editable work type list
+// PHASE 26: Estimates foundation + Work Items rename + duplicate work orders + dashboard cleanup
 
 const STORAGE_KEY = "oneStopPayrollProEliteBlackGoldX_v1";
 const PROPERTY_PROFILES_KEY = "oneStopPropertyProfiles_v1";
@@ -109,6 +109,25 @@ type InvoiceLineItem = {
   rate: number;
 };
 
+
+type Estimate = {
+  id: string;
+  estimateNumber: string;
+  clientName: string;
+  property: string;
+  propertyAddress?: string;
+  unitNumber: string;
+  estimateDate: string;
+  status: "draft" | "sent" | "approved" | "declined" | "converted";
+  lineItems: InvoiceLineItem[];
+  notes: string;
+  clientEmail?: string;
+  beforePhotos?: string[];
+  afterPhotos?: string[];
+  sourceJobIds?: string[];
+  convertedInvoiceId?: string;
+};
+
 type Invoice = {
   id: string;
   invoiceNumber: string;
@@ -132,7 +151,7 @@ type AssignmentLanguage = "english" | "spanish" | "both";
 type AssignmentStatus = "assigned" | "sent" | "in-progress" | "completed" | "approved" | "ready-to-invoice";
 type WorkOrderStatus = "open" | "assigned" | "in-progress" | "completed" | "ready-to-invoice";
 
-type WorkTypeOption = {
+type WorkItemOption = {
   id: string;
   name: string;
   defaultScope: string;
@@ -161,15 +180,16 @@ type AppState = {
   employees: Employee[];
   jobs: JobEntry[];
   invoices: Invoice[];
+  estimates?: Estimate[];
   assignments: WorkAssignment[];
   properties: string[];
   propertyProfiles: Record<string, PropertyContactProfile>;
   jobTypeOptions: string[];
-  workTypes?: WorkTypeOption[];
+  workItems?: WorkItemOption[];
   companyName: string;
 };
 
-type ActiveTab = "dashboard" | "field" | "office" | "ops" | "employees" | "jobs" | "assignments" | "invoices" | "properties" | "workTypes" | "reports" | "more";
+type ActiveTab = "dashboard" | "field" | "office" | "estimates" | "ops" | "employees" | "jobs" | "assignments" | "invoices" | "properties" | "workItems" | "reports" | "more";
 
 const defaultProperties = [
   "Charles Place Apartments",
@@ -330,7 +350,7 @@ const defaultJobTypes = [
   "Touch Ups",
 ];
 
-const defaultWorkTypes: WorkTypeOption[] = defaultJobTypes.map((name) => ({
+const defaultWorkItems: WorkItemOption[] = defaultJobTypes.map((name) => ({
   id: uid(),
   name,
   defaultScope: "",
@@ -448,11 +468,12 @@ const starterState: AppState = {
   ],
   jobs: [],
   invoices: [],
+  estimates: [],
   assignments: [],
   properties: defaultProperties,
   propertyProfiles: defaultPropertyProfiles,
   jobTypeOptions: defaultJobTypes,
-  workTypes: defaultWorkTypes,
+  workItems: defaultWorkItems,
 };
 
 function safeNumber(value: string | number): number {
@@ -840,6 +861,15 @@ function nextInvoiceNumber(existing: Invoice[]) {
   return `INV-${String(next).padStart(5, "0")}`;
 }
 
+function nextEstimateNumber(existing: Estimate[] = []) {
+  const next = existing.length + 1;
+  return `EST-${String(next).padStart(5, "0")}`;
+}
+
+function estimateTotal(estimate: Pick<Estimate, "lineItems">) {
+  return estimate.lineItems.reduce((sum, item) => sum + safeNumber(item.qty) * safeNumber(item.rate), 0);
+}
+
 export default function PayrollProEliteOperationsX() {
   const [state, setState] = useState<AppState>(starterState);
   const [hydrated, setHydrated] = useState(false);
@@ -855,7 +885,9 @@ export default function PayrollProEliteOperationsX() {
   const [editingPropertyName, setEditingPropertyName] = useState<string | null>(null);
   const [showInvoiceForm, setShowInvoiceForm] = useState(false);
   const [editingInvoice, setEditingInvoice] = useState<Invoice | null>(null);
-  const [confirmDelete, setConfirmDelete] = useState<{ type: "employee" | "job" | "property" | "invoice" | "assignment"; id: string } | null>(null);
+  const [showEstimateForm, setShowEstimateForm] = useState(false);
+  const [editingEstimate, setEditingEstimate] = useState<Estimate | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<{ type: "employee" | "job" | "property" | "invoice" | "estimate" | "assignment"; id: string } | null>(null);
   const importRef = useRef<HTMLInputElement | null>(null);
 
   const week = useMemo(() => getWeekRange(selectedWeek), [selectedWeek]);
@@ -874,11 +906,12 @@ export default function PayrollProEliteOperationsX() {
             : starterState.employees,
           jobs: Array.isArray(parsed.jobs) ? parsed.jobs : [],
           invoices: Array.isArray(parsed.invoices) ? parsed.invoices : [],
+          estimates: Array.isArray(parsed.estimates) ? parsed.estimates : [],
           assignments: Array.isArray(parsed.assignments) ? parsed.assignments : [],
           properties: Array.isArray(parsed.properties) ? parsed.properties : defaultProperties,
           propertyProfiles: mergedPropertyProfiles,
           jobTypeOptions: Array.isArray(parsed.jobTypeOptions) ? parsed.jobTypeOptions : defaultJobTypes,
-          workTypes: Array.isArray(parsed.workTypes) ? parsed.workTypes : defaultWorkTypes,
+          workItems: Array.isArray(parsed.workItems) ? parsed.workItems : defaultWorkItems,
         });
       } else if (Object.keys(savedPropertyProfiles).length > 0) {
         setState((prev) => ({
@@ -963,13 +996,28 @@ export default function PayrollProEliteOperationsX() {
       .sort((a, b) => b.invoiceDate.localeCompare(a.invoiceDate));
   }, [state.invoices, search]);
 
+  const filteredEstimates = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return (state.estimates || [])
+      .filter((estimate) => {
+        if (!q) return true;
+        return [estimate.estimateNumber, estimate.clientName, estimate.property, estimate.unitNumber, estimate.status, estimate.notes]
+          .join(" ")
+          .toLowerCase()
+          .includes(q);
+      })
+      .sort((a, b) => b.estimateDate.localeCompare(a.estimateDate));
+  }, [state.estimates, search]);
+
   const totals = useMemo(() => {
     const earned = weekJobs.reduce((sum, job) => sum + safeNumber(job.pay), 0);
     const paid = weekJobs.reduce((sum, job) => sum + safeNumber(job.paidAmount), 0);
     const borrowed = state.employees.reduce((sum, employee) => sum + getBorrowedForWeek(employee, week.start), 0);
     const owed = Math.max(earned - paid - borrowed, 0);
     const invoiceOpen = state.invoices.reduce((sum, invoice) => sum + Math.max(invoiceTotal(invoice) - safeNumber(invoice.paidAmount), 0), 0);
-    return { earned, paid, borrowed, owed, invoiceOpen };
+    const draftEstimates = (state.estimates || []).filter((estimate) => estimate.status === "draft").length;
+    const readyToInvoice = weekJobs.filter((job) => job.workStatus === "ready-to-invoice").length;
+    return { earned, paid, borrowed, owed, invoiceOpen, draftEstimates, readyToInvoice };
   }, [weekJobs, state.employees, state.invoices, week.start]);
 
   const workOrderTotals = useMemo(() => {
@@ -1159,6 +1207,93 @@ export default function PayrollProEliteOperationsX() {
     openInvoiceDraft(invoice);
   }
 
+  function upsertEstimate(estimate: Estimate) {
+    setState((prev) => {
+      const exists = (prev.estimates || []).some((row) => row.id === estimate.id);
+      return {
+        ...prev,
+        estimates: exists ? (prev.estimates || []).map((row) => (row.id === estimate.id ? estimate : row)) : [estimate, ...(prev.estimates || [])],
+      };
+    });
+  }
+
+  function createEstimateFromJob(job: JobEntry) {
+    const estimate: Estimate = {
+      id: uid(),
+      estimateNumber: nextEstimateNumber(state.estimates || []),
+      clientName: getSavedPropertyBillingName(job.property),
+      clientEmail: getSavedPropertyEmail(job.property),
+      property: job.property,
+      propertyAddress: getSavedPropertyAddress(job.property),
+      unitNumber: job.unitNumber || "",
+      estimateDate: todayISO(),
+      status: "draft",
+      beforePhotos: [],
+      afterPhotos: job.photos || [],
+      notes: "Thank you for the opportunity to provide this estimate. God bless.",
+      sourceJobIds: [job.id],
+      lineItems: [{ id: uid(), description: `${formatJobDate(job.date)} — ${propertyWithUnit(job)} — ${[...job.jobTypes, job.customWork].filter(Boolean).join(" / ") || "Labor"}`, qty: 1, rate: 0 }],
+    };
+    setEditingEstimate(estimate);
+    setShowEstimateForm(true);
+    setActiveTab("estimates");
+  }
+
+  function convertEstimateToInvoice(estimate: Estimate) {
+    const invoice: Invoice = {
+      id: uid(),
+      invoiceNumber: nextInvoiceNumber(state.invoices),
+      clientName: estimate.clientName,
+      clientEmail: estimate.clientEmail,
+      property: estimate.property,
+      propertyAddress: estimate.propertyAddress || getSavedPropertyAddress(estimate.property),
+      unitNumber: estimate.unitNumber || "",
+      invoiceDate: todayISO(),
+      dueDate: addDaysISO(todayISO(), 14),
+      status: "due",
+      paidAmount: 0,
+      beforePhotos: estimate.beforePhotos || [],
+      afterPhotos: estimate.afterPhotos || [],
+      notes: estimate.notes || "Thank you for your business. God bless.",
+      sourceJobIds: estimate.sourceJobIds || [],
+      lineItems: estimate.lineItems.map((item) => ({ ...item, id: uid() })),
+    };
+    setState((prev) => ({
+      ...prev,
+      invoices: [customerSafeInvoice(invoice), ...prev.invoices],
+      estimates: (prev.estimates || []).map((row) => row.id === estimate.id ? { ...row, status: "converted", convertedInvoiceId: invoice.id } : row),
+    }));
+    setActiveTab("office");
+  }
+
+  function convertInvoiceToEstimate(invoice: Invoice) {
+    const estimate: Estimate = {
+      id: uid(),
+      estimateNumber: nextEstimateNumber(state.estimates || []),
+      clientName: invoice.clientName,
+      clientEmail: invoice.clientEmail,
+      property: invoice.property,
+      propertyAddress: invoice.propertyAddress || getSavedPropertyAddress(invoice.property),
+      unitNumber: invoice.unitNumber || "",
+      estimateDate: todayISO(),
+      status: "draft",
+      beforePhotos: invoice.beforePhotos || [],
+      afterPhotos: invoice.afterPhotos || [],
+      notes: invoice.notes || "Thank you for the opportunity to provide this estimate. God bless.",
+      sourceJobIds: invoice.sourceJobIds || [],
+      lineItems: invoice.lineItems.map((item) => ({ ...item, id: uid() })),
+    };
+    setEditingEstimate(estimate);
+    setShowEstimateForm(true);
+    setActiveTab("estimates");
+  }
+
+  function duplicateWorkOrder(job: JobEntry) {
+    const duplicate: JobEntry = { ...job, id: uid(), date: todayISO(), paidAmount: 0, status: "unpaid", workStatus: "open", notes: `${job.notes || ""}${job.notes ? "\n" : ""}Duplicated from previous work order.`.trim(), photos: [] };
+    addJob(duplicate);
+    setActiveTab("field");
+  }
+
   function deleteConfirmed() {
     if (!confirmDelete) return;
     setState((prev) => {
@@ -1167,6 +1302,7 @@ export default function PayrollProEliteOperationsX() {
       }
       if (confirmDelete.type === "job") return { ...prev, jobs: prev.jobs.filter((job) => job.id !== confirmDelete.id) };
       if (confirmDelete.type === "invoice") return { ...prev, invoices: prev.invoices.filter((item) => item.id !== confirmDelete.id) };
+      if (confirmDelete.type === "estimate") return { ...prev, estimates: (prev.estimates || []).filter((item) => item.id !== confirmDelete.id) };
       if (confirmDelete.type === "assignment") return { ...prev, assignments: prev.assignments.filter((item) => item.id !== confirmDelete.id) };
       const nextProfiles = { ...(prev.propertyProfiles || {}) };
       delete nextProfiles[confirmDelete.id];
@@ -1200,11 +1336,12 @@ export default function PayrollProEliteOperationsX() {
           employees: parsed.employees.map((employee) => ({ ...employee, borrowed: safeNumber(employee.borrowed || 0), borrowedByWeek: employee.borrowedByWeek || {} })),
           jobs: parsed.jobs,
           invoices: Array.isArray(parsed.invoices) ? parsed.invoices : [],
+          estimates: Array.isArray(parsed.estimates) ? parsed.estimates : [],
           assignments: Array.isArray(parsed.assignments) ? parsed.assignments : [],
           properties: Array.isArray(parsed.properties) ? parsed.properties : defaultProperties,
           propertyProfiles: { ...defaultPropertyProfiles, ...(parsed.propertyProfiles || {}), ...loadSavedPropertyProfiles() },
           jobTypeOptions: Array.isArray(parsed.jobTypeOptions) ? parsed.jobTypeOptions : defaultJobTypes,
-          workTypes: Array.isArray(parsed.workTypes) ? parsed.workTypes : defaultWorkTypes,
+          workItems: Array.isArray(parsed.workItems) ? parsed.workItems : defaultWorkItems,
         });
       } catch {
         alert("Could not import this file.");
@@ -1265,43 +1402,30 @@ export default function PayrollProEliteOperationsX() {
 
         <WeekHero week={week} selectedWeek={selectedWeek} setSelectedWeek={setSelectedWeek} />
 
-        <section className="mt-4 rounded-[1.25rem] border border-white/10 bg-zinc-950/70 p-3 shadow-[0_18px_45px_rgba(0,0,0,0.25)]">
-          <div className="mb-2 flex items-center justify-between gap-3">
-            <div>
-              <p className="text-xs font-black uppercase tracking-[0.18em] text-green-300">Quick Actions</p>
-              <p className="text-[11px] font-semibold text-zinc-500">One tap access to your daily workflow.</p>
-            </div>
-            <Sparkles size={18} className="text-green-300" />
-          </div>
-          <div className="grid grid-cols-2 gap-2">
-            <button onClick={() => setShowJobForm(true)} className="flex items-center justify-center gap-2 rounded-2xl border border-green-400/20 bg-green-500/15 px-3 py-3 text-xs font-black text-green-200 active:scale-[.99]">
-              <Plus size={17} /> Work Order
-            </button>
-            <button onClick={() => { setActiveTab("office"); setEditingInvoice(null); setShowInvoiceForm(true); }} className="flex items-center justify-center gap-2 rounded-2xl border border-blue-400/20 bg-blue-500/15 px-3 py-3 text-xs font-black text-blue-200 active:scale-[.99]">
-              <ReceiptText size={17} /> Invoice
-            </button>
-            <button onClick={() => { setActiveTab("employees"); setShowEmployeeForm(true); }} className="flex items-center justify-center gap-2 rounded-2xl border border-amber-400/20 bg-amber-500/15 px-3 py-3 text-xs font-black text-amber-200 active:scale-[.99]">
-              <UserPlus size={17} /> Employee
-            </button>
-            <button onClick={() => { setActiveTab("properties"); setEditingPropertyName(null); setShowPropertyForm(true); }} className="flex items-center justify-center gap-2 rounded-2xl border border-purple-400/20 bg-purple-500/15 px-3 py-3 text-xs font-black text-purple-200 active:scale-[.99]">
-              <Building2 size={17} /> Property
-            </button>
-            <button onClick={() => setActiveTab("workTypes")} className="col-span-2 flex items-center justify-center gap-2 rounded-2xl border border-emerald-400/20 bg-emerald-500/15 px-3 py-3 text-xs font-black text-emerald-200 active:scale-[.99]">
-              <ClipboardList size={17} /> Work Types
-            </button>
-          </div>
-        </section>
-
         {activeTab === "dashboard" && (
           <>
-            <button onClick={() => setShowJobForm(true)} className="mt-5 flex w-full items-center justify-center gap-3 rounded-[1.15rem] border border-green-300/20 bg-gradient-to-r from-green-500 to-green-600 px-5 py-4 text-xl font-black text-white shadow-[0_20px_45px_rgba(34,197,94,0.24)] transition active:scale-[.99]">
-              <Plus size={30} /> New Work Order
-            </button>
-            <p className="mt-3 text-center text-xs font-semibold text-zinc-500">Payroll, work orders, photos, messages, and invoices in one app.</p>
+            <div className="mt-5 grid grid-cols-2 gap-3">
+              <button onClick={() => setShowJobForm(true)} className="flex items-center justify-center gap-2 rounded-[1.15rem] border border-green-300/20 bg-gradient-to-r from-green-500 to-green-600 px-4 py-4 text-sm font-black text-white shadow-[0_20px_45px_rgba(34,197,94,0.24)] transition active:scale-[.99]">
+                <Plus size={24} /> New Work Order
+              </button>
+              <button onClick={() => { setActiveTab("office"); setEditingInvoice(null); setShowInvoiceForm(true); }} className="flex items-center justify-center gap-2 rounded-[1.15rem] border border-blue-300/20 bg-gradient-to-r from-blue-500 to-blue-600 px-4 py-4 text-sm font-black text-white shadow-[0_20px_45px_rgba(59,130,246,0.24)] transition active:scale-[.99]">
+                <ReceiptText size={24} /> New Invoice
+              </button>
+            </div>
+            <section className="mt-4 rounded-2xl border border-white/10 bg-zinc-950/70 p-4">
+              <p className="text-xs font-black uppercase tracking-[0.18em] text-green-300">Operations Snapshot</p>
+              <div className="mt-3 grid grid-cols-2 gap-2 text-xs font-bold text-zinc-300">
+                <div className="rounded-xl bg-zinc-900/80 p-3">Open Work Orders<br /><span className="text-lg text-white">{workOrderTotals.total}</span></div>
+                <div className="rounded-xl bg-zinc-900/80 p-3">Ready To Invoice<br /><span className="text-lg text-white">{totals.readyToInvoice}</span></div>
+                <div className="rounded-xl bg-zinc-900/80 p-3">Draft Estimates<br /><span className="text-lg text-white">{totals.draftEstimates}</span></div>
+                <div className="rounded-xl bg-zinc-900/80 p-3">Outstanding<br /><span className="text-lg text-white">{money(totals.invoiceOpen)}</span></div>
+              </div>
+            </section>
+            <p className="mt-3 text-center text-xs font-semibold text-zinc-500">Payroll, work orders, estimates, invoices, photos, and messages in one app.</p>
           </>
         )}
 
-        {(activeTab === "office" || activeTab === "invoices" || activeTab === "reports") && (
+        {(activeTab === "office" || activeTab === "invoices" || activeTab === "estimates" || activeTab === "reports") && (
           <>
             <div className="mt-6 flex items-center justify-between">
               <h2 className="text-sm font-black uppercase tracking-wide text-zinc-300">Office Pipeline</h2>
@@ -1324,7 +1448,7 @@ export default function PayrollProEliteOperationsX() {
         <div className="sticky top-[68px] z-20 -mx-4 mt-5 border-y border-white/10 bg-[#02070a]/90 px-4 py-3 shadow-[0_18px_40px_rgba(0,0,0,0.35)] backdrop-blur-xl">
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" size={18} />
-            <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search employee, property, work order, invoice..." className="w-full rounded-2xl border border-zinc-800 bg-zinc-950 py-2 pl-10 pr-3 text-sm outline-none ring-amber-400/40 placeholder:text-zinc-500 focus:border-green-400/60 focus:ring-4" />
+            <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search employee, property, work order, estimate, invoice..." className="w-full rounded-2xl border border-zinc-800 bg-zinc-950 py-2 pl-10 pr-3 text-sm outline-none ring-amber-400/40 placeholder:text-zinc-500 focus:border-green-400/60 focus:ring-4" />
           </div>
           <p className="mt-2 text-xs text-zinc-500">{activeTab === "field" ? <><span className="font-black text-green-400">Work mode:</span> work orders, worker pay, units, turnover work, and photos.</> : activeTab === "office" || activeTab === "invoices" ? <><span className="font-black text-green-400">Office mode:</span> invoices, company charges, customer balances, and billing.</> : <>Historical work orders stay saved.</>}</p>
         </div>
@@ -1355,10 +1479,22 @@ export default function PayrollProEliteOperationsX() {
               </SectionTop>
 
               <div className="rounded-2xl border border-blue-400/20 bg-blue-500/10 p-3 text-sm font-semibold text-blue-200">
-                Phase 25B: Field test fixes are active. Work Types has been added so you can create new common job categories as your work changes.
+                Phase 26: Estimates are active and Work Items can create new common job categories as your work changes.
               </div>
 
-              <JobList jobs={filteredJobs} employees={state.employees} employeesById={employeesById} properties={state.properties} jobTypeOptions={state.workTypes?.length ? state.workTypes.filter((type) => type.active).map((type) => type.name) : state.jobTypeOptions} onDelete={(id) => setConfirmDelete({ type: "job", id })} onUpdate={updateJob} onCreateInvoice={createInvoiceFromJob} />
+              <JobList jobs={filteredJobs} employees={state.employees} employeesById={employeesById} properties={state.properties} jobTypeOptions={state.workItems?.length ? state.workItems.filter((type) => type.active).map((type) => type.name) : state.jobTypeOptions} onDelete={(id) => setConfirmDelete({ type: "job", id })} onUpdate={updateJob} onCreateInvoice={createInvoiceFromJob} onCreateEstimate={createEstimateFromJob} onDuplicate={duplicateWorkOrder} />
+            </section>
+          )}
+
+          {activeTab === "estimates" && (
+            <section className="space-y-4">
+              <SectionTop title="Estimates" subtitle="Create estimates and convert approved estimates into invoices.">
+                <button onClick={() => { setEditingEstimate(null); setShowEstimateForm(true); }} className="goldButton"><Plus size={18} /> New Estimate</button>
+              </SectionTop>
+              <div className="rounded-2xl border border-amber-400/20 bg-amber-500/10 p-3 text-sm font-semibold text-amber-200">
+                Estimates are for proposed work. When approved, convert the estimate into an invoice without retyping.
+              </div>
+              <EstimatesPanel estimates={filteredEstimates} onAdd={() => { setEditingEstimate(null); setShowEstimateForm(true); }} onEdit={(estimate) => { setEditingEstimate(estimate); setShowEstimateForm(true); }} onDelete={(id) => setConfirmDelete({ type: "estimate", id })} onUpdate={upsertEstimate} onConvertToInvoice={convertEstimateToInvoice} />
             </section>
           )}
 
@@ -1370,7 +1506,7 @@ export default function PayrollProEliteOperationsX() {
               <div className="rounded-2xl border border-green-400/20 bg-green-500/10 p-3 text-sm font-semibold text-green-200">
                 Office is your billing side: what you charge the company is separate from what you pay the employee.
               </div>
-              <InvoicesPanel invoices={filteredInvoices} jobs={state.jobs} weekJobs={weekJobs} onAdd={() => { setEditingInvoice(null); setShowInvoiceForm(true); }} onCreateFromWeek={createInvoiceFromWeekJobs} onCreateFromJob={createInvoiceFromJob} onEdit={(invoice) => { setEditingInvoice(invoice); setShowInvoiceForm(true); }} onDelete={(id) => setConfirmDelete({ type: "invoice", id })} onUpdate={upsertInvoice} />
+              <InvoicesPanel invoices={filteredInvoices} jobs={state.jobs} weekJobs={weekJobs} onAdd={() => { setEditingInvoice(null); setShowInvoiceForm(true); }} onCreateFromWeek={createInvoiceFromWeekJobs} onCreateFromJob={createInvoiceFromJob} onEdit={(invoice) => { setEditingInvoice(invoice); setShowInvoiceForm(true); }} onDelete={(id) => setConfirmDelete({ type: "invoice", id })} onUpdate={upsertInvoice} onConvertToEstimate={convertInvoiceToEstimate} />
             </section>
           )}
 
@@ -1408,35 +1544,35 @@ export default function PayrollProEliteOperationsX() {
           )}
 
 
-          {activeTab === "workTypes" && (
+          {activeTab === "workItems" && (
             <section className="space-y-4">
-              <SectionTop title="Work Types" subtitle="Create and manage common job types used inside New Work Order.">
+              <SectionTop title="Work Items" subtitle="Create and manage common job types used inside New Work Order.">
                 <button
                   onClick={() => {
-                    const name = prompt("Enter new Work Type name:");
+                    const name = prompt("Enter new Work Item name:");
                     const cleanName = normalizePropertyName(name || "");
                     if (!cleanName) return;
                     setState((prev) => ({
                       ...prev,
                       jobTypeOptions: [...new Set([...(prev.jobTypeOptions || []), cleanName])],
-                      workTypes: [
-                        ...((prev.workTypes && prev.workTypes.length ? prev.workTypes : defaultWorkTypes)),
+                      workItems: [
+                        ...((prev.workItems && prev.workItems.length ? prev.workItems : defaultWorkItems)),
                         { id: uid(), name: cleanName, defaultScope: "", defaultNotes: "", defaultPriority: "normal", active: true },
                       ],
                     }));
                   }}
                   className="goldButton"
                 >
-                  <Plus size={18} /> Add Work Type
+                  <Plus size={18} /> Add Work Item
                 </button>
               </SectionTop>
 
               <div className="rounded-2xl border border-green-400/20 bg-green-500/10 p-3 text-sm font-semibold text-green-200">
-                Work Types are your reusable job categories. Add new ones here as new common jobs come into play.
+                Work Items are your reusable job categories. Add new ones here as new common jobs come into play.
               </div>
 
               <div className="grid gap-3">
-                {((state.workTypes && state.workTypes.length ? state.workTypes : defaultWorkTypes)).map((workType) => (
+                {((state.workItems && state.workItems.length ? state.workItems : defaultWorkItems)).map((workType) => (
                   <div key={workType.id} className="blackCard p-4">
                     <div className="relative z-10 flex items-start justify-between gap-3">
                       <div className="min-w-0">
@@ -1449,13 +1585,13 @@ export default function PayrollProEliteOperationsX() {
                       <div className="flex shrink-0 items-center gap-2">
                         <button
                           onClick={() => {
-                            const nextName = prompt("Edit Work Type name:", workType.name);
+                            const nextName = prompt("Edit Work Item name:", workType.name);
                             const cleanName = normalizePropertyName(nextName || "");
                             if (!cleanName) return;
                             setState((prev) => ({
                               ...prev,
                               jobTypeOptions: [...new Set((prev.jobTypeOptions || []).map((name) => name === workType.name ? cleanName : name))],
-                              workTypes: ((prev.workTypes && prev.workTypes.length ? prev.workTypes : defaultWorkTypes)).map((item) => item.id === workType.id ? { ...item, name: cleanName } : item),
+                              workItems: ((prev.workItems && prev.workItems.length ? prev.workItems : defaultWorkItems)).map((item) => item.id === workType.id ? { ...item, name: cleanName } : item),
                             }));
                           }}
                           className="darkButton !p-3"
@@ -1464,11 +1600,11 @@ export default function PayrollProEliteOperationsX() {
                         </button>
                         <button
                           onClick={() => {
-                            if (!confirm("Delete this Work Type? Existing work orders will not be deleted.")) return;
+                            if (!confirm("Delete this Work Item? Existing work orders will not be deleted.")) return;
                             setState((prev) => ({
                               ...prev,
                               jobTypeOptions: (prev.jobTypeOptions || []).filter((name) => name !== workType.name),
-                              workTypes: ((prev.workTypes && prev.workTypes.length ? prev.workTypes : defaultWorkTypes)).filter((item) => item.id !== workType.id),
+                              workItems: ((prev.workItems && prev.workItems.length ? prev.workItems : defaultWorkItems)).filter((item) => item.id !== workType.id),
                             }));
                           }}
                           className="iconDanger"
@@ -1492,6 +1628,10 @@ export default function PayrollProEliteOperationsX() {
       <BottomNav activeTab={activeTab} setActiveTab={setActiveTab} />
 
       <input ref={importRef} type="file" accept="application/json" className="hidden" onChange={(e) => { const file = e.target.files?.[0]; if (file) importData(file); e.currentTarget.value = ""; }} />
+
+      {showEstimateForm && (
+        <EstimateModal estimate={editingEstimate} properties={state.properties} getAddressForProperty={getSavedPropertyAddress} getBillingNameForProperty={getSavedPropertyBillingName} getEmailForProperty={getSavedPropertyEmail} onClose={() => { setShowEstimateForm(false); setEditingEstimate(null); }} onSave={(estimate) => { upsertEstimate(estimate); setShowEstimateForm(false); setEditingEstimate(null); }} nextNumber={nextEstimateNumber(state.estimates || [])} />
+      )}
 
       {showEmployeeForm && <EmployeeModal onClose={() => setShowEmployeeForm(false)} onSave={(employee) => { upsertEmployee(employee); setShowEmployeeForm(false); }} />}
 
@@ -2091,7 +2231,7 @@ This will move the amount back into owed balance.`); if (!ok) return; onUpdate({
 
 Mark this job paid?
 
-Amount: ${money(value)}`)) return; onUpdate({ ...job, paidAmount: value, status: statusFrom(job.pay, value) }); }} placeholder="Enter Amount" /></Operations></div><Operations label="Work Type"><div className="grid grid-cols-2 gap-2">{jobTypeOptions.map((type) => <button type="button" key={type} onClick={() => toggleType(type)} className={`rounded-xl border px-3 py-2 text-left text-xs font-bold ${job.jobTypes.includes(type) ? "border-green-400/50 bg-green-500/20 text-green-300" : "border-zinc-800 bg-black/30 text-zinc-400"}`}>{job.jobTypes.includes(type) ? "✓ " : ""}{type}</button>)}</div></Operations><Operations label="Custom Work"><input className="inputElite" value={job.customWork} onChange={(e) => onUpdate({ ...job, customWork: e.target.value })} placeholder="Edit custom work description..." /></Operations><Operations label="Communication Center"><div className="rounded-2xl border border-green-400/20 bg-green-500/10 p-3"><div className="flex items-start justify-between gap-3"><div><p className="text-xs font-black uppercase text-green-400">Work Order Message</p><p className="mt-1 text-xs font-semibold text-zinc-400">View, edit, translate, print, email, text, WhatsApp, or copy from inside this Work Order.</p></div><button type="button" className="goldButton !py-2 text-xs" onClick={() => printWorkOrderDocument({ ...job, workLanguage: currentLanguage }, employee?.name || "Employee", currentWorkMessage)}>Preview PDF</button></div><div className="mt-3 grid grid-cols-3 gap-2"><button type="button" onClick={() => changeWorkMessageLanguage("english")} className={`${currentLanguage === "english" ? "goldButton" : "darkButton"} !py-2 text-xs`}>English</button><button type="button" onClick={() => changeWorkMessageLanguage("spanish")} className={`${currentLanguage === "spanish" ? "goldButton" : "darkButton"} !py-2 text-xs`}>Español</button><button type="button" onClick={() => changeWorkMessageLanguage("both")} className={`${currentLanguage === "both" ? "goldButton" : "darkButton"} !py-2 text-xs`}>Both</button></div><textarea className="inputElite mt-3 min-h-64 text-xs" value={currentWorkMessage} onChange={(e) => onUpdate({ ...job, workMessage: e.target.value })} /><div className="mt-3 grid grid-cols-2 gap-2"><button type="button" className="goldButton !py-2 text-xs" onClick={() => printWorkOrderDocument({ ...job, workLanguage: currentLanguage }, employee?.name || "Employee", currentWorkMessage)}>Print / Save PDF</button><button type="button" className="darkButton !py-2 text-xs" onClick={resetWorkMessage}>Regenerate</button><button type="button" className="darkButton !py-2 text-xs" onClick={() => copyWorkOrderMessage(currentWorkMessage)}>Copy Message</button><button type="button" className="darkButton !py-2 text-xs" onClick={() => textWorkOrderMessage(currentWorkMessage)}>Text Message</button><button type="button" className="darkButton !py-2 text-xs" onClick={() => whatsappWorkOrderMessage(currentWorkMessage)}>WhatsApp</button><button type="button" className="goldButton !py-2 text-xs" onClick={() => emailWorkOrderPdf({ ...job, workLanguage: currentLanguage }, employee?.name || "Employee", currentWorkMessage)}>Email PDF</button><button type="button" className="goldButton !py-2 text-xs" onClick={() => messageWorkOrderPdf({ ...job, workLanguage: currentLanguage }, employee?.name || "Employee", currentWorkMessage)}>Message PDF</button></div><p className="mt-3 text-[11px] font-semibold leading-relaxed text-zinc-400">PDF opens first so you can save, print, or share the clean work order file from your phone/computer.</p></div></Operations><Operations label="Job Photos"><div className="rounded-2xl border border-dashed border-zinc-800 bg-black/30 p-4"><div className="grid grid-cols-2 gap-2"><label className="goldButton w-full cursor-pointer"><Camera size={18} /> Take Photo<input type="file" accept="image/*" multiple capture="environment" className="hidden" onChange={async (e) => { await addPhotos(e.target.files); e.currentTarget.value = ""; }} /></label><label className="darkButton w-full cursor-pointer"><ImageIcon size={18} /> Upload<input type="file" accept="image/*" multiple className="hidden" onChange={async (e) => { await addPhotos(e.target.files); e.currentTarget.value = ""; }} /></label></div>{(job.photos || []).length > 0 ? <div className="mt-4 grid grid-cols-2 gap-3">{(job.photos || []).map((photo, index) => <div key={`${job.id}-photo-${index}`} className="relative overflow-hidden rounded-2xl border border-white/10 bg-black/40"><img src={photo} alt={`Job photo ${index + 1}`} className="h-32 w-full object-cover" /><button type="button" className="absolute right-2 top-2 rounded-full border border-red-400/30 bg-black/70 p-2 text-red-200" onClick={() => { const ok = window.confirm("Remove this photo from the job?"); if (!ok) return; onUpdate({ ...job, photos: (job.photos || []).filter((_, photoIndex) => photoIndex !== index) }); }}><Trash2 size={15} /></button></div>)}</div> : <p className="mt-3 text-center text-sm font-semibold text-zinc-500">No photos attached yet.</p>}</div></Operations><Operations label="Notes"><textarea className="inputElite min-h-28" value={job.notes} onChange={(e) => onUpdate({ ...job, notes: e.target.value })} placeholder="Edit notes for this saved job..." /></Operations><div className="flex items-center justify-between gap-2"><span className={`rounded-full border px-3 py-1 text-xs font-black ${jobStatusColor(normalizedStatus, owed)}`}>{normalizedStatus.toUpperCase()}</span><button className="iconDanger" onClick={onDelete}><Trash2 size={18} /></button></div></div>}</div>;
+Amount: ${money(value)}`)) return; onUpdate({ ...job, paidAmount: value, status: statusFrom(job.pay, value) }); }} placeholder="Enter Amount" /></Operations></div><Operations label="Work Item"><div className="grid grid-cols-2 gap-2">{jobTypeOptions.map((type) => <button type="button" key={type} onClick={() => toggleType(type)} className={`rounded-xl border px-3 py-2 text-left text-xs font-bold ${job.jobTypes.includes(type) ? "border-green-400/50 bg-green-500/20 text-green-300" : "border-zinc-800 bg-black/30 text-zinc-400"}`}>{job.jobTypes.includes(type) ? "✓ " : ""}{type}</button>)}</div></Operations><Operations label="Custom Work"><input className="inputElite" value={job.customWork} onChange={(e) => onUpdate({ ...job, customWork: e.target.value })} placeholder="Edit custom work description..." /></Operations><Operations label="Communication Center"><div className="rounded-2xl border border-green-400/20 bg-green-500/10 p-3"><div className="flex items-start justify-between gap-3"><div><p className="text-xs font-black uppercase text-green-400">Work Order Message</p><p className="mt-1 text-xs font-semibold text-zinc-400">View, edit, translate, print, email, text, WhatsApp, or copy from inside this Work Order.</p></div><button type="button" className="goldButton !py-2 text-xs" onClick={() => printWorkOrderDocument({ ...job, workLanguage: currentLanguage }, employee?.name || "Employee", currentWorkMessage)}>Preview PDF</button></div><div className="mt-3 grid grid-cols-3 gap-2"><button type="button" onClick={() => changeWorkMessageLanguage("english")} className={`${currentLanguage === "english" ? "goldButton" : "darkButton"} !py-2 text-xs`}>English</button><button type="button" onClick={() => changeWorkMessageLanguage("spanish")} className={`${currentLanguage === "spanish" ? "goldButton" : "darkButton"} !py-2 text-xs`}>Español</button><button type="button" onClick={() => changeWorkMessageLanguage("both")} className={`${currentLanguage === "both" ? "goldButton" : "darkButton"} !py-2 text-xs`}>Both</button></div><textarea className="inputElite mt-3 min-h-64 text-xs" value={currentWorkMessage} onChange={(e) => onUpdate({ ...job, workMessage: e.target.value })} /><div className="mt-3 grid grid-cols-2 gap-2"><button type="button" className="goldButton !py-2 text-xs" onClick={() => printWorkOrderDocument({ ...job, workLanguage: currentLanguage }, employee?.name || "Employee", currentWorkMessage)}>Print / Save PDF</button><button type="button" className="darkButton !py-2 text-xs" onClick={resetWorkMessage}>Regenerate</button><button type="button" className="darkButton !py-2 text-xs" onClick={() => copyWorkOrderMessage(currentWorkMessage)}>Copy Message</button><button type="button" className="darkButton !py-2 text-xs" onClick={() => textWorkOrderMessage(currentWorkMessage)}>Text Message</button><button type="button" className="darkButton !py-2 text-xs" onClick={() => whatsappWorkOrderMessage(currentWorkMessage)}>WhatsApp</button><button type="button" className="goldButton !py-2 text-xs" onClick={() => emailWorkOrderPdf({ ...job, workLanguage: currentLanguage }, employee?.name || "Employee", currentWorkMessage)}>Email PDF</button><button type="button" className="goldButton !py-2 text-xs" onClick={() => messageWorkOrderPdf({ ...job, workLanguage: currentLanguage }, employee?.name || "Employee", currentWorkMessage)}>Message PDF</button></div><p className="mt-3 text-[11px] font-semibold leading-relaxed text-zinc-400">PDF opens first so you can save, print, or share the clean work order file from your phone/computer.</p></div></Operations><Operations label="Job Photos"><div className="rounded-2xl border border-dashed border-zinc-800 bg-black/30 p-4"><div className="grid grid-cols-2 gap-2"><label className="goldButton w-full cursor-pointer"><Camera size={18} /> Take Photo<input type="file" accept="image/*" multiple capture="environment" className="hidden" onChange={async (e) => { await addPhotos(e.target.files); e.currentTarget.value = ""; }} /></label><label className="darkButton w-full cursor-pointer"><ImageIcon size={18} /> Upload<input type="file" accept="image/*" multiple className="hidden" onChange={async (e) => { await addPhotos(e.target.files); e.currentTarget.value = ""; }} /></label></div>{(job.photos || []).length > 0 ? <div className="mt-4 grid grid-cols-2 gap-3">{(job.photos || []).map((photo, index) => <div key={`${job.id}-photo-${index}`} className="relative overflow-hidden rounded-2xl border border-white/10 bg-black/40"><img src={photo} alt={`Job photo ${index + 1}`} className="h-32 w-full object-cover" /><button type="button" className="absolute right-2 top-2 rounded-full border border-red-400/30 bg-black/70 p-2 text-red-200" onClick={() => { const ok = window.confirm("Remove this photo from the job?"); if (!ok) return; onUpdate({ ...job, photos: (job.photos || []).filter((_, photoIndex) => photoIndex !== index) }); }}><Trash2 size={15} /></button></div>)}</div> : <p className="mt-3 text-center text-sm font-semibold text-zinc-500">No photos attached yet.</p>}</div></Operations><Operations label="Notes"><textarea className="inputElite min-h-28" value={job.notes} onChange={(e) => onUpdate({ ...job, notes: e.target.value })} placeholder="Edit notes for this saved job..." /></Operations><div className="flex items-center justify-between gap-2"><span className={`rounded-full border px-3 py-1 text-xs font-black ${jobStatusColor(normalizedStatus, owed)}`}>{normalizedStatus.toUpperCase()}</span><button className="iconDanger" onClick={onDelete}><Trash2 size={18} /></button></div></div>}</div>;
 }
 
 function InvoicesPanel({ invoices, jobs, weekJobs, onAdd, onCreateFromWeek, onCreateFromJob, onEdit, onDelete, onUpdate }: { invoices: Invoice[]; jobs: JobEntry[]; weekJobs: JobEntry[]; onAdd: () => void; onCreateFromWeek: () => void; onCreateFromJob: (job: JobEntry) => void; onEdit: (invoice: Invoice) => void; onDelete: (id: string) => void; onUpdate: (invoice: Invoice) => void }) {
@@ -2428,7 +2568,7 @@ function JobModal({ employees, properties, jobTypeOptions, getAddressForProperty
     onSave(job, assignment);
   }
 
-  return <Modal title="New Work Order Entry" onClose={onClose}><div className="space-y-3"><div className="rounded-2xl border border-green-400/20 bg-green-500/10 p-3 text-sm font-semibold text-green-100"><b>One entry workflow:</b> this saves the payroll job and can create the employee assignment message at the same time.</div><Operations label="Employee / Assigned To"><select className="inputElite" value={employeeId} onChange={(e) => setEmployeeId(e.target.value)}>{employees.map((employee) => <option key={employee.id} value={employee.id}>{employee.name}</option>)}</select></Operations><div className="grid grid-cols-2 gap-3"><Operations label="Date"><input className="inputElite cursor-pointer" type="date" value={date} onClick={(e) => e.currentTarget.showPicker?.()} onFocus={(e) => e.currentTarget.showPicker?.()} onChange={(e) => setDate(e.target.value)} /></Operations><Operations label="Property"><select className="inputElite" value={property} onChange={(e) => { const selected = e.target.value; if (selected === "__add_new_property__") { const entered = window.prompt("Enter new property name:"); const cleanProperty = entered?.trim() || ""; if (cleanProperty) { onAddProperty(cleanProperty); setProperty(cleanProperty); setAssignmentAddress(""); } return; } setProperty(selected); setAssignmentAddress(getAddressForProperty(selected)); }}>{properties.map((item) => <option key={item} value={item}>{item}</option>)}<option value="__add_new_property__">+ Add New Property</option></select></Operations></div><Operations label="Unit #"><input className="inputElite" value={unitNumber} onChange={(e) => setUnitNumber(e.target.value)} placeholder="Example: 212" /></Operations><Operations label="Work Order Template"><select className="inputElite" value={selectedWorkTemplate} onChange={(e) => applyWorkOrderTemplate(e.target.value)}><option value="">Choose quick template...</option>{workOrderTemplates.map((template) => <option key={template.label} value={template.label}>{template.label}</option>)}</select></Operations><Operations label="Work Type"><div className="grid grid-cols-2 gap-2">{jobTypeOptions.map((type) => <button type="button" key={type} onClick={() => toggleType(type)} className={`rounded-xl border px-3 py-2 text-left text-xs font-bold ${selectedTypes.includes(type) ? "border-green-400/50 bg-green-500/20 text-green-300" : "border-zinc-800 bg-black/30 text-zinc-400"}`}>{selectedTypes.includes(type) ? "✓ " : ""}{type}</button>)}</div></Operations><Operations label="Custom Work"><input className="inputElite" value={customWork} onChange={(e) => setCustomWork(e.target.value)} placeholder="Extra scope or work description" /></Operations><div className="grid grid-cols-2 gap-3"><Operations label="Pay"><MoneyInput value={pay} onValueChange={setPay} placeholder="Enter Amount" /></Operations><Operations label="Paid"><MoneyInput value={paidAmount} onValueChange={setPaidAmount} placeholder="Enter Amount" /></Operations></div><div className="rounded-2xl border border-white/10 bg-black/25 p-3"><label className="flex items-center gap-3 text-sm font-black text-zinc-100"><input type="checkbox" checked={createAssignment} onChange={(e) => setCreateAssignment(e.target.checked)} /> Create employee assignment message</label>{createAssignment && <div className="mt-3 space-y-3"><Operations label="Job Address for Message"><input className="inputElite" value={assignmentAddress} onChange={(e) => setAssignmentAddress(e.target.value)} placeholder="460 Charles St, Providence RI" /></Operations><div className="grid grid-cols-2 gap-3"><Operations label="Priority"><select className="inputElite" value={assignmentPriority} onChange={(e) => setAssignmentPriority(e.target.value as WorkAssignment["priority"])}><option value="normal">Normal</option><option value="urgent">Urgent</option></select></Operations><Operations label="Language"><select className="inputElite" value={assignmentLanguage} onChange={(e) => setAssignmentLanguage(e.target.value as AssignmentLanguage)}><option value="spanish">Español</option><option value="english">English</option><option value="both">Both</option></select></Operations></div><div className="rounded-2xl border border-green-400/20 bg-green-500/10 p-3"><p className="mb-2 text-xs font-black uppercase text-green-400">Message Preview</p><pre className="max-h-48 overflow-y-auto whitespace-pre-wrap rounded-xl bg-black/40 p-3 text-xs font-semibold text-zinc-200">{buildAssignmentMessage(assignmentPreview, assignedEmployee?.name || "")}</pre></div></div>}</div><Operations label="Photos"><div className="rounded-2xl border border-dashed border-zinc-800 bg-black/30 p-4"><div className="grid grid-cols-2 gap-2"><label className="goldButton w-full cursor-pointer"><Camera size={18} /> Take Photo<input type="file" accept="image/*" multiple capture="environment" className="hidden" onChange={async (e) => { const newPhotos = await readPhotoFiles(e.target.files); setPhotos((prev) => [...prev, ...newPhotos]); e.currentTarget.value = ""; }} /></label><label className="darkButton w-full cursor-pointer"><ImageIcon size={18} /> Upload<input type="file" accept="image/*" multiple className="hidden" onChange={async (e) => { const newPhotos = await readPhotoFiles(e.target.files); setPhotos((prev) => [...prev, ...newPhotos]); e.currentTarget.value = ""; }} /></label></div>{photos.length > 0 && <p className="mt-3 text-center text-sm text-zinc-400">{photos.length} photo(s) attached.</p>}</div></Operations><Operations label="Notes"><textarea className="inputElite min-h-24" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Notes" /></Operations><button className="goldButton w-full" onClick={saveJobAndAssignment}><Check size={18} /> Save Job{createAssignment ? " + Assignment" : ""}</button></div></Modal>;
+  return <Modal title="New Work Order Entry" onClose={onClose}><div className="space-y-3"><div className="rounded-2xl border border-green-400/20 bg-green-500/10 p-3 text-sm font-semibold text-green-100"><b>One entry workflow:</b> this saves the payroll job and can create the employee assignment message at the same time.</div><Operations label="Employee / Assigned To"><select className="inputElite" value={employeeId} onChange={(e) => setEmployeeId(e.target.value)}>{employees.map((employee) => <option key={employee.id} value={employee.id}>{employee.name}</option>)}</select></Operations><div className="grid grid-cols-2 gap-3"><Operations label="Date"><input className="inputElite cursor-pointer" type="date" value={date} onClick={(e) => e.currentTarget.showPicker?.()} onFocus={(e) => e.currentTarget.showPicker?.()} onChange={(e) => setDate(e.target.value)} /></Operations><Operations label="Property"><select className="inputElite" value={property} onChange={(e) => { const selected = e.target.value; if (selected === "__add_new_property__") { const entered = window.prompt("Enter new property name:"); const cleanProperty = entered?.trim() || ""; if (cleanProperty) { onAddProperty(cleanProperty); setProperty(cleanProperty); setAssignmentAddress(""); } return; } setProperty(selected); setAssignmentAddress(getAddressForProperty(selected)); }}>{properties.map((item) => <option key={item} value={item}>{item}</option>)}<option value="__add_new_property__">+ Add New Property</option></select></Operations></div><Operations label="Unit #"><input className="inputElite" value={unitNumber} onChange={(e) => setUnitNumber(e.target.value)} placeholder="Example: 212" /></Operations><Operations label="Work Order Template"><select className="inputElite" value={selectedWorkTemplate} onChange={(e) => applyWorkOrderTemplate(e.target.value)}><option value="">Choose quick template...</option>{workOrderTemplates.map((template) => <option key={template.label} value={template.label}>{template.label}</option>)}</select></Operations><Operations label="Work Item"><div className="grid grid-cols-2 gap-2">{jobTypeOptions.map((type) => <button type="button" key={type} onClick={() => toggleType(type)} className={`rounded-xl border px-3 py-2 text-left text-xs font-bold ${selectedTypes.includes(type) ? "border-green-400/50 bg-green-500/20 text-green-300" : "border-zinc-800 bg-black/30 text-zinc-400"}`}>{selectedTypes.includes(type) ? "✓ " : ""}{type}</button>)}</div></Operations><Operations label="Custom Work"><input className="inputElite" value={customWork} onChange={(e) => setCustomWork(e.target.value)} placeholder="Extra scope or work description" /></Operations><div className="grid grid-cols-2 gap-3"><Operations label="Pay"><MoneyInput value={pay} onValueChange={setPay} placeholder="Enter Amount" /></Operations><Operations label="Paid"><MoneyInput value={paidAmount} onValueChange={setPaidAmount} placeholder="Enter Amount" /></Operations></div><div className="rounded-2xl border border-white/10 bg-black/25 p-3"><label className="flex items-center gap-3 text-sm font-black text-zinc-100"><input type="checkbox" checked={createAssignment} onChange={(e) => setCreateAssignment(e.target.checked)} /> Create employee assignment message</label>{createAssignment && <div className="mt-3 space-y-3"><Operations label="Job Address for Message"><input className="inputElite" value={assignmentAddress} onChange={(e) => setAssignmentAddress(e.target.value)} placeholder="460 Charles St, Providence RI" /></Operations><div className="grid grid-cols-2 gap-3"><Operations label="Priority"><select className="inputElite" value={assignmentPriority} onChange={(e) => setAssignmentPriority(e.target.value as WorkAssignment["priority"])}><option value="normal">Normal</option><option value="urgent">Urgent</option></select></Operations><Operations label="Language"><select className="inputElite" value={assignmentLanguage} onChange={(e) => setAssignmentLanguage(e.target.value as AssignmentLanguage)}><option value="spanish">Español</option><option value="english">English</option><option value="both">Both</option></select></Operations></div><div className="rounded-2xl border border-green-400/20 bg-green-500/10 p-3"><p className="mb-2 text-xs font-black uppercase text-green-400">Message Preview</p><pre className="max-h-48 overflow-y-auto whitespace-pre-wrap rounded-xl bg-black/40 p-3 text-xs font-semibold text-zinc-200">{buildAssignmentMessage(assignmentPreview, assignedEmployee?.name || "")}</pre></div></div>}</div><Operations label="Photos"><div className="rounded-2xl border border-dashed border-zinc-800 bg-black/30 p-4"><div className="grid grid-cols-2 gap-2"><label className="goldButton w-full cursor-pointer"><Camera size={18} /> Take Photo<input type="file" accept="image/*" multiple capture="environment" className="hidden" onChange={async (e) => { const newPhotos = await readPhotoFiles(e.target.files); setPhotos((prev) => [...prev, ...newPhotos]); e.currentTarget.value = ""; }} /></label><label className="darkButton w-full cursor-pointer"><ImageIcon size={18} /> Upload<input type="file" accept="image/*" multiple className="hidden" onChange={async (e) => { const newPhotos = await readPhotoFiles(e.target.files); setPhotos((prev) => [...prev, ...newPhotos]); e.currentTarget.value = ""; }} /></label></div>{photos.length > 0 && <p className="mt-3 text-center text-sm text-zinc-400">{photos.length} photo(s) attached.</p>}</div></Operations><Operations label="Notes"><textarea className="inputElite min-h-24" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Notes" /></Operations><button className="goldButton w-full" onClick={saveJobAndAssignment}><Check size={18} /> Save Job{createAssignment ? " + Assignment" : ""}</button></div></Modal>;
 }
 
 function InvoiceModal({ invoices, properties, getProfileForProperty, initial, onClose, onSave }: { invoices: Invoice[]; properties: string[]; getProfileForProperty: (property: string) => PropertyContactProfile; initial: Invoice | null; onClose: () => void; onSave: (invoice: Invoice) => void }) {
@@ -2466,4 +2606,62 @@ function BottomNav({ activeTab, setActiveTab }: { activeTab: ActiveTab; setActiv
     { tab: "employees", label: "Employees", icon: <Users size={20} /> },
   ];
   return <nav className="fixed bottom-0 left-0 right-0 z-40 border-t border-white/10 bg-[#02070a]/95 px-2 pb-3 pt-2 backdrop-blur-xl"><div className="mx-auto grid max-w-[540px] grid-cols-4 gap-1">{tabs.map((item) => { const active = activeTab === item.tab || (item.tab === "field" && (activeTab === "ops" || activeTab === "jobs")) || (item.tab === "office" && (activeTab === "invoices" || activeTab === "reports")); return <button key={item.tab} onClick={() => setActiveTab(item.tab)} className={`flex flex-col items-center justify-center gap-1 rounded-2xl py-2 text-[11px] font-black transition active:scale-95 ${active ? "bg-green-500 text-black" : "text-zinc-500"}`}>{item.icon}<span>{item.label}</span></button>; })}</div></nav>;
+}
+
+
+function EstimatesPanel({ estimates, onAdd, onEdit, onDelete, onUpdate, onConvertToInvoice }: { estimates: Estimate[]; onAdd: () => void; onEdit: (estimate: Estimate) => void; onDelete: (id: string) => void; onUpdate: (estimate: Estimate) => void; onConvertToInvoice: (estimate: Estimate) => void; }) {
+  return (
+    <section className="space-y-3">
+      {estimates.length === 0 ? (
+        <div className="blackCard p-5 text-center">
+          <p className="font-black text-zinc-200">No estimates yet</p>
+          <p className="mt-1 text-xs font-semibold text-zinc-500">Create your first estimate or convert a work order into an estimate.</p>
+          <button onClick={onAdd} className="goldButton mx-auto mt-4"><Plus size={18} /> New Estimate</button>
+        </div>
+      ) : estimates.map((estimate) => {
+        const total = estimateTotal(estimate);
+        return (
+          <div key={estimate.id} className="blackCard p-4">
+            <div className="relative z-10 flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-xs font-black uppercase tracking-[0.16em] text-amber-300">{estimate.estimateNumber}</p>
+                <h3 className="mt-1 text-base font-black text-white">{estimate.clientName || estimate.property}</h3>
+                <p className="mt-1 text-xs font-semibold text-zinc-400">{estimate.property}{estimate.unitNumber ? ` — Unit ${estimate.unitNumber}` : ""}</p>
+                <p className="mt-1 text-xs font-semibold text-zinc-500">{estimate.propertyAddress || "No address saved"}</p>
+                <div className="mt-3 flex flex-wrap gap-2"><span className="rounded-full border border-amber-400/30 bg-amber-500/10 px-3 py-1 text-[11px] font-black uppercase text-amber-200">{estimate.status}</span><span className="rounded-full border border-green-400/30 bg-green-500/10 px-3 py-1 text-[11px] font-black text-green-200">{money(total)}</span></div>
+              </div>
+              <div className="flex shrink-0 flex-col gap-2"><button onClick={() => onEdit(estimate)} className="darkButton !px-3 !py-2"><Pencil size={15} /></button><button onClick={() => onDelete(estimate.id)} className="iconDanger"><Trash2 size={15} /></button></div>
+            </div>
+            <div className="relative z-10 mt-4 grid grid-cols-2 gap-2">
+              <button onClick={() => onUpdate({ ...estimate, id: uid(), estimateNumber: `${estimate.estimateNumber}-COPY`, status: "draft" })} className="darkButton justify-center"><ClipboardList size={15} /> Duplicate</button>
+              <button onClick={() => onConvertToInvoice(estimate)} className="goldButton justify-center"><ReceiptText size={15} /> Convert</button>
+              <button onClick={() => onUpdate({ ...estimate, status: "sent" })} className="darkButton justify-center"><Mail size={15} /> Mark Sent</button>
+              <button onClick={() => onUpdate({ ...estimate, status: "approved" })} className="darkButton justify-center"><Check size={15} /> Approved</button>
+            </div>
+          </div>
+        );
+      })}
+    </section>
+  );
+}
+
+function EstimateModal({ estimate, properties, getAddressForProperty, getBillingNameForProperty, getEmailForProperty, onClose, onSave, nextNumber }: { estimate: Estimate | null; properties: string[]; getAddressForProperty: (property: string) => string; getBillingNameForProperty: (property: string) => string; getEmailForProperty: (property: string) => string; onClose: () => void; onSave: (estimate: Estimate) => void; nextNumber: string; }) {
+  const [draft, setDraft] = useState<Estimate>(() => estimate || { id: uid(), estimateNumber: nextNumber, clientName: properties[0] ? getBillingNameForProperty(properties[0]) : "", property: properties[0] || "", propertyAddress: properties[0] ? getAddressForProperty(properties[0]) : "", unitNumber: "", estimateDate: todayISO(), status: "draft", lineItems: [{ id: uid(), description: "", qty: 1, rate: 0 }], notes: "Thank you for the opportunity to provide this estimate. God bless.", clientEmail: properties[0] ? getEmailForProperty(properties[0]) : "", beforePhotos: [], afterPhotos: [], sourceJobIds: [] });
+  function updateLineItem(id: string, patch: Partial<InvoiceLineItem>) { setDraft((prev) => ({ ...prev, lineItems: prev.lineItems.map((item) => item.id === id ? { ...item, ...patch } : item) })); }
+  return (
+    <div className="fixed inset-0 z-50 overflow-y-auto bg-black/80 px-4 py-6 backdrop-blur"><div className="mx-auto max-w-[540px] rounded-[1.5rem] border border-white/10 bg-zinc-950 p-4 shadow-2xl">
+      <div className="mb-4 flex items-center justify-between"><div><p className="text-xs font-black uppercase tracking-[0.18em] text-amber-300">Estimate</p><h2 className="text-xl font-black text-white">{draft.estimateNumber}</h2></div><button onClick={onClose} className="iconDanger"><X size={18} /></button></div>
+      <div className="grid gap-3">
+        <select value={draft.property} onChange={(e) => { const property = e.target.value; setDraft((prev) => ({ ...prev, property, clientName: getBillingNameForProperty(property), clientEmail: getEmailForProperty(property), propertyAddress: getAddressForProperty(property) })); }} className="input">{properties.map((property) => <option key={property} value={property}>{property}</option>)}</select>
+        <input value={draft.clientName} onChange={(e) => setDraft({ ...draft, clientName: e.target.value })} placeholder="Client / Billing name" className="input" />
+        <input value={draft.propertyAddress || ""} onChange={(e) => setDraft({ ...draft, propertyAddress: e.target.value })} placeholder="Property address" className="input" />
+        <input value={draft.unitNumber} onChange={(e) => setDraft({ ...draft, unitNumber: e.target.value })} placeholder="Unit number optional" className="input" />
+        <input value={draft.clientEmail || ""} onChange={(e) => setDraft({ ...draft, clientEmail: e.target.value })} placeholder="Client email optional" className="input" />
+        <div className="rounded-2xl border border-white/10 bg-zinc-900/60 p-3"><div className="mb-2 flex items-center justify-between"><p className="text-xs font-black uppercase tracking-wide text-zinc-400">Estimate Items</p><button onClick={() => setDraft((prev) => ({ ...prev, lineItems: [...prev.lineItems, { id: uid(), description: "", qty: 1, rate: 0 }] }))} className="darkButton !px-3 !py-2"><Plus size={14} /> Add</button></div><div className="space-y-2">{draft.lineItems.map((item) => <div key={item.id} className="grid gap-2 rounded-xl border border-white/10 bg-black/30 p-2"><input value={item.description} onChange={(e) => updateLineItem(item.id, { description: e.target.value })} placeholder="Description" className="input" /><div className="grid grid-cols-2 gap-2"><input type="number" value={item.qty} onChange={(e) => updateLineItem(item.id, { qty: safeNumber(e.target.value) })} placeholder="Qty" className="input" /><input type="number" value={item.rate} onChange={(e) => updateLineItem(item.id, { rate: safeNumber(e.target.value) })} placeholder="Amount" className="input" /></div></div>)}</div></div>
+        <textarea value={draft.notes} onChange={(e) => setDraft({ ...draft, notes: e.target.value })} placeholder="Notes" className="input min-h-[100px]" />
+        <div className="rounded-2xl border border-green-400/20 bg-green-500/10 p-3 text-sm font-black text-green-200">Total: {money(estimateTotal(draft))}</div>
+      </div>
+      <div className="mt-5 grid grid-cols-2 gap-3"><button onClick={onClose} className="darkButton justify-center">Cancel</button><button onClick={() => onSave(draft)} className="goldButton justify-center"><Check size={18} /> Save Estimate</button></div>
+    </div></div>
+  );
 }
