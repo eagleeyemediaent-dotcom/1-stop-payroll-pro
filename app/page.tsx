@@ -44,7 +44,7 @@ import {
 // PHASE 13 single-file replacement for app/page.tsx
 // Property address persistence + assignment preset dropdown fix
 // PHASE 23: One Work Order flow only + message/PDF actions visible inside every Work Order + PDF-first invoice sharing
-// PHASE 26: Estimates foundation + Work Items rename + duplicate work orders + dashboard cleanup
+// PHASE 26A BUILD FIX: Estimates foundation + Work Items rename + dashboard cleanup. Removed unsupported JobList props.
 
 const STORAGE_KEY = "oneStopPayrollProEliteBlackGoldX_v1";
 const PROPERTY_PROFILES_KEY = "oneStopPropertyProfiles_v1";
@@ -744,7 +744,7 @@ function printInvoiceDocument(invoice: Invoice, beforePhotos: string[] = [], aft
     figcaption { padding: 7px 9px; color: #64748b; font-size: 11px; font-weight: 800; }
     .footer { margin-top: 26px; padding-top: 12px; border-top: 1px solid #e5e7eb; color: #64748b; font-size: 12px; display: flex; justify-content: space-between; gap: 12px; }
     @page { margin: 0.45in; }
-    @media print { .invoice { padding: 0; } body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
+    @media print { ...invoice { padding: 0; } body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
   </style>
 </head>
 <body>
@@ -1482,7 +1482,7 @@ export default function PayrollProEliteOperationsX() {
                 Phase 26: Estimates are active and Work Items can create new common job categories as your work changes.
               </div>
 
-              <JobList jobs={filteredJobs} employees={state.employees} employeesById={employeesById} properties={state.properties} jobTypeOptions={state.workItems?.length ? state.workItems.filter((type) => type.active).map((type) => type.name) : state.jobTypeOptions} onDelete={(id) => setConfirmDelete({ type: "job", id })} onUpdate={updateJob} onCreateInvoice={createInvoiceFromJob} onCreateEstimate={createEstimateFromJob} onDuplicate={duplicateWorkOrder} />
+              <JobList jobs={filteredJobs} employees={state.employees} employeesById={employeesById} properties={state.properties} jobTypeOptions={state.workItems?.length ? state.workItems.filter((type) => type.active).map((type) => type.name) : state.jobTypeOptions} onDelete={(id) => setConfirmDelete({ type: "job", id })} onUpdate={updateJob} onCreateInvoice={createInvoiceFromJob} />
             </section>
           )}
 
