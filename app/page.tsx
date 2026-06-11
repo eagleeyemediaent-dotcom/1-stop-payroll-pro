@@ -44,7 +44,7 @@ import {
 // PHASE 13 single-file replacement for app/page.tsx
 // Property address persistence + assignment preset dropdown fix
 // PHASE 23: One Work Order flow only + message/PDF actions visible inside every Work Order + PDF-first invoice sharing
-// PHASE 26B: Estimate / Invoice conversion expansion + duplicate conversion protection
+// PHASE 26C: Work Item Library upgrade + scope/price auto-fill
 
 const STORAGE_KEY = "oneStopPayrollProEliteBlackGoldX_v1";
 const PROPERTY_PROFILES_KEY = "oneStopPropertyProfiles_v1";
@@ -156,8 +156,10 @@ type WorkOrderStatus = "open" | "assigned" | "in-progress" | "completed" | "read
 type WorkItemOption = {
   id: string;
   name: string;
+  description: string;
   defaultScope: string;
   defaultNotes: string;
+  suggestedPrice: number;
   defaultPriority: "normal" | "urgent";
   active: boolean;
 };
@@ -352,14 +354,123 @@ const defaultJobTypes = [
   "Touch Ups",
 ];
 
-const defaultWorkItems: WorkItemOption[] = defaultJobTypes.map((name) => ({
-  id: uid(),
-  name,
-  defaultScope: "",
-  defaultNotes: "",
-  defaultPriority: "normal",
-  active: true,
-}));
+const defaultWorkItems: WorkItemOption[] = [
+  {
+    id: uid(),
+    name: "Full Unit Painting",
+    description: "Complete interior apartment painting.",
+    defaultScope: "Prep walls. Repair minor wall imperfections. Prime as needed. Apply two finish coats where required. Complete final touch-ups and leave unit clean.",
+    defaultNotes: "Take completion photos before leaving unit.",
+    suggestedPrice: 0,
+    defaultPriority: "normal",
+    active: true,
+  },
+  {
+    id: uid(),
+    name: "Trash Removal",
+    description: "Remove trash and unwanted items from unit.",
+    defaultScope: "Remove trash and unwanted items. Sweep affected areas. Notify office if large items or hazardous materials are found.",
+    defaultNotes: "Take before and after photos of all removed trash areas.",
+    suggestedPrice: 0,
+    defaultPriority: "normal",
+    active: true,
+  },
+  {
+    id: uid(),
+    name: "Water Damage",
+    description: "Repair damage caused by leaks or water intrusion.",
+    defaultScope: "Remove loose damaged material as needed. Patch, plaster, sand, prime affected areas, and prepare walls for paint.",
+    defaultNotes: "Take before and after photos of water damage repairs.",
+    suggestedPrice: 0,
+    defaultPriority: "urgent",
+    active: true,
+  },
+  {
+    id: uid(),
+    name: "Fire Damage",
+    description: "Clean and repair fire or smoke damage areas.",
+    defaultScope: "Protect occupied areas and belongings. Clean smoke affected surfaces. Patch, plaster, sand, prime with stain blocker, and paint as needed.",
+    defaultNotes: "Use proper cleaning chemicals and document all affected areas with photos.",
+    suggestedPrice: 0,
+    defaultPriority: "urgent",
+    active: true,
+  },
+  {
+    id: uid(),
+    name: "Sheetrock Repair",
+    description: "Repair damaged sheetrock and prepare for paint.",
+    defaultScope: "Repair damaged sheetrock. Plaster and sand affected areas until smooth and ready for paint. Clean work area when finished.",
+    defaultNotes: "Take before and after photos of repaired wall areas.",
+    suggestedPrice: 0,
+    defaultPriority: "normal",
+    active: true,
+  },
+  {
+    id: uid(),
+    name: "Carpentry Repair",
+    description: "Repair or replace damaged trim, boards, or wood components.",
+    defaultScope: "Remove damaged wood as needed. Install replacement material. Caulk, prep, prime, and paint repaired areas where required.",
+    defaultNotes: "Confirm exact repair areas before starting.",
+    suggestedPrice: 0,
+    defaultPriority: "normal",
+    active: true,
+  },
+  {
+    id: uid(),
+    name: "Flooring",
+    description: "Floor repair or flooring-related turnover work.",
+    defaultScope: "Inspect affected flooring. Complete assigned repair, replacement, cleaning, or prep work according to office instructions.",
+    defaultNotes: "Document floor condition with photos before and after.",
+    suggestedPrice: 0,
+    defaultPriority: "normal",
+    active: true,
+  },
+  {
+    id: uid(),
+    name: "Cleaning",
+    description: "General turnover cleaning and final cleanup.",
+    defaultScope: "Clean assigned areas. Remove loose debris. Sweep and prepare unit for final inspection.",
+    defaultNotes: "Leave unit clean and ready for office walkthrough.",
+    suggestedPrice: 0,
+    defaultPriority: "normal",
+    active: true,
+  },
+  {
+    id: uid(),
+    name: "Touch Ups",
+    description: "Final paint and repair touch-ups.",
+    defaultScope: "Complete paint and repair touch-ups as needed. Check details before leaving. Clean work area when finished.",
+    defaultNotes: "Confirm unit is ready for final inspection.",
+    suggestedPrice: 0,
+    defaultPriority: "normal",
+    active: true,
+  },
+  {
+    id: uid(),
+    name: "Occupied Unit Work",
+    description: "Work inside an occupied apartment.",
+    defaultScope: "Complete assigned work inside occupied unit. Protect resident belongings and keep area clean. Communicate any issue before leaving.",
+    defaultNotes: "Be respectful of resident belongings and access times.",
+    suggestedPrice: 0,
+    defaultPriority: "normal",
+    active: true,
+  },
+];
+
+function normalizeWorkItem(item: Partial<WorkItemOption> & { name?: string }): WorkItemOption {
+  const fallback = defaultWorkItems.find((row) => row.name === item.name);
+  return {
+    id: String(item.id || uid()),
+    name: String(item.name || fallback?.name || "New Work Item"),
+    description: String(item.description ?? fallback?.description ?? ""),
+    defaultScope: String(item.defaultScope ?? fallback?.defaultScope ?? ""),
+    defaultNotes: String(item.defaultNotes ?? fallback?.defaultNotes ?? ""),
+    suggestedPrice: safeNumber(item.suggestedPrice ?? fallback?.suggestedPrice ?? 0),
+    defaultPriority: item.defaultPriority === "urgent" ? "urgent" : "normal",
+    active: item.active !== false,
+  };
+}
+
 
 const assignmentPresets: { label: string; english: string; spanish: string }[] = [
   {
@@ -937,7 +1048,7 @@ export default function PayrollProEliteOperationsX() {
           properties: Array.isArray(parsed.properties) ? parsed.properties : defaultProperties,
           propertyProfiles: mergedPropertyProfiles,
           jobTypeOptions: Array.isArray(parsed.jobTypeOptions) ? parsed.jobTypeOptions : defaultJobTypes,
-          workItems: Array.isArray(parsed.workItems) ? parsed.workItems : defaultWorkItems,
+          workItems: Array.isArray(parsed.workItems) ? parsed.workItems.map(normalizeWorkItem) : defaultWorkItems,
         });
       } else if (Object.keys(savedPropertyProfiles).length > 0) {
         setState((prev) => ({
@@ -1386,7 +1497,7 @@ This will copy the property, address, unit, line items, notes, and photos.`)) re
           properties: Array.isArray(parsed.properties) ? parsed.properties : defaultProperties,
           propertyProfiles: { ...defaultPropertyProfiles, ...(parsed.propertyProfiles || {}), ...loadSavedPropertyProfiles() },
           jobTypeOptions: Array.isArray(parsed.jobTypeOptions) ? parsed.jobTypeOptions : defaultJobTypes,
-          workItems: Array.isArray(parsed.workItems) ? parsed.workItems : defaultWorkItems,
+          workItems: Array.isArray(parsed.workItems) ? parsed.workItems.map(normalizeWorkItem) : defaultWorkItems,
         });
       } catch {
         alert("Could not import this file.");
@@ -1602,7 +1713,7 @@ This will copy the property, address, unit, line items, notes, and photos.`)) re
                       jobTypeOptions: [...new Set([...(prev.jobTypeOptions || []), cleanName])],
                       workItems: [
                         ...((prev.workItems && prev.workItems.length ? prev.workItems : defaultWorkItems)),
-                        { id: uid(), name: cleanName, defaultScope: "", defaultNotes: "", defaultPriority: "normal", active: true },
+                        { id: uid(), name: cleanName, description: prompt("Description for this Work Item:") || "", defaultScope: prompt("Default Scope for this Work Item:") || "", defaultNotes: prompt("Default Notes for this Work Item:") || "", suggestedPrice: safeNumber(prompt("Suggested Price / Amount:") || 0), defaultPriority: "normal", active: true },
                       ],
                     }));
                   }}
@@ -1613,7 +1724,7 @@ This will copy the property, address, unit, line items, notes, and photos.`)) re
               </SectionTop>
 
               <div className="rounded-2xl border border-green-400/20 bg-green-500/10 p-3 text-sm font-semibold text-green-200">
-                Work Items are your reusable job categories. Add new ones here as new common jobs come into play.
+                Work Items are reusable scope and pricing templates. Add description, default scope, suggested amount, and active/inactive status.
               </div>
 
               <div className="grid gap-3">
@@ -1623,9 +1734,11 @@ This will copy the property, address, unit, line items, notes, and photos.`)) re
                       <div className="min-w-0">
                         <p className="font-bold text-zinc-50">{workType.name}</p>
                         <p className="mt-1 text-xs font-semibold text-zinc-400">
-                          Priority: {workType.defaultPriority === "urgent" ? "Urgent" : "Normal"} • {workType.active ? "Active" : "Inactive"}
+                          Priority: {workType.defaultPriority === "urgent" ? "Urgent" : "Normal"} • {workType.active ? "Active" : "Inactive"} • Suggested: {money(workType.suggestedPrice || 0)}
                         </p>
+                        {workType.description ? <p className="mt-2 text-xs font-semibold text-blue-300">{workType.description}</p> : null}
                         {workType.defaultScope ? <p className="mt-2 whitespace-pre-wrap text-xs text-zinc-500">{workType.defaultScope}</p> : <p className="mt-2 text-xs text-zinc-600">No default scope saved yet.</p>}
+                        {workType.defaultNotes ? <p className="mt-2 whitespace-pre-wrap text-xs text-green-300">Notes: {workType.defaultNotes}</p> : null}
                       </div>
                       <div className="flex shrink-0 items-center gap-2">
                         <button
@@ -1633,15 +1746,31 @@ This will copy the property, address, unit, line items, notes, and photos.`)) re
                             const nextName = prompt("Edit Work Item name:", workType.name);
                             const cleanName = normalizePropertyName(nextName || "");
                             if (!cleanName) return;
+                            const nextDescription = prompt("Description:", workType.description || "") || "";
+                            const nextScope = prompt("Default Scope:", workType.defaultScope || "") || "";
+                            const nextNotes = prompt("Default Notes:", workType.defaultNotes || "") || "";
+                            const nextPrice = safeNumber(prompt("Suggested Price / Amount:", String(workType.suggestedPrice || 0)) || 0);
+                            const nextPriority = confirm("Make this Work Item urgent by default?") ? "urgent" : "normal";
                             setState((prev) => ({
                               ...prev,
                               jobTypeOptions: [...new Set((prev.jobTypeOptions || []).map((name) => name === workType.name ? cleanName : name))],
-                              workItems: ((prev.workItems && prev.workItems.length ? prev.workItems : defaultWorkItems)).map((item) => item.id === workType.id ? { ...item, name: cleanName } : item),
+                              workItems: ((prev.workItems && prev.workItems.length ? prev.workItems : defaultWorkItems)).map((item) => item.id === workType.id ? { ...item, name: cleanName, description: nextDescription, defaultScope: nextScope, defaultNotes: nextNotes, suggestedPrice: nextPrice, defaultPriority: nextPriority } : item),
                             }));
                           }}
                           className="darkButton !p-3"
                         >
                           <Pencil size={16} />
+                        </button>
+                        <button
+                          onClick={() => {
+                            setState((prev) => ({
+                              ...prev,
+                              workItems: ((prev.workItems && prev.workItems.length ? prev.workItems : defaultWorkItems)).map((item) => item.id === workType.id ? { ...item, active: !item.active } : item),
+                            }));
+                          }}
+                          className="darkButton !p-3 text-xs"
+                        >
+                          {workType.active ? "Off" : "On"}
                         </button>
                         <button
                           onClick={() => {
@@ -1681,7 +1810,7 @@ This will copy the property, address, unit, line items, notes, and photos.`)) re
       {showEmployeeForm && <EmployeeModal onClose={() => setShowEmployeeForm(false)} onSave={(employee) => { upsertEmployee(employee); setShowEmployeeForm(false); }} />}
 
       {showJobForm && (
-        <JobModal employees={state.employees} properties={state.properties} jobTypeOptions={state.jobTypeOptions} getAddressForProperty={getSavedPropertyAddress} onAddProperty={(newProperty) => { const cleanProperty = newProperty.trim(); if (!cleanProperty) return; setState((prev) => ({ ...prev, properties: [...new Set([...prev.properties, cleanProperty])], propertyProfiles: { ...(prev.propertyProfiles || {}), [cleanProperty]: prev.propertyProfiles?.[cleanProperty] || getPropertyProfile(cleanProperty) } })); }} onClose={() => setShowJobForm(false)} onSave={(job, assignment) => { addJob(job); if (assignment) upsertAssignment(assignment); setShowJobForm(false); }} />
+        <JobModal employees={state.employees} properties={state.properties} jobTypeOptions={state.workItems?.length ? state.workItems.filter((item) => item.active).map((item) => item.name) : state.jobTypeOptions} workItems={state.workItems?.length ? state.workItems.map(normalizeWorkItem) : defaultWorkItems} getAddressForProperty={getSavedPropertyAddress} onAddProperty={(newProperty) => { const cleanProperty = newProperty.trim(); if (!cleanProperty) return; setState((prev) => ({ ...prev, properties: [...new Set([...prev.properties, cleanProperty])], propertyProfiles: { ...(prev.propertyProfiles || {}), [cleanProperty]: prev.propertyProfiles?.[cleanProperty] || getPropertyProfile(cleanProperty) } })); }} onClose={() => setShowJobForm(false)} onSave={(job, assignment) => { addJob(job); if (assignment) upsertAssignment(assignment); setShowJobForm(false); }} />
       )}
 
       {showAssignmentForm && (
@@ -1733,8 +1862,10 @@ function AppMobileHeader({ companyName, activeTab, setActiveTab }: { companyName
     { tab: "dashboard", label: "Home", subtitle: "Command center", icon: <Home size={20} /> },
     { tab: "field", label: "Work Orders", subtitle: "Jobs, turnover work, photos", icon: <BriefcaseBusiness size={20} /> },
     { tab: "office", label: "Office", subtitle: "Office Pipeline, charges, billing", icon: <ReceiptText size={20} /> },
+    { tab: "estimates", label: "Estimates", subtitle: "Drafts, approvals, conversions", icon: <FileText size={20} /> },
     { tab: "employees", label: "Employees", subtitle: "Employees and balances", icon: <Users size={20} /> },
     { tab: "properties", label: "Properties", subtitle: "Property dropdown list", icon: <Building2 size={20} /> },
+    { tab: "workItems", label: "Work Items", subtitle: "Scope and price library", icon: <ClipboardCheck size={20} /> },
     { tab: "reports", label: "Reports", subtitle: "Payroll closeout", icon: <ClipboardList size={20} /> },
     { tab: "more", label: "Backup / More", subtitle: "Export, import, restore", icon: <MoreVertical size={20} /> },
   ];
@@ -2546,7 +2677,7 @@ function EmployeeModal({ onClose, onSave }: { onClose: () => void; onSave: (empl
   return <Modal title="Add Employee" onClose={onClose}><div className="space-y-3"><Operations label="Employee Name"><input className="inputElite" value={employee.name} onChange={(e) => setEmployee({ ...employee, name: e.target.value })} placeholder="Worker name" /></Operations><Operations label="Phone"><input className="inputElite" value={employee.phone} onChange={(e) => setEmployee({ ...employee, phone: e.target.value })} placeholder="Phone number" /></Operations><Operations label="Default Rate"><MoneyInput value={employee.defaultRate} onValueChange={(value) => setEmployee({ ...employee, defaultRate: value })} /></Operations><Operations label="Notes"><textarea className="inputElite min-h-20" value={employee.notes} onChange={(e) => setEmployee({ ...employee, notes: e.target.value })} /></Operations><button className="goldButton w-full" onClick={() => employee.name.trim() && onSave({ ...employee, name: employee.name.trim() })}><Check size={18} /> Save Employee</button></div></Modal>;
 }
 
-function JobModal({ employees, properties, jobTypeOptions, getAddressForProperty, onAddProperty, onClose, onSave }: { employees: Employee[]; properties: string[]; jobTypeOptions: string[]; getAddressForProperty: (property: string) => string; onAddProperty: (property: string) => void; onClose: () => void; onSave: (job: JobEntry, assignment?: WorkAssignment) => void }) {
+function JobModal({ employees, properties, jobTypeOptions, workItems = defaultWorkItems, getAddressForProperty, onAddProperty, onClose, onSave }: { employees: Employee[]; properties: string[]; jobTypeOptions: string[]; workItems?: WorkItemOption[]; getAddressForProperty: (property: string) => string; onAddProperty: (property: string) => void; onClose: () => void; onSave: (job: JobEntry, assignment?: WorkAssignment) => void }) {
   const [employeeId, setEmployeeId] = useState(employees[0]?.id || "");
   const [date, setDate] = useState(todayISO());
   const [property, setProperty] = useState(properties[0] || "");
@@ -2563,7 +2694,20 @@ function JobModal({ employees, properties, jobTypeOptions, getAddressForProperty
   const [assignmentLanguage, setAssignmentLanguage] = useState<AssignmentLanguage>("spanish");
   const [selectedWorkTemplate, setSelectedWorkTemplate] = useState("");
 
-  function toggleType(type: string) { setSelectedTypes((prev) => (prev.includes(type) ? prev.filter((item) => item !== type) : [...prev, type])); }
+  function toggleType(type: string) {
+    const isSelected = selectedTypes.includes(type);
+    setSelectedTypes((prev) => (isSelected ? prev.filter((item) => item !== type) : [...prev, type]));
+    if (isSelected) return;
+    const workItem = workItems.find((item) => item.name === type);
+    if (!workItem) return;
+    if (workItem.defaultScope && !customWork.includes(workItem.defaultScope)) {
+      setCustomWork((prev) => [prev, workItem.defaultScope].filter(Boolean).join("
+"));
+    }
+    if (workItem.defaultNotes && !notes.trim()) setNotes(workItem.defaultNotes);
+    if (workItem.suggestedPrice > 0 && safeNumber(pay) === 0) setPay(workItem.suggestedPrice);
+    setAssignmentPriority(workItem.defaultPriority);
+  }
 
   function applyWorkOrderTemplate(label: string) {
     setSelectedWorkTemplate(label);
