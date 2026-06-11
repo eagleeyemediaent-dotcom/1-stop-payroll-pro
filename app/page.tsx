@@ -2701,8 +2701,7 @@ function JobModal({ employees, properties, jobTypeOptions, workItems = defaultWo
     const workItem = workItems.find((item) => item.name === type);
     if (!workItem) return;
     if (workItem.defaultScope && !customWork.includes(workItem.defaultScope)) {
-      setCustomWork((prev) => [prev, workItem.defaultScope].filter(Boolean).join("
-"));
+      setCustomWork((prev) => [prev, workItem.defaultScope].filter(Boolean).join("\n"));
     }
     if (workItem.defaultNotes && !notes.trim()) setNotes(workItem.defaultNotes);
     if (workItem.suggestedPrice > 0 && safeNumber(pay) === 0) setPay(workItem.suggestedPrice);
