@@ -44,7 +44,7 @@ import {
 // PHASE 13 single-file replacement for app/page.tsx
 // Property address persistence + assignment preset dropdown fix
 // PHASE 23: One Work Order flow only + message/PDF actions visible inside every Work Order + PDF-first invoice sharing
-// PHASE 26 WORKING: Estimates foundation + Work Items rename + duplicate work orders + dashboard cleanup
+// PHASE 26B: Estimate / Invoice conversion expansion + duplicate conversion protection
 
 const STORAGE_KEY = "oneStopPayrollProEliteBlackGoldX_v1";
 const PROPERTY_PROFILES_KEY = "oneStopPropertyProfiles_v1";
@@ -126,6 +126,7 @@ type Estimate = {
   afterPhotos?: string[];
   sourceJobIds?: string[];
   convertedInvoiceId?: string;
+  convertedFromInvoiceId?: string;
 };
 
 type Invoice = {
@@ -145,6 +146,7 @@ type Invoice = {
   beforePhotos?: string[];
   afterPhotos?: string[];
   sourceJobIds?: string[];
+  convertedFromEstimateId?: string;
 };
 
 type AssignmentLanguage = "english" | "spanish" | "both";
@@ -866,6 +868,30 @@ function nextEstimateNumber(existing: Estimate[] = []) {
   return `EST-${String(next).padStart(5, "0")}`;
 }
 
+function uniqueInvoiceNumberFromEstimate(estimateNumber: string, existing: Invoice[]) {
+  const base = String(estimateNumber || "").trim().replace(/^EST/i, "INV") || nextInvoiceNumber(existing);
+  if (!existing.some((invoice) => invoice.invoiceNumber === base)) return base;
+  let counter = 2;
+  while (existing.some((invoice) => invoice.invoiceNumber === `${base}-${counter}`)) counter += 1;
+  return `${base}-${counter}`;
+}
+
+function uniqueEstimateNumberFromInvoice(invoiceNumber: string, existing: Estimate[] = []) {
+  const base = String(invoiceNumber || "").trim().replace(/^INV/i, "EST") || nextEstimateNumber(existing);
+  if (!existing.some((estimate) => estimate.estimateNumber === base)) return base;
+  let counter = 2;
+  while (existing.some((estimate) => estimate.estimateNumber === `${base}-${counter}`)) counter += 1;
+  return `${base}-${counter}`;
+}
+
+function estimateAlreadyConverted(estimate: Estimate) {
+  return estimate.status === "converted" && Boolean(estimate.convertedInvoiceId);
+}
+
+function estimateStatusLabel(status: Estimate["status"]) {
+  return status === "draft" ? "Draft" : status === "sent" ? "Sent" : status === "approved" ? "Approved" : status === "declined" ? "Declined" : "Converted";
+}
+
 function estimateTotal(estimate: Pick<Estimate, "lineItems">) {
   return estimate.lineItems.reduce((sum, item) => sum + safeNumber(item.qty) * safeNumber(item.rate), 0);
 }
@@ -1240,9 +1266,18 @@ export default function PayrollProEliteOperationsX() {
   }
 
   function convertEstimateToInvoice(estimate: Estimate) {
+    if (estimateAlreadyConverted(estimate)) {
+      alert(`Estimate ${estimate.estimateNumber} was already converted to an invoice.`);
+      setActiveTab("office");
+      return;
+    }
+    if (estimate.status !== "approved" && !confirmAction(`Convert estimate ${estimate.estimateNumber} to an invoice?
+
+This will copy the property, address, unit, line items, notes, and photos.`)) return;
+
     const invoice: Invoice = {
       id: uid(),
-      invoiceNumber: nextInvoiceNumber(state.invoices),
+      invoiceNumber: uniqueInvoiceNumberFromEstimate(estimate.estimateNumber, state.invoices),
       clientName: estimate.clientName,
       clientEmail: estimate.clientEmail,
       property: estimate.property,
@@ -1252,10 +1287,11 @@ export default function PayrollProEliteOperationsX() {
       dueDate: addDaysISO(todayISO(), 14),
       status: "due",
       paidAmount: 0,
-      beforePhotos: estimate.beforePhotos || [],
-      afterPhotos: estimate.afterPhotos || [],
+      beforePhotos: [...(estimate.beforePhotos || [])],
+      afterPhotos: [...(estimate.afterPhotos || [])],
       notes: estimate.notes || "Thank you for your business. God bless.",
-      sourceJobIds: estimate.sourceJobIds || [],
+      sourceJobIds: [...(estimate.sourceJobIds || [])],
+      convertedFromEstimateId: estimate.id,
       lineItems: estimate.lineItems.map((item) => ({ ...item, id: uid() })),
     };
     setState((prev) => ({
@@ -1263,13 +1299,21 @@ export default function PayrollProEliteOperationsX() {
       invoices: [customerSafeInvoice(invoice), ...prev.invoices],
       estimates: (prev.estimates || []).map((row) => row.id === estimate.id ? { ...row, status: "converted", convertedInvoiceId: invoice.id } : row),
     }));
+    alert(`Estimate ${estimate.estimateNumber} was converted to invoice ${invoice.invoiceNumber}.`);
     setActiveTab("office");
   }
 
   function convertInvoiceToEstimate(invoice: Invoice) {
+    const alreadyConverted = (state.estimates || []).find((estimate) => estimate.convertedFromInvoiceId === invoice.id);
+    if (alreadyConverted) {
+      alert(`Invoice ${invoice.invoiceNumber} was already converted to estimate ${alreadyConverted.estimateNumber}.`);
+      setActiveTab("estimates");
+      return;
+    }
+
     const estimate: Estimate = {
       id: uid(),
-      estimateNumber: nextEstimateNumber(state.estimates || []),
+      estimateNumber: uniqueEstimateNumberFromInvoice(invoice.invoiceNumber, state.estimates || []),
       clientName: invoice.clientName,
       clientEmail: invoice.clientEmail,
       property: invoice.property,
@@ -1277,14 +1321,15 @@ export default function PayrollProEliteOperationsX() {
       unitNumber: invoice.unitNumber || "",
       estimateDate: todayISO(),
       status: "draft",
-      beforePhotos: invoice.beforePhotos || [],
-      afterPhotos: invoice.afterPhotos || [],
+      beforePhotos: [...(invoice.beforePhotos || [])],
+      afterPhotos: [...(invoice.afterPhotos || [])],
       notes: invoice.notes || "Thank you for the opportunity to provide this estimate. God bless.",
-      sourceJobIds: invoice.sourceJobIds || [],
+      sourceJobIds: [...(invoice.sourceJobIds || [])],
+      convertedFromInvoiceId: invoice.id,
       lineItems: invoice.lineItems.map((item) => ({ ...item, id: uid() })),
     };
-    setEditingEstimate(estimate);
-    setShowEstimateForm(true);
+    setState((prev) => ({ ...prev, estimates: [estimate, ...(prev.estimates || [])] }));
+    alert(`Invoice ${invoice.invoiceNumber} was converted to estimate ${estimate.estimateNumber}.`);
     setActiveTab("estimates");
   }
 
@@ -1492,7 +1537,7 @@ export default function PayrollProEliteOperationsX() {
                 <button onClick={() => { setEditingEstimate(null); setShowEstimateForm(true); }} className="goldButton"><Plus size={18} /> New Estimate</button>
               </SectionTop>
               <div className="rounded-2xl border border-amber-400/20 bg-amber-500/10 p-3 text-sm font-semibold text-amber-200">
-                Estimates are for proposed work. When approved, convert the estimate into an invoice without retyping.
+                PHASE 26B: Approved estimates convert to invoices without retyping. Property, address, unit, line items, notes, and photos are copied automatically.
               </div>
               <EstimatesPanel estimates={filteredEstimates} onAdd={() => { setEditingEstimate(null); setShowEstimateForm(true); }} onEdit={(estimate) => { setEditingEstimate(estimate); setShowEstimateForm(true); }} onDelete={(id) => setConfirmDelete({ type: "estimate", id })} onUpdate={upsertEstimate} onConvertToInvoice={convertEstimateToInvoice} />
             </section>
@@ -2358,6 +2403,7 @@ function InvoiceCard({ invoice, jobs, onEdit, onDelete, onUpdate, onConvertToEst
           </div>
           <p className="text-xs text-zinc-500">{invoice.clientName || invoice.property} • {invoice.property}{invoice.unitNumber ? ` — Unit ${invoice.unitNumber}` : ""}</p>
           {invoice.clientEmail && <p className="mt-1 text-xs font-semibold text-green-400">{invoice.clientEmail}</p>}
+          {invoice.convertedFromEstimateId && <p className="mt-1 text-[11px] font-black uppercase tracking-wide text-amber-300">Created from approved estimate</p>}
         </div>
         <div className="shrink-0 text-right">
           <p className="font-black text-green-400">{money(total)}</p>
@@ -2374,7 +2420,7 @@ function InvoiceCard({ invoice, jobs, onEdit, onDelete, onUpdate, onConvertToEst
       <div className="mt-3 grid grid-cols-2 gap-2">
         <button className="darkButton" onClick={onEdit}><Pencil size={16} /> Edit</button>
         <button className="darkButton" onClick={() => setPreview(!preview)}><Eye size={16} /> {preview ? "Hide Preview" : "Preview PDF"}</button>
-        <button className="darkButton" onClick={onConvertToEstimate}><FileText size={16} /> To Estimate</button>
+        <button className="darkButton" onClick={onConvertToEstimate}><FileText size={16} /> Convert To Estimate</button>
         <button className={`${isPaid ? "goldButton shadow-[0_0_28px_rgba(34,197,94,0.45)]" : "darkButton"}`} onClick={confirmMarkPaid}><Check size={16} /> {isPaid ? "Paid ✓" : "Mark Paid"}</button>
         <button className="darkButton" onClick={() => { setPreview(true); printInvoiceDocument(invoice, beforePhotos, afterPhotos); }}><Printer size={16} /> Open PDF</button>
         <button className="goldButton" onClick={() => { setPreview(true); openInvoiceEmail(invoice); }}><Mail size={16} /> Email PDF</button>
@@ -2629,13 +2675,14 @@ function EstimatesPanel({ estimates, onAdd, onEdit, onDelete, onUpdate, onConver
                 <h3 className="mt-1 text-base font-black text-white">{estimate.clientName || estimate.property}</h3>
                 <p className="mt-1 text-xs font-semibold text-zinc-400">{estimate.property}{estimate.unitNumber ? ` — Unit ${estimate.unitNumber}` : ""}</p>
                 <p className="mt-1 text-xs font-semibold text-zinc-500">{estimate.propertyAddress || "No address saved"}</p>
-                <div className="mt-3 flex flex-wrap gap-2"><span className="rounded-full border border-amber-400/30 bg-amber-500/10 px-3 py-1 text-[11px] font-black uppercase text-amber-200">{estimate.status}</span><span className="rounded-full border border-green-400/30 bg-green-500/10 px-3 py-1 text-[11px] font-black text-green-200">{money(total)}</span></div>
+                {estimate.convertedFromInvoiceId && <p className="mt-1 text-[11px] font-black uppercase tracking-wide text-blue-300">Created from invoice correction</p>}
+                <div className="mt-3 flex flex-wrap gap-2"><span className="rounded-full border border-amber-400/30 bg-amber-500/10 px-3 py-1 text-[11px] font-black uppercase text-amber-200">{estimateStatusLabel(estimate.status)}</span><span className="rounded-full border border-green-400/30 bg-green-500/10 px-3 py-1 text-[11px] font-black text-green-200">{money(total)}</span></div>
               </div>
               <div className="flex shrink-0 flex-col gap-2"><button onClick={() => onEdit(estimate)} className="darkButton !px-3 !py-2"><Pencil size={15} /></button><button onClick={() => onDelete(estimate.id)} className="iconDanger"><Trash2 size={15} /></button></div>
             </div>
             <div className="relative z-10 mt-4 grid grid-cols-2 gap-2">
               <button onClick={() => onUpdate({ ...estimate, id: uid(), estimateNumber: `${estimate.estimateNumber}-COPY`, status: "draft" })} className="darkButton justify-center"><ClipboardList size={15} /> Duplicate</button>
-              <button onClick={() => onConvertToInvoice(estimate)} className="goldButton justify-center"><ReceiptText size={15} /> Convert</button>
+              <button disabled={estimateAlreadyConverted(estimate)} onClick={() => onConvertToInvoice(estimate)} className={`${estimateAlreadyConverted(estimate) ? "darkButton opacity-60" : "goldButton"} justify-center`}><ReceiptText size={15} /> {estimateAlreadyConverted(estimate) ? "Converted" : "To Invoice"}</button>
               <button onClick={() => onUpdate({ ...estimate, status: "sent" })} className="darkButton justify-center"><Mail size={15} /> Mark Sent</button>
               <button onClick={() => onUpdate({ ...estimate, status: "approved" })} className="darkButton justify-center"><Check size={15} /> Approved</button>
             </div>
