@@ -44,7 +44,7 @@ import {
 // PHASE 13 single-file replacement for app/page.tsx
 // Property address persistence + assignment preset dropdown fix
 // PHASE 23: One Work Order flow only + message/PDF actions visible inside every Work Order + PDF-first invoice sharing
-// PHASE 26C: Work Item Library upgrade + scope/price auto-fill
+// PHASE 26D: Duplicate Work Orders + fresh copied scope reset
 
 const STORAGE_KEY = "oneStopPayrollProEliteBlackGoldX_v1";
 const PROPERTY_PROFILES_KEY = "oneStopPropertyProfiles_v1";
@@ -1445,9 +1445,29 @@ This will copy the property, address, unit, line items, notes, and photos.`)) re
   }
 
   function duplicateWorkOrder(job: JobEntry) {
-    const duplicate: JobEntry = { ...job, id: uid(), date: todayISO(), paidAmount: 0, status: "unpaid", workStatus: "open", notes: `${job.notes || ""}${job.notes ? "\n" : ""}Duplicated from previous work order.`.trim(), photos: [] };
+    const currentUnit = (job.unitNumber || "").trim();
+    const nextUnit = typeof window === "undefined" ? currentUnit : window.prompt("Duplicate Work Order\n\nEnter the new unit number for this copied work order:", currentUnit || "") ?? currentUnit;
+    if (typeof window !== "undefined" && nextUnit === null) return;
+
+    const duplicate: JobEntry = {
+      ...job,
+      id: uid(),
+      date: todayISO(),
+      unitNumber: String(nextUnit || "").trim(),
+      pay: 0,
+      paidAmount: 0,
+      status: "unpaid",
+      workStatus: "open",
+      workMessage: "",
+      photos: [],
+      notes: `${job.notes || ""}${job.notes ? "\n" : ""}Duplicated from previous work order. Review scope, employee pay, and photos before sending.`.trim(),
+    };
+
     addJob(duplicate);
     setActiveTab("field");
+    if (typeof window !== "undefined") {
+      alert("Duplicate Work Order created. It copied the property, unit, work items, scope, and notes. Payroll, paid amount, work message, and photos were reset.");
+    }
   }
 
   function deleteConfirmed() {
