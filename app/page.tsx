@@ -44,7 +44,7 @@ import {
 // PHASE 13 single-file replacement for app/page.tsx
 // Property address persistence + assignment preset dropdown fix
 // PHASE 23: One Work Order flow only + message/PDF actions visible inside every Work Order + PDF-first invoice sharing
-// PHASE 26D: Duplicate Work Orders + fresh copied scope reset
+// PHASE 26E: Dashboard cleanup + operations summary cards
 
 const STORAGE_KEY = "oneStopPayrollProEliteBlackGoldX_v1";
 const PROPERTY_PROFILES_KEY = "oneStopPropertyProfiles_v1";
@@ -1154,7 +1154,8 @@ export default function PayrollProEliteOperationsX() {
     const invoiceOpen = state.invoices.reduce((sum, invoice) => sum + Math.max(invoiceTotal(invoice) - safeNumber(invoice.paidAmount), 0), 0);
     const draftEstimates = (state.estimates || []).filter((estimate) => estimate.status === "draft").length;
     const readyToInvoice = weekJobs.filter((job) => job.workStatus === "ready-to-invoice").length;
-    return { earned, paid, borrowed, owed, invoiceOpen, draftEstimates, readyToInvoice };
+    const outstandingInvoices = state.invoices.filter((invoice) => invoice.status !== "paid").length;
+    return { earned, paid, borrowed, owed, invoiceOpen, draftEstimates, readyToInvoice, outstandingInvoices };
   }, [weekJobs, state.employees, state.invoices, week.start]);
 
   const workOrderTotals = useMemo(() => {
@@ -1579,26 +1580,11 @@ This will copy the property, address, unit, line items, notes, and photos.`)) re
         <WeekHero week={week} selectedWeek={selectedWeek} setSelectedWeek={setSelectedWeek} />
 
         {activeTab === "dashboard" && (
-          <>
-            <div className="mt-5 grid grid-cols-2 gap-3">
-              <button onClick={() => setShowJobForm(true)} className="flex items-center justify-center gap-2 rounded-[1.15rem] border border-green-300/20 bg-gradient-to-r from-green-500 to-green-600 px-4 py-4 text-sm font-black text-white shadow-[0_20px_45px_rgba(34,197,94,0.24)] transition active:scale-[.99]">
-                <Plus size={24} /> New Work Order
-              </button>
-              <button onClick={() => { setActiveTab("office"); setEditingInvoice(null); setShowInvoiceForm(true); }} className="flex items-center justify-center gap-2 rounded-[1.15rem] border border-blue-300/20 bg-gradient-to-r from-blue-500 to-blue-600 px-4 py-4 text-sm font-black text-white shadow-[0_20px_45px_rgba(59,130,246,0.24)] transition active:scale-[.99]">
-                <ReceiptText size={24} /> New Invoice
-              </button>
-            </div>
-            <section className="mt-4 rounded-2xl border border-white/10 bg-zinc-950/70 p-4">
-              <p className="text-xs font-black uppercase tracking-[0.18em] text-green-300">Operations Snapshot</p>
-              <div className="mt-3 grid grid-cols-2 gap-2 text-xs font-bold text-zinc-300">
-                <div className="rounded-xl bg-zinc-900/80 p-3">Open Work Orders<br /><span className="text-lg text-white">{workOrderTotals.total}</span></div>
-                <div className="rounded-xl bg-zinc-900/80 p-3">Ready To Invoice<br /><span className="text-lg text-white">{totals.readyToInvoice}</span></div>
-                <div className="rounded-xl bg-zinc-900/80 p-3">Draft Estimates<br /><span className="text-lg text-white">{totals.draftEstimates}</span></div>
-                <div className="rounded-xl bg-zinc-900/80 p-3">Outstanding<br /><span className="text-lg text-white">{money(totals.invoiceOpen)}</span></div>
-              </div>
-            </section>
-            <p className="mt-3 text-center text-xs font-semibold text-zinc-500">Payroll, work orders, estimates, invoices, photos, and messages in one app.</p>
-          </>
+          <section className="mt-5 rounded-[1.35rem] border border-green-400/20 bg-green-500/10 p-4 shadow-[0_18px_40px_rgba(34,197,94,0.10)]">
+            <p className="text-xs font-black uppercase tracking-[0.18em] text-green-300">Phase 26E Dashboard</p>
+            <h2 className="mt-1 text-xl font-black text-white">Business operations at a glance</h2>
+            <p className="mt-1 text-xs font-semibold text-zinc-400">Work Orders, Estimates, Invoices, and weekly revenue stay clean on Home.</p>
+          </section>
         )}
 
         {(activeTab === "office" || activeTab === "invoices" || activeTab === "estimates" || activeTab === "reports") && (
@@ -1631,7 +1617,7 @@ This will copy the property, address, unit, line items, notes, and photos.`)) re
 
         <main className="mt-5">
           {activeTab === "dashboard" && (
-            <Dashboard employeeTotals={employeeTotals} filteredJobs={filteredJobs} employeesById={employeesById} workOrderTotals={workOrderTotals} totals={totals} onAddJob={() => setShowJobForm(true)} onGoEmployees={() => setActiveTab("employees")} onGoReports={() => setActiveTab("reports")} onGoWorkOrders={() => setActiveTab("field")} onGoInvoices={() => setActiveTab("office")} />
+            <Dashboard employeeTotals={employeeTotals} filteredJobs={filteredJobs} employeesById={employeesById} workOrderTotals={workOrderTotals} totals={totals} onAddJob={() => setShowJobForm(true)} onGoEmployees={() => setActiveTab("employees")} onGoReports={() => setActiveTab("reports")} onGoWorkOrders={() => setActiveTab("field")} onGoInvoices={() => setActiveTab("office")} onGoEstimates={() => setActiveTab("estimates")} />
           )}
 
           {activeTab === "employees" && (
@@ -1928,8 +1914,8 @@ function SectionTop({ title, subtitle, children }: { title: string; subtitle: st
   return <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between"><div><h2 className="text-2xl font-black">{title}</h2><p className="text-sm text-zinc-500">{subtitle}</p></div>{children}</div>;
 }
 
-function Dashboard({ employeeTotals, filteredJobs, employeesById, workOrderTotals, totals, onAddJob, onGoEmployees, onGoReports, onGoWorkOrders, onGoInvoices }: { employeeTotals: { employee: Employee; jobs: JobEntry[]; earned: number; paid: number; borrowed: number; owed: number }[]; filteredJobs: JobEntry[]; employeesById: Map<string, Employee>; workOrderTotals: { total: number; unpaid: number; paid: number; photos: number }; totals: { invoiceOpen: number }; onAddJob: () => void; onGoEmployees: () => void; onGoReports: () => void; onGoWorkOrders: () => void; onGoInvoices: () => void }) {
-  // PHASE 24D: Dashboard sections collapsed by default to reduce scrolling on phones.
+function Dashboard({ employeeTotals, filteredJobs, employeesById, workOrderTotals, totals, onAddJob, onGoEmployees, onGoReports, onGoWorkOrders, onGoInvoices, onGoEstimates }: { employeeTotals: { employee: Employee; jobs: JobEntry[]; earned: number; paid: number; borrowed: number; owed: number }[]; filteredJobs: JobEntry[]; employeesById: Map<string, Employee>; workOrderTotals: { total: number; unpaid: number; paid: number; photos: number }; totals: { earned: number; invoiceOpen: number; draftEstimates: number; readyToInvoice: number; outstandingInvoices: number }; onAddJob: () => void; onGoEmployees: () => void; onGoReports: () => void; onGoWorkOrders: () => void; onGoInvoices: () => void; onGoEstimates: () => void }) {
+  // PHASE 26E: Dashboard cleanup. Removed Add Employee, Add Property, and Work Items quick actions from Home.
   const [openBalances, setOpenBalances] = useState(false);
   const [openWeekWork, setOpenWeekWork] = useState(false);
   const [openRecentActivity, setOpenRecentActivity] = useState(false);
@@ -1943,39 +1929,46 @@ function Dashboard({ employeeTotals, filteredJobs, employeesById, workOrderTotal
   return (
     <section className="grid gap-4">
       <div className="space-y-4">
-        <SectionTop title="Command Center" subtitle="Clean dashboard. Tap a section to open only what you need." />
+        <SectionTop title="Command Center" subtitle="Phase 26E: clean home dashboard with only the most important business numbers." />
+
+        <div className="grid grid-cols-1 gap-3">
+          <DashboardActionCard onClick={onGoWorkOrders} icon={<BriefcaseBusiness size={22} />} title="Open Work Orders" value={String(workOrderTotals.total)} subtitle="Tap to view Work Orders" />
+          <DashboardActionCard onClick={onGoInvoices} icon={<ClipboardCheck size={22} />} title="Ready To Invoice" value={String(totals.readyToInvoice)} subtitle="Completed work waiting for billing" />
+          <DashboardActionCard onClick={onGoEstimates} icon={<FileText size={22} />} title="Draft Estimates" value={String(totals.draftEstimates)} subtitle="Tap to continue Estimates" />
+          <DashboardActionCard onClick={onGoInvoices} icon={<ReceiptText size={22} />} title="Outstanding Invoices" value={String(totals.outstandingInvoices)} subtitle={`${money(totals.invoiceOpen)} open balance`} />
+          <DashboardActionCard onClick={onGoReports} icon={<CircleDollarSign size={22} />} title="Revenue This Week" value={money(totals.earned)} subtitle="Based on selected week" />
+        </div>
+
         <div className="grid grid-cols-2 gap-3">
-          <QuickTile onClick={onAddJob} icon={<Plus />} title="New Work" subtitle="Create order" />
-          <QuickTile onClick={onGoWorkOrders} icon={<BriefcaseBusiness />} title="Work Orders" subtitle="All jobs in one place" />
-          <QuickTile onClick={onGoInvoices} icon={<ReceiptText />} title="Office" subtitle={`${money(totals.invoiceOpen)} open`} />
-          <QuickTile onClick={onGoEmployees} icon={<Users />} title="Employees" subtitle="Names + balances" />
+          <button onClick={onAddJob} className="flex items-center justify-center gap-2 rounded-[1.15rem] border border-green-300/20 bg-gradient-to-r from-green-500 to-green-600 px-4 py-4 text-sm font-black text-white shadow-[0_20px_45px_rgba(34,197,94,0.24)] transition active:scale-[.99]"><Plus size={22} /> New Work Order</button>
+          <button onClick={onGoInvoices} className="flex items-center justify-center gap-2 rounded-[1.15rem] border border-blue-300/20 bg-gradient-to-r from-blue-500 to-blue-600 px-4 py-4 text-sm font-black text-white shadow-[0_20px_45px_rgba(59,130,246,0.24)] transition active:scale-[.99]"><ReceiptText size={22} /> Office</button>
         </div>
-        <div className="grid grid-cols-4 gap-2">
-          <MiniMetric label="Orders" value={workOrderTotals.total} />
-          <MiniMetric label="Unpaid" value={workOrderTotals.unpaid} danger={workOrderTotals.unpaid > 0} />
-          <MiniMetric label="Paid" value={workOrderTotals.paid} />
-          <MiniMetric label="Photos" value={workOrderTotals.photos} />
-        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
+        <MiniMetric label="Work Orders" value={workOrderTotals.total} />
+        <MiniMetric label="Unpaid" value={workOrderTotals.unpaid} danger={workOrderTotals.unpaid > 0} />
+        <MiniMetric label="Paid" value={workOrderTotals.paid} />
+        <MiniMetric label="Photos" value={workOrderTotals.photos} />
       </div>
 
       <div className="blackCard overflow-hidden">
         <button type="button" onClick={() => setOpenInvoiceSummary(!openInvoiceSummary)} className="relative z-10 flex w-full items-center justify-between gap-3 p-4 text-left">
           <div>
-            <h3 className="font-black">Invoice Summary</h3>
-            <p className="text-xs font-semibold text-zinc-500">Outstanding Balance: <span className="font-black text-green-400">{money(totals.invoiceOpen)}</span></p>
+            <h3 className="text-sm font-black uppercase tracking-wide text-zinc-300">Office Summary</h3>
+            <p className="text-xs font-semibold text-zinc-500">Estimates, invoices, and ready-to-invoice work.</p>
           </div>
           <div className="flex items-center gap-2">
-            <span className={`rounded-full border px-3 py-1 text-xs font-black ${totals.invoiceOpen > 0 ? "border-orange-400/30 bg-orange-500/10 text-orange-300" : "border-green-400/25 bg-green-500/10 text-green-300"}`}>{money(totals.invoiceOpen)}</span>
+            <span className="rounded-full border border-green-400/25 bg-green-500/10 px-3 py-1 text-xs font-black text-green-300">26E</span>
             {openInvoiceSummary ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
           </div>
         </button>
         {openInvoiceSummary && (
-          <div className="relative z-10 space-y-3 border-t border-white/10 p-3">
-            <div className="grid grid-cols-2 gap-2">
-              <button type="button" onClick={onGoInvoices} className="goldButton w-full"><ReceiptText size={18} /> Open Invoices</button>
-              <button type="button" onClick={onGoReports} className="darkButton w-full"><FileText size={18} /> Reports</button>
-            </div>
-            <p className="rounded-2xl border border-green-400/20 bg-green-500/10 p-3 text-xs font-semibold text-green-200">Invoice tools stay in Office. Dashboard only shows the quick summary so the home page stays clean.</p>
+          <div className="relative z-10 grid gap-2 border-t border-white/10 p-3 text-sm font-semibold text-zinc-300">
+            <button type="button" onClick={onGoInvoices} className="flex items-center justify-between rounded-2xl border border-white/10 bg-black/25 p-3 text-left transition active:scale-[.99]"><span>Ready To Invoice</span><b className="text-green-400">{totals.readyToInvoice}</b></button>
+            <button type="button" onClick={onGoEstimates} className="flex items-center justify-between rounded-2xl border border-white/10 bg-black/25 p-3 text-left transition active:scale-[.99]"><span>Draft Estimates</span><b className="text-green-400">{totals.draftEstimates}</b></button>
+            <button type="button" onClick={onGoInvoices} className="flex items-center justify-between rounded-2xl border border-white/10 bg-black/25 p-3 text-left transition active:scale-[.99]"><span>Outstanding Invoices</span><b className="text-orange-300">{totals.outstandingInvoices}</b></button>
+            <button type="button" onClick={onGoInvoices} className="flex items-center justify-between rounded-2xl border border-white/10 bg-black/25 p-3 text-left transition active:scale-[.99]"><span>Open Invoice Balance</span><b className="text-orange-300">{money(totals.invoiceOpen)}</b></button>
           </div>
         )}
       </div>
@@ -1983,15 +1976,15 @@ function Dashboard({ employeeTotals, filteredJobs, employeesById, workOrderTotal
       <div className="blackCard overflow-hidden">
         <button type="button" onClick={() => setOpenBalances(!openBalances)} className="relative z-10 flex w-full items-center justify-between gap-3 p-4 text-left">
           <div>
-            <h3 className="font-black">Balances by Employee</h3>
-            <p className="text-xs font-semibold text-zinc-500">{openBalanceCount} employee(s) with open balance • Total owed {money(totalEmployeeOwed)}</p>
+            <h3 className="text-sm font-black uppercase tracking-wide text-zinc-300">Employee Balance Snapshot</h3>
+            <p className="text-xs font-semibold text-zinc-500">{openBalanceCount} employee(s) with open balance • {money(totalEmployeeOwed)} total owed.</p>
           </div>
           <div className="flex items-center gap-2">
-            <span className="rounded-full border border-red-400/25 bg-red-500/10 px-3 py-1 text-xs font-black text-red-300">{openBalanceCount}</span>
+            <span className={`rounded-full border px-3 py-1 text-xs font-black ${totalEmployeeOwed > 0 ? "border-red-400/25 bg-red-500/10 text-red-300" : "border-green-400/25 bg-green-500/10 text-green-300"}`}>{money(totalEmployeeOwed)}</span>
             {openBalances ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
           </div>
         </button>
-        {openBalances && <div className="relative z-10 space-y-2 border-t border-white/10 p-3">{topOwed.map(({ employee, earned, paid, owed, borrowed }) => <button key={employee.id} type="button" onClick={onGoEmployees} className="w-full rounded-2xl border border-zinc-800 bg-black/30 p-3 text-left transition active:scale-[.99]"><div className="flex items-center justify-between gap-3"><p className="font-black">{employee.name}</p><p className={`${owed > 0 ? "text-red-300" : "text-green-400"} font-black`}>{money(owed)}</p></div><div className="mt-2 grid grid-cols-4 gap-2 text-[11px] text-zinc-400"><span>Earned {money(earned)}</span><span>Paid {money(paid)}</span><span>Borrowed {money(borrowed)}</span><span>Owed {money(owed)}</span></div></button>)}{topOwed.length === 0 && <EmptyText text="No employee payroll yet this week." />}</div>}
+        {openBalances && <div className="relative z-10 grid gap-2 border-t border-white/10 p-3">{topOwed.map(({ employee, earned, paid, owed, borrowed }) => <button key={employee.id} type="button" onClick={onGoEmployees} className="w-full rounded-2xl border border-zinc-800 bg-black/30 p-3 text-left transition active:scale-[.99]"><div className="flex items-center justify-between gap-3"><p className="font-black">{employee.name}</p><p className={`${owed > 0 ? "text-red-300" : "text-green-400"} font-black`}>{money(owed)}</p></div><div className="mt-2 grid grid-cols-4 gap-2 text-[11px] text-zinc-400"><span>Earned {money(earned)}</span><span>Paid {money(paid)}</span><span>Borrowed {money(borrowed)}</span><span>Owed {money(owed)}</span></div></button>)}{topOwed.length === 0 && <EmptyText text="No employee payroll yet this week." />}</div>}
       </div>
 
       <div className="blackCard overflow-hidden">
@@ -2022,6 +2015,21 @@ function Dashboard({ employeeTotals, filteredJobs, employeesById, workOrderTotal
         {openRecentActivity && <div className="relative z-10 divide-y divide-white/10 border-t border-white/10">{recentJobs.map((job) => <JobMini key={`recent-${job.id}`} job={job} employee={employeesById.get(job.employeeId)} onClick={onGoWorkOrders} />)}{recentJobs.length === 0 && <EmptyText text="No recent activity for this selected week." />}</div>}
       </div>
     </section>
+  );
+}
+
+function DashboardActionCard({ onClick, icon, title, value, subtitle }: { onClick: () => void; icon: React.ReactNode; title: string; value: string; subtitle: string }) {
+  return (
+    <button type="button" onClick={onClick} className="blackCard flex items-center justify-between gap-4 p-4 text-left transition active:scale-[.99]">
+      <div className="relative z-10 flex min-w-0 items-center gap-3">
+        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-white/10 bg-green-500/10 text-green-400">{icon}</div>
+        <div className="min-w-0">
+          <p className="font-black text-white">{title}</p>
+          <p className="text-xs font-semibold text-zinc-500">{subtitle}</p>
+        </div>
+      </div>
+      <p className="relative z-10 shrink-0 text-right text-2xl font-black text-green-400">{value}</p>
+    </button>
   );
 }
 
