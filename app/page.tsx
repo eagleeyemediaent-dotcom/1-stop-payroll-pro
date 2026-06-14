@@ -45,6 +45,7 @@ import {
 // Property address persistence + assignment preset dropdown fix
 // PHASE 23: One Work Order flow only + message/PDF actions visible inside every Work Order + PDF-first invoice sharing
 // PHASE 26G: Photo System Fix - add photos after creation + viewer + invoice/estimate photo controls
+// PHASE 27A: Home/Office navigation cleanup - Home only shows New Work Order + Office; all admin tools live under Office
 
 const STORAGE_KEY = "oneStopPayrollProEliteBlackGoldX_v1";
 const PROPERTY_PROFILES_KEY = "oneStopPropertyProfiles_v1";
@@ -1579,15 +1580,7 @@ This will copy the property, address, unit, line items, notes, and photos.`)) re
       <div className="mx-auto max-w-[540px] px-4 pb-28 pt-3">
         <AppMobileHeader companyName={state.companyName} activeTab={activeTab} setActiveTab={setActiveTab} />
 
-        <WeekHero week={week} selectedWeek={selectedWeek} setSelectedWeek={setSelectedWeek} />
-
-        {activeTab === "dashboard" && (
-          <section className="mt-5 rounded-[1.35rem] border border-green-400/20 bg-green-500/10 p-4 shadow-[0_18px_40px_rgba(34,197,94,0.10)]">
-            <p className="text-xs font-black uppercase tracking-[0.18em] text-green-300">Phase 26E Dashboard</p>
-            <h2 className="mt-1 text-xl font-black text-white">Business operations at a glance</h2>
-            <p className="mt-1 text-xs font-semibold text-zinc-400">Work Orders, Estimates, Invoices, and weekly revenue stay clean on Home.</p>
-          </section>
-        )}
+        {activeTab !== "dashboard" && <WeekHero week={week} selectedWeek={selectedWeek} setSelectedWeek={setSelectedWeek} />}
 
         {(activeTab === "office" || activeTab === "invoices" || activeTab === "estimates" || activeTab === "reports") && (
           <>
@@ -1609,13 +1602,15 @@ This will copy the property, address, unit, line items, notes, and photos.`)) re
           </>
         )}
 
-        <div className="sticky top-[68px] z-20 -mx-4 mt-5 border-y border-white/10 bg-[#02070a]/90 px-4 py-3 shadow-[0_18px_40px_rgba(0,0,0,0.35)] backdrop-blur-xl">
-          <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" size={18} />
-            <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search employee, property, work order, estimate, invoice..." className="w-full rounded-2xl border border-zinc-800 bg-zinc-950 py-2 pl-10 pr-3 text-sm outline-none ring-amber-400/40 placeholder:text-zinc-500 focus:border-green-400/60 focus:ring-4" />
+        {activeTab !== "dashboard" && (
+          <div className="sticky top-[68px] z-20 -mx-4 mt-5 border-y border-white/10 bg-[#02070a]/90 px-4 py-3 shadow-[0_18px_40px_rgba(0,0,0,0.35)] backdrop-blur-xl">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" size={18} />
+              <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search employee, property, work order, estimate, invoice..." className="w-full rounded-2xl border border-zinc-800 bg-zinc-950 py-2 pl-10 pr-3 text-sm outline-none ring-amber-400/40 placeholder:text-zinc-500 focus:border-green-400/60 focus:ring-4" />
+            </div>
+            <p className="mt-2 text-xs text-zinc-500">{activeTab === "field" ? <><span className="font-black text-green-400">Work mode:</span> all work orders, worker pay, units, turnover work, and photos.</> : activeTab === "office" || activeTab === "invoices" ? <><span className="font-black text-green-400">Office mode:</span> employees, properties, estimates, invoices, work items, reports, and backup.</> : <>Historical work orders stay saved.</>}</p>
           </div>
-          <p className="mt-2 text-xs text-zinc-500">{activeTab === "field" ? <><span className="font-black text-green-400">Work mode:</span> work orders, worker pay, units, turnover work, and photos.</> : activeTab === "office" || activeTab === "invoices" ? <><span className="font-black text-green-400">Office mode:</span> invoices, company charges, customer balances, and billing.</> : <>Historical work orders stay saved.</>}</p>
-        </div>
+        )}
 
         <main className="mt-5">
           {activeTab === "dashboard" && (
@@ -1638,9 +1633,7 @@ This will copy the property, address, unit, line items, notes, and photos.`)) re
 
           {(activeTab === "field" || activeTab === "ops" || activeTab === "jobs") && (
             <section className="space-y-4">
-              <SectionTop title="Work Orders" subtitle="One clean field area for every job: unit, assigned employee, photos, pay, message, and invoice creation.">
-                <button onClick={() => setShowJobForm(true)} className="goldButton"><Plus size={18} /> New Work Order</button>
-              </SectionTop>
+              <SectionTop title="Work Orders" subtitle="All work orders live here. New Work Order is started from Home or Office only." />
 
               <div className="rounded-2xl border border-blue-400/20 bg-blue-500/10 p-3 text-sm font-semibold text-blue-200">
                 Phase 26: Estimates are active and Work Items can create new common job categories as your work changes.
@@ -1664,11 +1657,23 @@ This will copy the property, address, unit, line items, notes, and photos.`)) re
 
           {(activeTab === "office" || activeTab === "invoices") && (
             <section className="space-y-4">
-              <SectionTop title="Office" subtitle="Manage the complete office pipeline: Ready to Invoice, Invoiced, Outstanding, and Paid.">
-                <button onClick={() => { setEditingInvoice(null); setShowInvoiceForm(true); }} className="goldButton"><Plus size={18} /> New Invoice</button>
+              <SectionTop title="Office" subtitle="Business command center. Employees, properties, estimates, invoices, work items, reports, and backup all live here.">
+                <button onClick={() => setShowJobForm(true)} className="goldButton"><Plus size={18} /> New Work Order</button>
               </SectionTop>
+
+              <div className="grid grid-cols-2 gap-3">
+                <button type="button" onClick={() => setShowJobForm(true)} className="officeNavCard"><Plus size={20} /><span>New Work Order</span></button>
+                <button type="button" onClick={() => setActiveTab("employees")} className="officeNavCard"><Users size={20} /><span>Employees</span></button>
+                <button type="button" onClick={() => setActiveTab("properties")} className="officeNavCard"><Building2 size={20} /><span>Properties</span></button>
+                <button type="button" onClick={() => setActiveTab("estimates")} className="officeNavCard"><FileText size={20} /><span>Estimates</span></button>
+                <button type="button" onClick={() => { setEditingInvoice(null); setShowInvoiceForm(true); }} className="officeNavCard"><ReceiptText size={20} /><span>New Invoice</span></button>
+                <button type="button" onClick={() => setActiveTab("workItems")} className="officeNavCard"><ClipboardCheck size={20} /><span>Work Items</span></button>
+                <button type="button" onClick={() => setActiveTab("reports")} className="officeNavCard"><CircleDollarSign size={20} /><span>Reports</span></button>
+                <button type="button" onClick={() => setActiveTab("more")} className="officeNavCard"><MoreVertical size={20} /><span>Backup / More</span></button>
+              </div>
+
               <div className="rounded-2xl border border-green-400/20 bg-green-500/10 p-3 text-sm font-semibold text-green-200">
-                Office is your billing side: what you charge the company is separate from what you pay the employee.
+                Office is your billing and management side. Work Orders stays clean for job list, photos, and job actions.
               </div>
               <InvoicesPanel invoices={filteredInvoices} jobs={state.jobs} weekJobs={weekJobs} onAdd={() => { setEditingInvoice(null); setShowInvoiceForm(true); }} onCreateFromWeek={createInvoiceFromWeekJobs} onCreateFromJob={createInvoiceFromJob} onEdit={(invoice) => { setEditingInvoice(invoice); setShowInvoiceForm(true); }} onDelete={(id) => setConfirmDelete({ type: "invoice", id })} onUpdate={upsertInvoice} onConvertToEstimate={convertInvoiceToEstimate} />
             </section>
@@ -1850,6 +1855,11 @@ This will copy the property, address, unit, line items, notes, and photos.`)) re
         .inputElite:focus { border-color: rgba(34,197,94,.58); box-shadow: 0 0 0 4px rgba(34,197,94,.12), inset 0 1px 0 rgba(255,255,255,0.05); }
         .labelElite { color: #a1a1aa; font-size: .75rem; font-weight: 900; margin-bottom: .38rem; display:block; letter-spacing: .02em; }
 
+.officeNavCard { position: relative; z-index: 10; display: flex; align-items: center; justify-content: center; gap: .55rem; border-radius: 1.15rem; border: 1px solid rgba(255,255,255,0.10); background: rgba(0,0,0,0.28); padding: 1rem .85rem; text-align: center; font-size: .82rem; font-weight: 900; color: #e4e4e7; box-shadow: inset 0 1px 0 rgba(255,255,255,0.05); transition: transform .15s ease, border-color .15s ease, background .15s ease; }
+        .officeNavCard svg { color: #4ade80; }
+        .officeNavCard:active { transform: scale(.99); }
+        .officeNavCard:hover { border-color: rgba(74,222,128,.35); background: rgba(34,197,94,.08); }
+
         @media print {
           body * { visibility: hidden !important; }
           .printArea, .printArea * { visibility: visible !important; }
@@ -1867,15 +1877,9 @@ This will copy the property, address, unit, line items, notes, and photos.`)) re
 function AppMobileHeader({ companyName, activeTab, setActiveTab }: { companyName: string; activeTab: ActiveTab; setActiveTab: (tab: ActiveTab) => void }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const menuItems: { tab: ActiveTab; label: string; subtitle: string; icon: React.ReactNode }[] = [
-    { tab: "dashboard", label: "Home", subtitle: "Command center", icon: <Home size={20} /> },
-    { tab: "field", label: "Work Orders", subtitle: "Jobs, turnover work, photos", icon: <BriefcaseBusiness size={20} /> },
-    { tab: "office", label: "Office", subtitle: "Office Pipeline, charges, billing", icon: <ReceiptText size={20} /> },
-    { tab: "estimates", label: "Estimates", subtitle: "Drafts, approvals, conversions", icon: <FileText size={20} /> },
-    { tab: "employees", label: "Employees", subtitle: "Employees and balances", icon: <Users size={20} /> },
-    { tab: "properties", label: "Properties", subtitle: "Property dropdown list", icon: <Building2 size={20} /> },
-    { tab: "workItems", label: "Work Items", subtitle: "Scope and price library", icon: <ClipboardCheck size={20} /> },
-    { tab: "reports", label: "Reports", subtitle: "Payroll closeout", icon: <ClipboardList size={20} /> },
-    { tab: "more", label: "Backup / More", subtitle: "Export, import, restore", icon: <MoreVertical size={20} /> },
+    { tab: "dashboard", label: "Home", subtitle: "New Work Order + Office", icon: <Home size={20} /> },
+    { tab: "field", label: "Work Orders", subtitle: "All work orders", icon: <ClipboardList size={20} /> },
+    { tab: "office", label: "Office", subtitle: "Business command center", icon: <BriefcaseBusiness size={20} /> },
   ];
   function goTo(tab: ActiveTab) { setActiveTab(tab); setMenuOpen(false); }
   return (
@@ -1885,7 +1889,7 @@ function AppMobileHeader({ companyName, activeTab, setActiveTab }: { companyName
           <div className="flex min-w-0 items-center gap-3">
             <button type="button" aria-label="Open navigation menu" onClick={() => setMenuOpen(true)} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.04] text-zinc-100 shadow-lg transition active:scale-95"><span className="text-2xl leading-none">☰</span></button>
             <img src="/icon-192.png" alt="1 Stop Turnover Specialist logo" className="h-12 w-12 shrink-0 rounded-2xl border border-white/10 bg-black object-cover shadow-[0_0_24px_rgba(34,197,94,0.18)]" />
-            <div className="min-w-0"><h1 className="truncate text-lg font-black leading-tight">1 Stop Ops Pro</h1><p className="truncate text-xs font-semibold text-zinc-400">Home • Work • Office • Employees</p></div>
+            <div className="min-w-0"><h1 className="truncate text-lg font-black leading-tight">1 Stop Ops Pro</h1><p className="truncate text-xs font-semibold text-zinc-400">Home • Work Orders • Office</p></div>
           </div>
           <div className="flex items-center gap-2 text-zinc-100"><button type="button" aria-label="Go to office" onClick={() => goTo("office")} className="flex h-10 w-10 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.04] transition active:scale-95"><ReceiptText size={21} /></button><button type="button" aria-label="Open more controls" onClick={() => goTo("more")} className="flex h-10 w-10 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.04] transition active:scale-95"><MoreVertical size={21} /></button></div>
         </div>
@@ -1917,104 +1921,15 @@ function SectionTop({ title, subtitle, children }: { title: string; subtitle: st
 }
 
 function Dashboard({ employeeTotals, filteredJobs, employeesById, workOrderTotals, totals, onAddJob, onGoEmployees, onGoReports, onGoWorkOrders, onGoInvoices, onGoEstimates }: { employeeTotals: { employee: Employee; jobs: JobEntry[]; earned: number; paid: number; borrowed: number; owed: number }[]; filteredJobs: JobEntry[]; employeesById: Map<string, Employee>; workOrderTotals: { total: number; unpaid: number; paid: number; photos: number }; totals: { earned: number; invoiceOpen: number; draftEstimates: number; readyToInvoice: number; outstandingInvoices: number }; onAddJob: () => void; onGoEmployees: () => void; onGoReports: () => void; onGoWorkOrders: () => void; onGoInvoices: () => void; onGoEstimates: () => void }) {
-  // PHASE 26E: Dashboard cleanup. Removed Add Employee, Add Property, and Work Items quick actions from Home.
-  const [openBalances, setOpenBalances] = useState(false);
-  const [openWeekWork, setOpenWeekWork] = useState(false);
-  const [openRecentActivity, setOpenRecentActivity] = useState(false);
-  const [openInvoiceSummary, setOpenInvoiceSummary] = useState(false);
-
-  const topOwed = [...employeeTotals].sort((a, b) => b.owed - a.owed).slice(0, 6);
-  const openBalanceCount = topOwed.filter((row) => row.owed > 0).length;
-  const totalEmployeeOwed = employeeTotals.reduce((sum, row) => sum + safeNumber(row.owed), 0);
-  const recentJobs = filteredJobs.slice(0, 5);
-
+  // PHASE 27A: Home is intentionally simple. Only New Work Order and Office show here.
   return (
-    <section className="grid gap-4">
-      <div className="space-y-4">
-        <SectionTop title="Command Center" subtitle="Phase 26E: clean home dashboard with only the most important business numbers." />
-
-        <div className="grid grid-cols-1 gap-3">
-          <DashboardActionCard onClick={onGoWorkOrders} icon={<BriefcaseBusiness size={22} />} title="Open Work Orders" value={String(workOrderTotals.total)} subtitle="Tap to view Work Orders" />
-          <DashboardActionCard onClick={onGoInvoices} icon={<ClipboardCheck size={22} />} title="Ready To Invoice" value={String(totals.readyToInvoice)} subtitle="Completed work waiting for billing" />
-          <DashboardActionCard onClick={onGoEstimates} icon={<FileText size={22} />} title="Draft Estimates" value={String(totals.draftEstimates)} subtitle="Tap to continue Estimates" />
-          <DashboardActionCard onClick={onGoInvoices} icon={<ReceiptText size={22} />} title="Outstanding Invoices" value={String(totals.outstandingInvoices)} subtitle={`${money(totals.invoiceOpen)} open balance`} />
-          <DashboardActionCard onClick={onGoReports} icon={<CircleDollarSign size={22} />} title="Revenue This Week" value={money(totals.earned)} subtitle="Based on selected week" />
+    <section className="grid min-h-[55vh] place-items-center">
+      <div className="w-full space-y-4">
+        <SectionTop title="Home" subtitle="Start a new work order or open the Office command center." />
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <button onClick={onAddJob} className="flex items-center justify-center gap-3 rounded-[1.35rem] border border-green-300/20 bg-gradient-to-r from-green-500 to-green-600 px-5 py-8 text-base font-black text-white shadow-[0_20px_45px_rgba(34,197,94,0.24)] transition active:scale-[.99]"><Plus size={26} /> New Work Order</button>
+          <button onClick={onGoInvoices} className="flex items-center justify-center gap-3 rounded-[1.35rem] border border-blue-300/20 bg-gradient-to-r from-blue-500 to-blue-600 px-5 py-8 text-base font-black text-white shadow-[0_20px_45px_rgba(59,130,246,0.24)] transition active:scale-[.99]"><BriefcaseBusiness size={26} /> Office</button>
         </div>
-
-        <div className="grid grid-cols-2 gap-3">
-          <button onClick={onAddJob} className="flex items-center justify-center gap-2 rounded-[1.15rem] border border-green-300/20 bg-gradient-to-r from-green-500 to-green-600 px-4 py-4 text-sm font-black text-white shadow-[0_20px_45px_rgba(34,197,94,0.24)] transition active:scale-[.99]"><Plus size={22} /> New Work Order</button>
-          <button onClick={onGoInvoices} className="flex items-center justify-center gap-2 rounded-[1.15rem] border border-blue-300/20 bg-gradient-to-r from-blue-500 to-blue-600 px-4 py-4 text-sm font-black text-white shadow-[0_20px_45px_rgba(59,130,246,0.24)] transition active:scale-[.99]"><ReceiptText size={22} /> Office</button>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-2 gap-3">
-        <MiniMetric label="Work Orders" value={workOrderTotals.total} />
-        <MiniMetric label="Unpaid" value={workOrderTotals.unpaid} danger={workOrderTotals.unpaid > 0} />
-        <MiniMetric label="Paid" value={workOrderTotals.paid} />
-        <MiniMetric label="Photos" value={workOrderTotals.photos} />
-      </div>
-
-      <div className="blackCard overflow-hidden">
-        <button type="button" onClick={() => setOpenInvoiceSummary(!openInvoiceSummary)} className="relative z-10 flex w-full items-center justify-between gap-3 p-4 text-left">
-          <div>
-            <h3 className="text-sm font-black uppercase tracking-wide text-zinc-300">Office Summary</h3>
-            <p className="text-xs font-semibold text-zinc-500">Estimates, invoices, and ready-to-invoice work.</p>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="rounded-full border border-green-400/25 bg-green-500/10 px-3 py-1 text-xs font-black text-green-300">26E</span>
-            {openInvoiceSummary ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
-          </div>
-        </button>
-        {openInvoiceSummary && (
-          <div className="relative z-10 grid gap-2 border-t border-white/10 p-3 text-sm font-semibold text-zinc-300">
-            <button type="button" onClick={onGoInvoices} className="flex items-center justify-between rounded-2xl border border-white/10 bg-black/25 p-3 text-left transition active:scale-[.99]"><span>Ready To Invoice</span><b className="text-green-400">{totals.readyToInvoice}</b></button>
-            <button type="button" onClick={onGoEstimates} className="flex items-center justify-between rounded-2xl border border-white/10 bg-black/25 p-3 text-left transition active:scale-[.99]"><span>Draft Estimates</span><b className="text-green-400">{totals.draftEstimates}</b></button>
-            <button type="button" onClick={onGoInvoices} className="flex items-center justify-between rounded-2xl border border-white/10 bg-black/25 p-3 text-left transition active:scale-[.99]"><span>Outstanding Invoices</span><b className="text-orange-300">{totals.outstandingInvoices}</b></button>
-            <button type="button" onClick={onGoInvoices} className="flex items-center justify-between rounded-2xl border border-white/10 bg-black/25 p-3 text-left transition active:scale-[.99]"><span>Open Invoice Balance</span><b className="text-orange-300">{money(totals.invoiceOpen)}</b></button>
-          </div>
-        )}
-      </div>
-
-      <div className="blackCard overflow-hidden">
-        <button type="button" onClick={() => setOpenBalances(!openBalances)} className="relative z-10 flex w-full items-center justify-between gap-3 p-4 text-left">
-          <div>
-            <h3 className="text-sm font-black uppercase tracking-wide text-zinc-300">Employee Balance Snapshot</h3>
-            <p className="text-xs font-semibold text-zinc-500">{openBalanceCount} employee(s) with open balance • {money(totalEmployeeOwed)} total owed.</p>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className={`rounded-full border px-3 py-1 text-xs font-black ${totalEmployeeOwed > 0 ? "border-red-400/25 bg-red-500/10 text-red-300" : "border-green-400/25 bg-green-500/10 text-green-300"}`}>{money(totalEmployeeOwed)}</span>
-            {openBalances ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
-          </div>
-        </button>
-        {openBalances && <div className="relative z-10 grid gap-2 border-t border-white/10 p-3">{topOwed.map(({ employee, earned, paid, owed, borrowed }) => <button key={employee.id} type="button" onClick={onGoEmployees} className="w-full rounded-2xl border border-zinc-800 bg-black/30 p-3 text-left transition active:scale-[.99]"><div className="flex items-center justify-between gap-3"><p className="font-black">{employee.name}</p><p className={`${owed > 0 ? "text-red-300" : "text-green-400"} font-black`}>{money(owed)}</p></div><div className="mt-2 grid grid-cols-4 gap-2 text-[11px] text-zinc-400"><span>Earned {money(earned)}</span><span>Paid {money(paid)}</span><span>Borrowed {money(borrowed)}</span><span>Owed {money(owed)}</span></div></button>)}{topOwed.length === 0 && <EmptyText text="No employee payroll yet this week." />}</div>}
-      </div>
-
-      <div className="blackCard overflow-hidden">
-        <button type="button" onClick={() => setOpenWeekWork(!openWeekWork)} className="relative z-10 flex w-full items-center justify-between gap-3 p-4 text-left">
-          <div>
-            <h3 className="text-sm font-black uppercase tracking-wide text-zinc-300">Work Orders This Week</h3>
-            <p className="text-xs font-semibold text-zinc-500">{filteredJobs.length} job(s). Tap to open quick list.</p>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="darkButton !px-3 !py-2 text-xs"><Filter size={14} /> Week</span>
-            {openWeekWork ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
-          </div>
-        </button>
-        {openWeekWork && <div className="relative z-10 divide-y divide-white/10 border-t border-white/10">{filteredJobs.slice(0, 7).map((job) => <JobMini key={job.id} job={job} employee={employeesById.get(job.employeeId)} onClick={onGoWorkOrders} />)}{filteredJobs.length === 0 && <EmptyText text="No work orders found for this selected week." />}</div>}
-      </div>
-
-      <div className="blackCard overflow-hidden">
-        <button type="button" onClick={() => setOpenRecentActivity(!openRecentActivity)} className="relative z-10 flex w-full items-center justify-between gap-3 p-4 text-left">
-          <div>
-            <h3 className="text-sm font-black uppercase tracking-wide text-zinc-300">Recent Activity</h3>
-            <p className="text-xs font-semibold text-zinc-500">Latest {recentJobs.length} work order update(s). Tap to view.</p>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="rounded-full border border-blue-400/25 bg-blue-500/10 px-3 py-1 text-xs font-black text-blue-300">{recentJobs.length}</span>
-            {openRecentActivity ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
-          </div>
-        </button>
-        {openRecentActivity && <div className="relative z-10 divide-y divide-white/10 border-t border-white/10">{recentJobs.map((job) => <JobMini key={`recent-${job.id}`} job={job} employee={employeesById.get(job.employeeId)} onClick={onGoWorkOrders} />)}{recentJobs.length === 0 && <EmptyText text="No recent activity for this selected week." />}</div>}
       </div>
     </section>
   );
@@ -2822,11 +2737,10 @@ function ConfirmModal({ title, message, onCancel, onConfirm }: { title: string; 
 function BottomNav({ activeTab, setActiveTab }: { activeTab: ActiveTab; setActiveTab: (tab: ActiveTab) => void }) {
   const tabs: { tab: ActiveTab; label: string; icon: React.ReactNode }[] = [
     { tab: "dashboard", label: "Home", icon: <Home size={20} /> },
-    { tab: "field", label: "Work", icon: <BriefcaseBusiness size={20} /> },
-    { tab: "office", label: "Office", icon: <ReceiptText size={20} /> },
-    { tab: "employees", label: "Employees", icon: <Users size={20} /> },
+    { tab: "field", label: "Work Orders", icon: <ClipboardList size={20} /> },
+    { tab: "office", label: "Office", icon: <BriefcaseBusiness size={20} /> },
   ];
-  return <nav className="fixed bottom-0 left-0 right-0 z-40 border-t border-white/10 bg-[#02070a]/95 px-2 pb-3 pt-2 backdrop-blur-xl"><div className="mx-auto grid max-w-[540px] grid-cols-4 gap-1">{tabs.map((item) => { const active = activeTab === item.tab || (item.tab === "field" && (activeTab === "ops" || activeTab === "jobs")) || (item.tab === "office" && (activeTab === "invoices" || activeTab === "reports")); return <button key={item.tab} onClick={() => setActiveTab(item.tab)} className={`flex flex-col items-center justify-center gap-1 rounded-2xl py-2 text-[11px] font-black transition active:scale-95 ${active ? "bg-green-500 text-black" : "text-zinc-500"}`}>{item.icon}<span>{item.label}</span></button>; })}</div></nav>;
+  return <nav className="fixed bottom-0 left-0 right-0 z-40 border-t border-white/10 bg-[#02070a]/95 px-2 pb-3 pt-2 backdrop-blur-xl"><div className="mx-auto grid max-w-[540px] grid-cols-3 gap-1">{tabs.map((item) => { const active = activeTab === item.tab || (item.tab === "field" && (activeTab === "ops" || activeTab === "jobs")) || (item.tab === "office" && (activeTab === "invoices" || activeTab === "estimates" || activeTab === "employees" || activeTab === "properties" || activeTab === "workItems" || activeTab === "reports" || activeTab === "more")); return <button key={item.tab} onClick={() => setActiveTab(item.tab)} className={`flex flex-col items-center justify-center gap-1 rounded-2xl py-2 text-[11px] font-black transition active:scale-95 ${active ? "bg-green-500 text-black" : "text-zinc-500"}`}>{item.icon}<span>{item.label}</span></button>; })}</div></nav>;
 }
 
 
