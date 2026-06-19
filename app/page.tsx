@@ -2432,23 +2432,25 @@ Amount: ${money(value)}`)) return; onUpdate({ ...job, paidAmount: value, status:
 }
 
 function InvoicesPanel({ invoices, jobs, weekJobs, onAdd, onCreateFromWeek, onCreateFromJob, onEdit, onDelete, onUpdate, onDuplicate, onConvertToEstimate }: { invoices: Invoice[]; jobs: JobEntry[]; weekJobs: JobEntry[]; onAdd: () => void; onCreateFromWeek: () => void; onCreateFromJob: (job: JobEntry) => void; onEdit: (invoice: Invoice) => void; onDelete: (id: string) => void; onUpdate: (invoice: Invoice) => void; onDuplicate: (invoice: Invoice) => void; onConvertToEstimate: (invoice: Invoice) => void }) {
-  const [invoiceFilter, setInvoiceFilter] = useState<"all" | "draft" | "sent" | "viewed" | "partial" | "paid" | "overdue">("all");
+  const [invoiceFilter, setInvoiceFilter] = useState<"all" | "draft" | "due" | "sent" | "viewed" | "partial" | "paid" | "overdue">("all");
   const pipelineInvoices = invoices.map((invoice) => ({ ...invoice, status: invoicePipelineStatus(invoice) }));
   const draftInvoices = pipelineInvoices.filter((invoice) => invoice.status === "draft");
+  const dueInvoices = pipelineInvoices.filter((invoice) => invoice.status === "due");
   const sentInvoices = pipelineInvoices.filter((invoice) => invoice.status === "sent");
   const viewedInvoices = pipelineInvoices.filter((invoice) => invoice.status === "viewed");
   const partialInvoices = pipelineInvoices.filter((invoice) => invoice.status === "partial");
   const paidInvoices = pipelineInvoices.filter((invoice) => invoice.status === "paid");
   const overdueInvoices = pipelineInvoices.filter((invoice) => invoice.status === "overdue");
-  const visibleInvoices = invoiceFilter === "paid" ? paidInvoices : invoiceFilter === "draft" ? draftInvoices : invoiceFilter === "sent" ? sentInvoices : invoiceFilter === "viewed" ? viewedInvoices : invoiceFilter === "partial" ? partialInvoices : invoiceFilter === "overdue" ? overdueInvoices : pipelineInvoices;
+  const visibleInvoices = invoiceFilter === "paid" ? paidInvoices : invoiceFilter === "draft" ? draftInvoices : invoiceFilter === "due" ? dueInvoices : invoiceFilter === "sent" ? sentInvoices : invoiceFilter === "viewed" ? viewedInvoices : invoiceFilter === "partial" ? partialInvoices : invoiceFilter === "overdue" ? overdueInvoices : pipelineInvoices;
   const outstandingBalance = pipelineInvoices.reduce((sum, invoice) => sum + invoiceBalance(invoice), 0);
-  const dueBalance = sentInvoices.concat(viewedInvoices, partialInvoices).reduce((sum, invoice) => sum + invoiceBalance(invoice), 0);
+  const dueBalance = dueInvoices.concat(sentInvoices, viewedInvoices, partialInvoices).reduce((sum, invoice) => sum + invoiceBalance(invoice), 0);
   const overdueBalance = overdueInvoices.reduce((sum, invoice) => sum + invoiceBalance(invoice), 0);
   const paidTotal = paidInvoices.reduce((sum, invoice) => sum + invoiceTotal(invoice), 0);
 
   const filterButtons = [
     { id: "all" as const, label: "All", count: pipelineInvoices.length },
     { id: "draft" as const, label: "Draft", count: draftInvoices.length },
+    { id: "due" as const, label: "Due", count: dueInvoices.length },
     { id: "sent" as const, label: "Sent", count: sentInvoices.length },
     { id: "viewed" as const, label: "Viewed", count: viewedInvoices.length },
     { id: "partial" as const, label: "Partial", count: partialInvoices.length },
@@ -2472,7 +2474,7 @@ function InvoicesPanel({ invoices, jobs, weekJobs, onAdd, onCreateFromWeek, onCr
       </div>
 
       <div className="grid grid-cols-3 gap-2">
-        <MiniMetric label="Open" value={sentInvoices.length + viewedInvoices.length + partialInvoices.length} />
+        <MiniMetric label="Open" value={dueInvoices.length + sentInvoices.length + viewedInvoices.length + partialInvoices.length} />
         <MiniMetric label="Sent" value={sentInvoices.length} />
         <MiniMetric label="Paid" value={paidInvoices.length} />
       </div>
