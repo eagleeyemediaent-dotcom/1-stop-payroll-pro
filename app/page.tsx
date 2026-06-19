@@ -48,6 +48,7 @@ import {
 // PHASE 27A: Home/Office navigation cleanup - Home only shows New Work Order + Office; all admin tools live under Office
 // PHASE 27B: Invoice Simple Killer Features - invoice pipeline, property history, PDF Center, reports, duplication, and Work Items 2.0
 // PHASE 27C: Communication Center - invoice/estimate tracking, reminders, contact actions, and activity history
+// PHASE 27D: Collections Center - aging report, promise-to-pay, collection notes, follow-up queue, and revenue intelligence
 
 const STORAGE_KEY = "oneStopPayrollProEliteBlackGoldX_v1";
 const PROPERTY_PROFILES_KEY = "oneStopPropertyProfiles_v1";
@@ -125,6 +126,9 @@ type Estimate = {
   dateViewed?: string;
   dateApproved?: string;
   pdfLink?: string;
+  promiseToPayDate?: string;
+  promiseNotes?: string;
+  collectionNotes?: CollectionNote[];
   status: "draft" | "sent" | "viewed" | "approved" | "declined" | "converted";
   lineItems: InvoiceLineItem[];
   notes: string;
@@ -134,6 +138,14 @@ type Estimate = {
   sourceJobIds?: string[];
   convertedInvoiceId?: string;
   convertedFromInvoiceId?: string;
+};
+
+type CollectionNote = {
+  id: string;
+  date: string;
+  contactPerson: string;
+  method: "Phone" | "Email" | "Text" | "In Person";
+  notes: string;
 };
 
 type Invoice = {
@@ -149,6 +161,9 @@ type Invoice = {
   dateViewed?: string;
   datePaid?: string;
   pdfLink?: string;
+  promiseToPayDate?: string;
+  promiseNotes?: string;
+  collectionNotes?: CollectionNote[];
   status: "draft" | "due" | "sent" | "viewed" | "partial" | "paid" | "overdue";
   lineItems: InvoiceLineItem[];
   notes: string;
@@ -205,7 +220,7 @@ type AppState = {
   companyName: string;
 };
 
-type ActiveTab = "dashboard" | "field" | "office" | "estimates" | "ops" | "employees" | "jobs" | "assignments" | "invoices" | "properties" | "workItems" | "reports" | "pdfCenter" | "communications" | "more";
+type ActiveTab = "dashboard" | "field" | "office" | "estimates" | "ops" | "employees" | "jobs" | "assignments" | "invoices" | "properties" | "workItems" | "reports" | "pdfCenter" | "communications" | "collections" | "more";
 
 const defaultProperties = [
   "Charles Place Apartments",
@@ -739,6 +754,46 @@ function generatedPdfLink(kind: "invoice" | "estimate", number: string) {
 
 function communicationRecipient(property: string, profile?: PropertyContactProfile) {
   return [profile?.contactName, profile?.email, profile?.phone].filter(Boolean).join(" • ") || property || "No contact saved";
+}
+
+function daysBetweenISO(startISO: string, endISO: string = todayISO()) {
+  if (!startISO) return 0;
+  const start = new Date(`${startISO}T12:00:00`);
+  const end = new Date(`${endISO}T12:00:00`);
+  const diff = Math.floor((end.getTime() - start.getTime()) / 86400000);
+  return Number.isFinite(diff) ? Math.max(diff, 0) : 0;
+}
+
+function invoiceAgeDays(invoice: Invoice) {
+  return daysBetweenISO(invoice.dueDate || invoice.invoiceDate);
+}
+
+function invoiceAgingBucket(invoice: Invoice) {
+  const days = invoiceAgeDays(invoice);
+  if (days <= 0) return "Current";
+  if (days <= 30) return "1–30 Days";
+  if (days <= 60) return "31–60 Days";
+  if (days <= 90) return "61–90 Days";
+  return "90+ Days";
+}
+
+function lastCollectionContact(invoice: Invoice) {
+  const notes = invoice.collectionNotes || [];
+  if (notes.length === 0) return "No contact yet";
+  return [...notes].sort((a, b) => String(b.date).localeCompare(String(a.date)))[0]?.date || "No contact yet";
+}
+
+function needsCollectionFollowUp(invoice: Invoice) {
+  if (isPaidInvoice(invoice)) return false;
+  const last = lastCollectionContact(invoice);
+  if (last === "No contact yet") return invoiceAgeDays(invoice) >= 1;
+  return daysBetweenISO(last) >= 14;
+}
+
+function promiseStatus(invoice: Invoice) {
+  if (!invoice.promiseToPayDate) return "No Promise";
+  if (isPaidInvoice(invoice)) return "Promise Kept";
+  return invoice.promiseToPayDate < todayISO() ? "Promise Overdue" : "Promise Active";
 }
 
 
@@ -1674,7 +1729,7 @@ This will copy the property, address, unit, line items, notes, and photos.`)) re
 
         {activeTab !== "dashboard" && <WeekHero week={week} selectedWeek={selectedWeek} setSelectedWeek={setSelectedWeek} />}
 
-        {(activeTab === "office" || activeTab === "invoices" || activeTab === "estimates" || activeTab === "reports" || activeTab === "pdfCenter" || activeTab === "communications") && (
+        {(activeTab === "office" || activeTab === "invoices" || activeTab === "estimates" || activeTab === "reports" || activeTab === "pdfCenter" || activeTab === "communications" || activeTab === "collections") && (
           <>
             <div className="mt-6 flex items-center justify-between">
               <h2 className="text-sm font-black uppercase tracking-wide text-zinc-300">Office Pipeline</h2>
@@ -1763,13 +1818,14 @@ This will copy the property, address, unit, line items, notes, and photos.`)) re
                 <button type="button" onClick={() => setActiveTab("reports")} className="officeNavCard"><CircleDollarSign size={20} /><span>Reports</span></button>
                 <button type="button" onClick={() => setActiveTab("pdfCenter")} className="officeNavCard"><FileText size={20} /><span>PDF Center</span></button>
                 <button type="button" onClick={() => setActiveTab("communications")} className="officeNavCard"><Mail size={20} /><span>Communications</span></button>
+                <button type="button" onClick={() => setActiveTab("collections")} className="officeNavCard"><AlertTriangle size={20} /><span>Collections</span></button>
                 <button type="button" onClick={() => setActiveTab("more")} className="officeNavCard"><MoreVertical size={20} /><span>Backup / More</span></button>
               </div>
 
               <OfficeDashboardCards totals={totals} workOrders={state.jobs} onGoWorkOrders={() => setActiveTab("field")} onGoInvoices={() => setActiveTab("office")} onGoEstimates={() => setActiveTab("estimates")} />
 
               <div className="rounded-2xl border border-green-400/20 bg-green-500/10 p-3 text-sm font-semibold text-green-200">
-                PHASE 27C: Office now includes Communication Center, invoice/estimate tracking, reminders, contact actions, PDF Center, property history, reports, and duplication — plus your Work Order system.
+                PHASE 27D: Office now includes Collections Center with aging reports, promise-to-pay tracking, collection notes, follow-up queue, revenue intelligence, plus all 27C communications tools.
               </div>
               <InvoicesPanel invoices={filteredInvoices} jobs={state.jobs} weekJobs={weekJobs} onAdd={() => { setEditingInvoice(null); setShowInvoiceForm(true); }} onCreateFromWeek={createInvoiceFromWeekJobs} onCreateFromJob={createInvoiceFromJob} onEdit={(invoice) => { setEditingInvoice(invoice); setShowInvoiceForm(true); }} onDelete={(id) => setConfirmDelete({ type: "invoice", id })} onUpdate={upsertInvoice} onDuplicate={duplicateInvoice} onConvertToEstimate={convertInvoiceToEstimate} />
             </section>
@@ -1907,6 +1963,8 @@ This will copy the property, address, unit, line items, notes, and photos.`)) re
           {activeTab === "pdfCenter" && <PDFCenter invoices={filteredInvoices} estimates={filteredEstimates} jobs={filteredJobs} onOpenInvoice={(invoice) => printInvoiceDocument(invoice, invoice.beforePhotos || [], invoice.afterPhotos || [])} />}
 
           {activeTab === "communications" && <CommunicationsPanel invoices={state.invoices} estimates={state.estimates || []} properties={state.properties} getProfileForProperty={getSavedPropertyProfile} onOpenInvoice={(invoice) => { setEditingInvoice(invoice); setShowInvoiceForm(true); }} onOpenEstimate={(estimate) => { setEditingEstimate(estimate); setShowEstimateForm(true); }} />}
+
+          {activeTab === "collections" && <CollectionsPanel invoices={state.invoices} getProfileForProperty={getSavedPropertyProfile} onUpdateInvoice={upsertInvoice} onOpenInvoice={(invoice) => { setEditingInvoice(invoice); setShowInvoiceForm(true); }} />}
 
           {activeTab === "reports" && <Reports totals={totals} employeeTotals={employeeTotals} jobs={filteredJobs} employeesById={employeesById} invoices={state.invoices} estimates={state.estimates || []} onCloseWeek={closeWeekAsPaid} onExport={exportData} onCreateInvoice={createInvoiceFromWeekJobs} />}
 
@@ -2872,6 +2930,81 @@ function EmptyText({ text }: { text: string }) { return <p className="relative z
 function ConfirmModal({ title, message, onCancel, onConfirm }: { title: string; message: string; onCancel: () => void; onConfirm: () => void }) { return <Modal title={title} onClose={onCancel}><div className="space-y-4"><div className="rounded-2xl border border-red-400/20 bg-red-500/10 p-4"><div className="flex gap-3"><AlertTriangle className="shrink-0 text-red-300" /><p className="text-sm text-red-100">{message}</p></div></div><div className="grid grid-cols-2 gap-2"><button className="darkButton" onClick={onCancel}>Cancel</button><button className="iconDanger justify-center" onClick={onConfirm}><Trash2 size={18} /> Delete</button></div></div></Modal>; }
 
 
+
+function CollectionsPanel({ invoices, getProfileForProperty, onUpdateInvoice, onOpenInvoice }: { invoices: Invoice[]; getProfileForProperty: (property: string) => PropertyContactProfile; onUpdateInvoice: (invoice: Invoice) => void; onOpenInvoice: (invoice: Invoice) => void }) {
+  const [bucketFilter, setBucketFilter] = useState<"all" | "Current" | "1–30 Days" | "31–60 Days" | "61–90 Days" | "90+ Days" | "followUp">("all");
+  const [noteInvoiceId, setNoteInvoiceId] = useState<string | null>(null);
+  const [noteDraft, setNoteDraft] = useState({ contactPerson: "", method: "Phone" as CollectionNote["method"], notes: "" });
+
+  const openInvoices = invoices
+    .map((invoice) => ({ ...invoice, status: invoicePipelineStatus(invoice) }))
+    .filter((invoice) => !isPaidInvoice(invoice))
+    .sort((a, b) => invoiceAgeDays(b) - invoiceAgeDays(a));
+
+  const buckets = ["Current", "1–30 Days", "31–60 Days", "61–90 Days", "90+ Days"] as const;
+  const bucketTotals = buckets.map((bucket) => {
+    const rows = openInvoices.filter((invoice) => invoiceAgingBucket(invoice) === bucket);
+    return { bucket, count: rows.length, total: rows.reduce((sum, invoice) => sum + invoiceBalance(invoice), 0) };
+  });
+  const followUps = openInvoices.filter(needsCollectionFollowUp);
+  const visibleInvoices = bucketFilter === "all" ? openInvoices : bucketFilter === "followUp" ? followUps : openInvoices.filter((invoice) => invoiceAgingBucket(invoice) === bucketFilter);
+  const outstanding = openInvoices.reduce((sum, invoice) => sum + invoiceBalance(invoice), 0);
+  const over30 = openInvoices.filter((invoice) => invoiceAgeDays(invoice) > 30).reduce((sum, invoice) => sum + invoiceBalance(invoice), 0);
+  const over60 = openInvoices.filter((invoice) => invoiceAgeDays(invoice) > 60).reduce((sum, invoice) => sum + invoiceBalance(invoice), 0);
+  const over90 = openInvoices.filter((invoice) => invoiceAgeDays(invoice) > 90).reduce((sum, invoice) => sum + invoiceBalance(invoice), 0);
+
+  const propertyStats = Object.entries(invoices.reduce<Record<string, { invoiced: number; paid: number; open: number; invoices: Invoice[] }>>((map, invoice) => {
+    const key = invoice.property || "Unknown Property";
+    if (!map[key]) map[key] = { invoiced: 0, paid: 0, open: 0, invoices: [] };
+    map[key].invoiced += invoiceTotal(invoice);
+    map[key].paid += isPaidInvoice(invoice) ? invoiceTotal(invoice) : safeNumber(invoice.paidAmount);
+    map[key].open += invoiceBalance(invoice);
+    map[key].invoices.push(invoice);
+    return map;
+  }, {})).sort((a, b) => b[1].open - a[1].open).slice(0, 8);
+
+  function saveCollectionNote(invoice: Invoice) {
+    const profile = getProfileForProperty(invoice.property);
+    const note: CollectionNote = {
+      id: uid(),
+      date: todayISO(),
+      contactPerson: noteDraft.contactPerson.trim() || profile.contactName || invoice.clientName || invoice.property,
+      method: noteDraft.method,
+      notes: noteDraft.notes.trim() || "Collection follow-up completed.",
+    };
+    onUpdateInvoice({ ...invoice, collectionNotes: [note, ...(invoice.collectionNotes || [])] });
+    setNoteInvoiceId(null);
+    setNoteDraft({ contactPerson: "", method: "Phone", notes: "" });
+  }
+
+  function setPromise(invoice: Invoice) {
+    const date = window.prompt("Promise To Pay Date\n\nEnter date as YYYY-MM-DD:", invoice.promiseToPayDate || todayISO());
+    if (!date) return;
+    const notes = window.prompt("Promise Notes", invoice.promiseNotes || "") || invoice.promiseNotes || "";
+    onUpdateInvoice({ ...invoice, promiseToPayDate: date.trim(), promiseNotes: notes.trim() });
+  }
+
+  function reminder(invoice: Invoice, method: "email" | "text") {
+    const profile = getProfileForProperty(invoice.property);
+    const message = `Hello, this is a payment follow-up for invoice ${invoice.invoiceNumber}. Balance due: ${money(invoiceBalance(invoice))}. Property: ${invoice.property}${invoice.unitNumber ? ` Unit ${invoice.unitNumber}` : ""}. Thank you, 1 Stop Turnover Specialist LLC.`;
+    if (method === "email") {
+      window.location.href = `mailto:${encodeURIComponent(invoice.clientEmail || profile.email || "")}?subject=${encodeURIComponent(`Payment Follow-Up ${invoice.invoiceNumber}`)}&body=${encodeURIComponent(message)}`;
+    } else {
+      window.location.href = `sms:${encodeURIComponent(profile.phone || "")}?&body=${encodeURIComponent(message)}`;
+    }
+  }
+
+  return <section className="space-y-4"><SectionTop title="Collections" subtitle="Aging report, promise-to-pay tracking, collection notes, follow-up queue, and revenue intelligence." />
+    <div className="grid grid-cols-2 gap-3"><StatCard label="Outstanding" value={money(outstanding)} description="Open receivables" icon={<CircleDollarSign size={20} />} variant="owed" /><StatCard label="Follow-Ups" value={String(followUps.length)} description="No contact in 14+ days" icon={<Clock size={20} />} variant="borrowed" /><StatCard label="Past Due > 60" value={money(over60)} description="Collection priority" icon={<AlertTriangle size={20} />} variant="owed" /><StatCard label="Past Due > 90" value={money(over90)} description="Critical balance" icon={<AlertTriangle size={20} />} variant="owed" /></div>
+
+    <div className="blackCard p-4"><h3 className="font-black">Aging Report</h3><div className="mt-3 grid grid-cols-2 gap-2">{bucketTotals.map((row) => <button key={row.bucket} onClick={() => setBucketFilter(row.bucket)} className={`rounded-2xl border p-3 text-left ${bucketFilter === row.bucket ? "border-green-400/50 bg-green-500/10" : "border-zinc-800 bg-black/30"}`}><p className="text-xs font-black text-zinc-400">{row.bucket}</p><p className="mt-1 text-lg font-black text-white">{money(row.total)}</p><p className="text-[10px] font-bold text-zinc-500">{row.count} invoice(s)</p></button>)}<button onClick={() => setBucketFilter("all")} className="rounded-2xl border border-zinc-800 bg-black/30 p-3 text-left"><p className="text-xs font-black text-zinc-400">All Open</p><p className="mt-1 text-lg font-black text-white">{money(outstanding)}</p></button><button onClick={() => setBucketFilter("followUp")} className="rounded-2xl border border-amber-400/40 bg-amber-500/10 p-3 text-left"><p className="text-xs font-black text-amber-200">Follow-Up Queue</p><p className="mt-1 text-lg font-black text-white">{followUps.length}</p></button></div></div>
+
+    <div className="space-y-3">{visibleInvoices.map((invoice) => { const profile = getProfileForProperty(invoice.property); const age = invoiceAgeDays(invoice); const promise = promiseStatus(invoice); const noteOpen = noteInvoiceId === invoice.id; return <div key={invoice.id} className="blackCard p-4"><div className="flex items-start justify-between gap-3"><div><p className="text-[10px] font-black uppercase tracking-wide text-green-400">{invoiceAgingBucket(invoice)} • {age} day(s)</p><h3 className="mt-1 font-black text-white">{invoice.invoiceNumber}</h3><p className="text-xs font-semibold text-zinc-500">{invoice.property}{invoice.unitNumber ? ` • Unit ${invoice.unitNumber}` : ""}</p><p className="mt-1 text-xs font-semibold text-zinc-500">Contact: {communicationRecipient(invoice.property, profile)}</p></div><div className="text-right"><p className="text-lg font-black text-red-300">{money(invoiceBalance(invoice))}</p><p className={`mt-1 rounded-full px-2 py-1 text-[10px] font-black ${promise === "Promise Overdue" ? "bg-red-500 text-white" : promise === "Promise Active" ? "bg-amber-400 text-black" : promise === "Promise Kept" ? "bg-green-500 text-black" : "bg-zinc-800 text-zinc-300"}`}>{promise}</p></div></div><div className="mt-3 grid grid-cols-2 gap-2"><button className="goldButton" onClick={() => reminder(invoice, "email")}><Mail size={16} /> Email Reminder</button><button className="darkButton" onClick={() => reminder(invoice, "text")}><FileText size={16} /> Text Reminder</button><button className="darkButton" onClick={() => setPromise(invoice)}><CalendarDays size={16} /> Promise To Pay</button><button className="darkButton" onClick={() => onOpenInvoice(invoice)}><Eye size={16} /> Open Invoice</button><button className="darkButton col-span-2" onClick={() => setNoteInvoiceId(noteOpen ? null : invoice.id)}><Pencil size={16} /> Add Collection Note</button></div><div className="mt-3 rounded-2xl border border-zinc-800 bg-black/30 p-3"><p className="text-xs font-black text-zinc-400">Last Contact: {lastCollectionContact(invoice)}</p>{invoice.promiseToPayDate && <p className="mt-1 text-xs font-semibold text-zinc-500">Promise Date: {invoice.promiseToPayDate} {invoice.promiseNotes ? `• ${invoice.promiseNotes}` : ""}</p>}{(invoice.collectionNotes || []).slice(0, 2).map((note) => <p key={note.id} className="mt-2 text-xs text-zinc-400"><b>{note.date}</b> • {note.method} • {note.contactPerson}<br />{note.notes}</p>)}</div>{noteOpen && <div className="mt-3 space-y-2 rounded-2xl border border-green-400/20 bg-green-500/10 p-3"><input className="inputElite" value={noteDraft.contactPerson} onChange={(e) => setNoteDraft({ ...noteDraft, contactPerson: e.target.value })} placeholder="Contact person" /><select className="inputElite" value={noteDraft.method} onChange={(e) => setNoteDraft({ ...noteDraft, method: e.target.value as CollectionNote["method"] })}><option>Phone</option><option>Email</option><option>Text</option><option>In Person</option></select><textarea className="inputElite min-h-20" value={noteDraft.notes} onChange={(e) => setNoteDraft({ ...noteDraft, notes: e.target.value })} placeholder="Example: Spoke with Lauren. Check being processed." /><button className="goldButton w-full" onClick={() => saveCollectionNote(invoice)}><Check size={16} /> Save Collection Note</button></div>}</div>; })}{visibleInvoices.length === 0 && <div className="blackCard p-6"><EmptyText text="No invoices in this collections view." /></div>}</div>
+
+    <div className="blackCard p-4"><h3 className="font-black">Property Collection Profile</h3><div className="mt-3 space-y-2">{propertyStats.map(([property, stats]) => <div key={property} className="rounded-2xl border border-zinc-800 bg-black/30 p-3"><div className="flex items-center justify-between gap-3"><b className="text-sm text-white">{property}</b><b className="text-red-300">{money(stats.open)}</b></div><div className="mt-2 grid grid-cols-3 gap-2 text-center"><MiniMetric label="Invoiced" value={money(stats.invoiced)} /><MiniMetric label="Paid" value={money(stats.paid)} /><MiniMetric label="Open" value={money(stats.open)} /></div></div>)}{propertyStats.length === 0 && <EmptyText text="No collection data yet." />}</div></div>
+  </section>;
+}
+
 function CommunicationsPanel({
   invoices,
   estimates,
@@ -3046,7 +3179,7 @@ function BottomNav({ activeTab, setActiveTab }: { activeTab: ActiveTab; setActiv
     { tab: "field", label: "Work Orders", icon: <ClipboardList size={20} /> },
     { tab: "office", label: "Office", icon: <BriefcaseBusiness size={20} /> },
   ];
-  return <nav className="fixed bottom-0 left-0 right-0 z-40 border-t border-white/10 bg-[#02070a]/95 px-2 pb-3 pt-2 backdrop-blur-xl"><div className="mx-auto grid max-w-[540px] grid-cols-3 gap-1">{tabs.map((item) => { const active = activeTab === item.tab || (item.tab === "field" && (activeTab === "ops" || activeTab === "jobs")) || (item.tab === "office" && (activeTab === "invoices" || activeTab === "estimates" || activeTab === "employees" || activeTab === "properties" || activeTab === "workItems" || activeTab === "reports" || activeTab === "pdfCenter" || activeTab === "communications" || activeTab === "more")); return <button key={item.tab} onClick={() => setActiveTab(item.tab)} className={`flex flex-col items-center justify-center gap-1 rounded-2xl py-2 text-[11px] font-black transition active:scale-95 ${active ? "bg-green-500 text-black" : "text-zinc-500"}`}>{item.icon}<span>{item.label}</span></button>; })}</div></nav>;
+  return <nav className="fixed bottom-0 left-0 right-0 z-40 border-t border-white/10 bg-[#02070a]/95 px-2 pb-3 pt-2 backdrop-blur-xl"><div className="mx-auto grid max-w-[540px] grid-cols-3 gap-1">{tabs.map((item) => { const active = activeTab === item.tab || (item.tab === "field" && (activeTab === "ops" || activeTab === "jobs")) || (item.tab === "office" && (activeTab === "invoices" || activeTab === "estimates" || activeTab === "employees" || activeTab === "properties" || activeTab === "workItems" || activeTab === "reports" || activeTab === "pdfCenter" || activeTab === "communications" || activeTab === "collections" || activeTab === "more")); return <button key={item.tab} onClick={() => setActiveTab(item.tab)} className={`flex flex-col items-center justify-center gap-1 rounded-2xl py-2 text-[11px] font-black transition active:scale-95 ${active ? "bg-green-500 text-black" : "text-zinc-500"}`}>{item.icon}<span>{item.label}</span></button>; })}</div></nav>;
 }
 
 
