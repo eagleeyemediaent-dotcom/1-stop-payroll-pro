@@ -2117,6 +2117,16 @@ function DashboardActionCard({ onClick, icon, title, value, subtitle }: { onClic
 function QuickTile({ onClick, icon, title, subtitle }: { onClick: () => void; icon: React.ReactNode; title: string; subtitle: string }) { return <button onClick={onClick} className="blackCard p-5 text-left transition active:scale-[.99]"><div className="relative z-10 flex h-12 w-12 items-center justify-center rounded-2xl border border-white/10 bg-green-500/10 text-green-400">{icon}</div><p className="relative z-10 mt-3 text-lg font-black">{title}</p><p className="relative z-10 text-xs text-zinc-500">{subtitle}</p></button>; }
 function MiniMetric({ label, value, danger = false }: { label: string; value: string | number; danger?: boolean }) { return <div className={`rounded-2xl border p-3 text-center ${danger ? "border-red-400/25 bg-red-500/10" : "border-white/10 bg-black/25"}`}><p className={`text-xl font-black ${danger ? "text-red-300" : "text-green-400"}`}>{value}</p><p className="text-[10px] font-black uppercase text-zinc-500">{label}</p></div>; }
 
+function MiniStat({ label, value, tone = "blue" }: { label: string; value: string; tone?: "green" | "amber" | "red" | "blue" | string }) {
+  const toneClass = tone === "green" ? "text-green-400" : tone === "amber" ? "text-amber-300" : tone === "red" ? "text-red-300" : "text-blue-300";
+  return (
+    <div className="rounded-2xl border border-white/10 bg-black/30 p-3">
+      <p className="text-[10px] font-black uppercase tracking-wider text-zinc-500">{label}</p>
+      <p className={`mt-1 text-lg font-black ${toneClass}`}>{value}</p>
+    </div>
+  );
+}
+
 function JobMini({ job, employee, onClick }: { job: JobEntry; employee?: Employee; onClick?: () => void }) {
   return <button type="button" onClick={onClick} className="relative z-10 block w-full p-3 text-left transition active:scale-[.99]"><div className="flex items-center justify-between gap-3"><div className="min-w-0"><div className="flex items-center gap-2"><span className="h-2 w-2 shrink-0 rounded-full bg-green-400 shadow-[0_0_12px_rgba(34,197,94,0.8)]" /><p className="truncate font-black">{propertyWithUnit(job)}</p></div><p className="ml-4 text-xs text-zinc-500">{employee?.name || "Unknown Employee"} • {formatJobDate(job.date)}</p></div><div className="shrink-0 text-right"><p className="font-black text-green-400">{money(job.pay)}</p><p className="text-[10px] font-black uppercase text-zinc-500">Tap to open</p></div></div></button>;
 }
