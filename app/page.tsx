@@ -50,6 +50,7 @@ import {
 // PHASE 27C: Communication Center - invoice/estimate tracking, reminders, contact actions, and activity history
 // PHASE 27D: Collections Center - aging report, promise-to-pay, collection notes, follow-up queue, and revenue intelligence
 // PHASE 27E: Customer Portal - client-facing dashboard, work order/photo visibility, estimate approvals, invoices, documents, and activity feed
+// PHASE 27E REBOOT REPAIR: compile-safety pass before Phase 27F; recurring work intentionally not added yet
 
 const STORAGE_KEY = "oneStopPayrollProEliteBlackGoldX_v1";
 const PROPERTY_PROFILES_KEY = "oneStopPropertyProfiles_v1";
@@ -2154,7 +2155,6 @@ function EmployeeCard({ employee, totals, expanded, onToggle, onDelete, onSave, 
 function BalancePill({ label, value, gold = false, danger = false }: { label: string; value: string; gold?: boolean; danger?: boolean }) { return <div className={`rounded-2xl border p-2 ${danger ? "border-red-400/30 bg-red-500/10" : gold ? "border-green-400/25 bg-green-500/10" : "border-zinc-800 bg-black/30"}`}><p className="text-[10px] font-black uppercase tracking-wider text-zinc-500">{label}</p><p className={`text-sm font-black ${danger ? "text-red-300" : gold ? "text-green-400" : "text-zinc-100"}`}>{value}</p></div>; }
 
 
-
 function formatAssignmentDate(dateISO: string) {
   if (!dateISO) return "No date";
   const date = new Date(`${dateISO}T12:00:00`);
@@ -2942,8 +2942,6 @@ function MoneyInput({ value, onValueChange, placeholder = "Enter Amount" }: { va
 
 function EmptyText({ text }: { text: string }) { return <p className="relative z-10 py-4 text-center text-sm font-semibold text-zinc-500">{text}</p>; }
 function ConfirmModal({ title, message, onCancel, onConfirm }: { title: string; message: string; onCancel: () => void; onConfirm: () => void }) { return <Modal title={title} onClose={onCancel}><div className="space-y-4"><div className="rounded-2xl border border-red-400/20 bg-red-500/10 p-4"><div className="flex gap-3"><AlertTriangle className="shrink-0 text-red-300" /><p className="text-sm text-red-100">{message}</p></div></div><div className="grid grid-cols-2 gap-2"><button className="darkButton" onClick={onCancel}>Cancel</button><button className="iconDanger justify-center" onClick={onConfirm}><Trash2 size={18} /> Delete</button></div></div></Modal>; }
-
-
 
 
 function CustomerPortalPanel({ properties, jobs, invoices, estimates, getProfileForProperty, onOpenInvoice, onOpenEstimate }: { properties: string[]; jobs: JobEntry[]; invoices: Invoice[]; estimates: Estimate[]; getProfileForProperty: (property: string) => PropertyContactProfile; onOpenInvoice: (invoice: Invoice) => void; onOpenEstimate: (estimate: Estimate) => void }) {
