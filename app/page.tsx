@@ -46,6 +46,7 @@ import {
 // PHASE 23: One Work Order flow only + message/PDF actions visible inside every Work Order + PDF-first invoice sharing
 // PHASE 26G: Photo System Fix - add photos after creation + viewer + invoice/estimate photo controls
 // PHASE 27A: Home/Office navigation cleanup - Home only shows New Work Order + Office; all admin tools live under Office
+// PHASE 27B: Invoice Simple Killer Features - invoice pipeline, property history, PDF Center, reports, duplication, and Work Items 2.0
 
 const STORAGE_KEY = "oneStopPayrollProEliteBlackGoldX_v1";
 const PROPERTY_PROFILES_KEY = "oneStopPropertyProfiles_v1";
@@ -139,7 +140,7 @@ type Invoice = {
   unitNumber: string;
   invoiceDate: string;
   dueDate: string;
-  status: "due" | "sent" | "paid" | "overdue";
+  status: "draft" | "due" | "sent" | "viewed" | "partial" | "paid" | "overdue";
   lineItems: InvoiceLineItem[];
   notes: string;
   paidAmount: number;
@@ -158,6 +159,7 @@ type WorkItemOption = {
   id: string;
   name: string;
   description: string;
+  category?: "Painting" | "Cleaning" | "Carpentry" | "Sheetrock" | "Flooring" | "Electrical" | "Plumbing" | "Trash Out" | "Miscellaneous";
   defaultScope: string;
   defaultNotes: string;
   suggestedPrice: number;
@@ -194,7 +196,7 @@ type AppState = {
   companyName: string;
 };
 
-type ActiveTab = "dashboard" | "field" | "office" | "estimates" | "ops" | "employees" | "jobs" | "assignments" | "invoices" | "properties" | "workItems" | "reports" | "more";
+type ActiveTab = "dashboard" | "field" | "office" | "estimates" | "ops" | "employees" | "jobs" | "assignments" | "invoices" | "properties" | "workItems" | "reports" | "pdfCenter" | "more";
 
 const defaultProperties = [
   "Charles Place Apartments",
@@ -464,6 +466,7 @@ function normalizeWorkItem(item: Partial<WorkItemOption> & { name?: string }): W
     id: String(item.id || uid()),
     name: String(item.name || fallback?.name || "New Work Item"),
     description: String(item.description ?? fallback?.description ?? ""),
+    category: (item.category || fallback?.category || "Miscellaneous") as WorkItemOption["category"],
     defaultScope: String(item.defaultScope ?? fallback?.defaultScope ?? ""),
     defaultNotes: String(item.defaultNotes ?? fallback?.defaultNotes ?? ""),
     suggestedPrice: safeNumber(item.suggestedPrice ?? fallback?.suggestedPrice ?? 0),
@@ -688,6 +691,32 @@ function invoiceTotal(invoice: Pick<Invoice, "lineItems">) {
   return invoice.lineItems.reduce((sum, item) => sum + safeNumber(item.qty) * safeNumber(item.rate), 0);
 }
 
+function invoiceBalance(invoice: Invoice) {
+  return Math.max(invoiceTotal(invoice) - safeNumber(invoice.paidAmount), 0);
+}
+
+function invoicePipelineStatus(invoice: Invoice): Invoice["status"] {
+  const total = invoiceTotal(invoice);
+  const paid = safeNumber(invoice.paidAmount);
+  if (total > 0 && paid >= total) return "paid";
+  if (paid > 0) return "partial";
+  if (invoice.status === "overdue" || (!!invoice.dueDate && invoice.dueDate < todayISO())) return "overdue";
+  if (["draft", "sent", "viewed"].includes(invoice.status)) return invoice.status;
+  return "due";
+}
+
+function invoiceStatusLabel(status: Invoice["status"]) {
+  return status === "draft" ? "Draft" : status === "due" ? "Due" : status === "sent" ? "Sent" : status === "viewed" ? "Viewed" : status === "partial" ? "Partial Paid" : status === "paid" ? "Paid" : "Overdue";
+}
+
+function isPaidInvoice(invoice: Invoice) {
+  return invoicePipelineStatus(invoice) === "paid";
+}
+
+function dateInRange(dateISO: string, startISO: string, endISO: string) {
+  return Boolean(dateISO) && dateISO >= startISO && dateISO <= endISO;
+}
+
 
 function confirmAction(message: string) {
   return typeof window === "undefined" ? true : window.confirm(message);
@@ -766,7 +795,7 @@ function escapePrintHtml(value: unknown) {
 
 function invoiceStatusIsPaid(invoice: Invoice) {
   const total = invoiceTotal(invoice);
-  return invoice.status === "paid" && total > 0 && safeNumber(invoice.paidAmount) >= total;
+  return invoicePipelineStatus(invoice) === "paid";
 }
 
 function stripInternalInvoiceText(text: string) {
@@ -1151,11 +1180,17 @@ export default function PayrollProEliteOperationsX() {
     const paid = weekJobs.reduce((sum, job) => sum + safeNumber(job.paidAmount), 0);
     const borrowed = state.employees.reduce((sum, employee) => sum + getBorrowedForWeek(employee, week.start), 0);
     const owed = Math.max(earned - paid - borrowed, 0);
-    const invoiceOpen = state.invoices.reduce((sum, invoice) => sum + Math.max(invoiceTotal(invoice) - safeNumber(invoice.paidAmount), 0), 0);
+    const invoiceOpen = state.invoices.reduce((sum, invoice) => sum + invoiceBalance(invoice), 0);
     const draftEstimates = (state.estimates || []).filter((estimate) => estimate.status === "draft").length;
     const readyToInvoice = weekJobs.filter((job) => job.workStatus === "ready-to-invoice").length;
-    const outstandingInvoices = state.invoices.filter((invoice) => invoice.status !== "paid").length;
-    return { earned, paid, borrowed, owed, invoiceOpen, draftEstimates, readyToInvoice, outstandingInvoices };
+    const outstandingInvoices = state.invoices.filter((invoice) => !isPaidInvoice(invoice)).length;
+    const paidInvoices = state.invoices.filter((invoice) => isPaidInvoice(invoice));
+    const monthStart = todayISO().slice(0, 8) + "01";
+    const yearStart = todayISO().slice(0, 4) + "-01-01";
+    const revenueThisWeek = paidInvoices.filter((invoice) => dateInRange(invoice.invoiceDate, week.start, week.end)).reduce((sum, invoice) => sum + invoiceTotal(invoice), 0);
+    const revenueThisMonth = paidInvoices.filter((invoice) => invoice.invoiceDate >= monthStart).reduce((sum, invoice) => sum + invoiceTotal(invoice), 0);
+    const revenueThisYear = paidInvoices.filter((invoice) => invoice.invoiceDate >= yearStart).reduce((sum, invoice) => sum + invoiceTotal(invoice), 0);
+    return { earned, paid, borrowed, owed, invoiceOpen, draftEstimates, readyToInvoice, outstandingInvoices, revenueThisWeek, revenueThisMonth, revenueThisYear };
   }, [weekJobs, state.employees, state.invoices, week.start]);
 
   const workOrderTotals = useMemo(() => {
@@ -1474,6 +1509,39 @@ This will copy the property, address, unit, line items, notes, and photos.`)) re
     }
   }
 
+  function duplicateInvoice(invoice: Invoice) {
+    const copy: Invoice = {
+      ...invoice,
+      id: uid(),
+      invoiceNumber: `${invoice.invoiceNumber}-COPY`,
+      invoiceDate: todayISO(),
+      dueDate: addDaysISO(todayISO(), 14),
+      status: "draft",
+      paidAmount: 0,
+      lineItems: invoice.lineItems.map((item) => ({ ...item, id: uid() })),
+      beforePhotos: [...(invoice.beforePhotos || [])],
+      afterPhotos: [...(invoice.afterPhotos || [])],
+    };
+    setState((prev) => ({ ...prev, invoices: [customerSafeInvoice(copy), ...prev.invoices] }));
+    alert(`Invoice duplicated as ${copy.invoiceNumber}. Review it before sending.`);
+  }
+
+  function duplicateEstimate(estimate: Estimate) {
+    const copy: Estimate = {
+      ...estimate,
+      id: uid(),
+      estimateNumber: `${estimate.estimateNumber}-COPY`,
+      estimateDate: todayISO(),
+      status: "draft",
+      convertedInvoiceId: undefined,
+      lineItems: estimate.lineItems.map((item) => ({ ...item, id: uid() })),
+      beforePhotos: [...(estimate.beforePhotos || [])],
+      afterPhotos: [...(estimate.afterPhotos || [])],
+    };
+    setState((prev) => ({ ...prev, estimates: [copy, ...(prev.estimates || [])] }));
+    alert(`Estimate duplicated as ${copy.estimateNumber}.`);
+  }
+
   function deleteConfirmed() {
     if (!confirmDelete) return;
     setState((prev) => {
@@ -1582,7 +1650,7 @@ This will copy the property, address, unit, line items, notes, and photos.`)) re
 
         {activeTab !== "dashboard" && <WeekHero week={week} selectedWeek={selectedWeek} setSelectedWeek={setSelectedWeek} />}
 
-        {(activeTab === "office" || activeTab === "invoices" || activeTab === "estimates" || activeTab === "reports") && (
+        {(activeTab === "office" || activeTab === "invoices" || activeTab === "estimates" || activeTab === "reports" || activeTab === "pdfCenter") && (
           <>
             <div className="mt-6 flex items-center justify-between">
               <h2 className="text-sm font-black uppercase tracking-wide text-zinc-300">Office Pipeline</h2>
@@ -1651,7 +1719,7 @@ This will copy the property, address, unit, line items, notes, and photos.`)) re
               <div className="rounded-2xl border border-amber-400/20 bg-amber-500/10 p-3 text-sm font-semibold text-amber-200">
                 PHASE 26B: Approved estimates convert to invoices without retyping. Property, address, unit, line items, notes, and photos are copied automatically.
               </div>
-              <EstimatesPanel estimates={filteredEstimates} onAdd={() => { setEditingEstimate(null); setShowEstimateForm(true); }} onEdit={(estimate) => { setEditingEstimate(estimate); setShowEstimateForm(true); }} onDelete={(id) => setConfirmDelete({ type: "estimate", id })} onUpdate={upsertEstimate} onConvertToInvoice={convertEstimateToInvoice} />
+              <EstimatesPanel estimates={filteredEstimates} onAdd={() => { setEditingEstimate(null); setShowEstimateForm(true); }} onEdit={(estimate) => { setEditingEstimate(estimate); setShowEstimateForm(true); }} onDelete={(id) => setConfirmDelete({ type: "estimate", id })} onUpdate={upsertEstimate} onDuplicate={duplicateEstimate} onConvertToInvoice={convertEstimateToInvoice} />
             </section>
           )}
 
@@ -1669,13 +1737,16 @@ This will copy the property, address, unit, line items, notes, and photos.`)) re
                 <button type="button" onClick={() => { setEditingInvoice(null); setShowInvoiceForm(true); }} className="officeNavCard"><ReceiptText size={20} /><span>New Invoice</span></button>
                 <button type="button" onClick={() => setActiveTab("workItems")} className="officeNavCard"><ClipboardCheck size={20} /><span>Work Items</span></button>
                 <button type="button" onClick={() => setActiveTab("reports")} className="officeNavCard"><CircleDollarSign size={20} /><span>Reports</span></button>
+                <button type="button" onClick={() => setActiveTab("pdfCenter")} className="officeNavCard"><FileText size={20} /><span>PDF Center</span></button>
                 <button type="button" onClick={() => setActiveTab("more")} className="officeNavCard"><MoreVertical size={20} /><span>Backup / More</span></button>
               </div>
 
+              <OfficeDashboardCards totals={totals} workOrders={state.jobs} onGoWorkOrders={() => setActiveTab("field")} onGoInvoices={() => setActiveTab("office")} onGoEstimates={() => setActiveTab("estimates")} />
+
               <div className="rounded-2xl border border-green-400/20 bg-green-500/10 p-3 text-sm font-semibold text-green-200">
-                Office is your billing and management side. Work Orders stays clean for job list, photos, and job actions.
+                PHASE 27B: Office now includes Invoice Simple-style invoices, estimates, payment tracking, PDF Center, property history, reports, and duplication — plus your Work Order system.
               </div>
-              <InvoicesPanel invoices={filteredInvoices} jobs={state.jobs} weekJobs={weekJobs} onAdd={() => { setEditingInvoice(null); setShowInvoiceForm(true); }} onCreateFromWeek={createInvoiceFromWeekJobs} onCreateFromJob={createInvoiceFromJob} onEdit={(invoice) => { setEditingInvoice(invoice); setShowInvoiceForm(true); }} onDelete={(id) => setConfirmDelete({ type: "invoice", id })} onUpdate={upsertInvoice} onConvertToEstimate={convertInvoiceToEstimate} />
+              <InvoicesPanel invoices={filteredInvoices} jobs={state.jobs} weekJobs={weekJobs} onAdd={() => { setEditingInvoice(null); setShowInvoiceForm(true); }} onCreateFromWeek={createInvoiceFromWeekJobs} onCreateFromJob={createInvoiceFromJob} onEdit={(invoice) => { setEditingInvoice(invoice); setShowInvoiceForm(true); }} onDelete={(id) => setConfirmDelete({ type: "invoice", id })} onUpdate={upsertInvoice} onDuplicate={duplicateInvoice} onConvertToEstimate={convertInvoiceToEstimate} />
             </section>
           )}
 
@@ -1699,6 +1770,7 @@ This will copy the property, address, unit, line items, notes, and photos.`)) re
                           <p className="mt-1 text-xs font-semibold text-zinc-400">{profile.address || "No address saved yet"}</p>
                           {contactLine ? <p className="mt-1 text-xs font-semibold text-green-300">{contactLine}</p> : <p className="mt-1 text-xs font-semibold text-zinc-600">No contact info saved yet</p>}
                           {profile.billingName && profile.billingName !== property && <p className="mt-1 text-xs font-semibold text-blue-300">Billing: {profile.billingName}</p>}
+                          <PropertyHistoryMini property={property} jobs={state.jobs} estimates={state.estimates || []} invoices={state.invoices} />
                         </div>
                         <div className="flex shrink-0 items-center gap-2">
                           <button onClick={() => { setEditingPropertyName(property); setShowPropertyForm(true); }} className="darkButton !p-3"><Pencil size={16} /></button>
@@ -1726,7 +1798,7 @@ This will copy the property, address, unit, line items, notes, and photos.`)) re
                       jobTypeOptions: [...new Set([...(prev.jobTypeOptions || []), cleanName])],
                       workItems: [
                         ...((prev.workItems && prev.workItems.length ? prev.workItems : defaultWorkItems)),
-                        { id: uid(), name: cleanName, description: prompt("Description for this Work Item:") || "", defaultScope: prompt("Default Scope for this Work Item:") || "", defaultNotes: prompt("Default Notes for this Work Item:") || "", suggestedPrice: safeNumber(prompt("Suggested Price / Amount:") || 0), defaultPriority: "normal", active: true },
+                        { id: uid(), name: cleanName, category: (prompt("Category: Painting, Cleaning, Carpentry, Sheetrock, Flooring, Electrical, Plumbing, Trash Out, or Miscellaneous:") || "Miscellaneous") as WorkItemOption["category"], description: prompt("Description for this Work Item:") || "", defaultScope: prompt("Default Scope for this Work Item:") || "", defaultNotes: prompt("Default Notes for this Work Item:") || "", suggestedPrice: safeNumber(prompt("Suggested Price / Amount:") || 0), defaultPriority: "normal", active: true },
                       ],
                     }));
                   }}
@@ -1747,7 +1819,7 @@ This will copy the property, address, unit, line items, notes, and photos.`)) re
                       <div className="min-w-0">
                         <p className="font-bold text-zinc-50">{workType.name}</p>
                         <p className="mt-1 text-xs font-semibold text-zinc-400">
-                          Priority: {workType.defaultPriority === "urgent" ? "Urgent" : "Normal"} • {workType.active ? "Active" : "Inactive"} • Suggested: {money(workType.suggestedPrice || 0)}
+                          Category: {workType.category || "Miscellaneous"} • Priority: {workType.defaultPriority === "urgent" ? "Urgent" : "Normal"} • {workType.active ? "Active" : "Inactive"} • Suggested: {money(workType.suggestedPrice || 0)}
                         </p>
                         {workType.description ? <p className="mt-2 text-xs font-semibold text-blue-300">{workType.description}</p> : null}
                         {workType.defaultScope ? <p className="mt-2 whitespace-pre-wrap text-xs text-zinc-500">{workType.defaultScope}</p> : <p className="mt-2 text-xs text-zinc-600">No default scope saved yet.</p>}
@@ -1759,6 +1831,7 @@ This will copy the property, address, unit, line items, notes, and photos.`)) re
                             const nextName = prompt("Edit Work Item name:", workType.name);
                             const cleanName = normalizePropertyName(nextName || "");
                             if (!cleanName) return;
+                            const nextCategory = (prompt("Category:", workType.category || "Miscellaneous") || "Miscellaneous") as WorkItemOption["category"];
                             const nextDescription = prompt("Description:", workType.description || "") || "";
                             const nextScope = prompt("Default Scope:", workType.defaultScope || "") || "";
                             const nextNotes = prompt("Default Notes:", workType.defaultNotes || "") || "";
@@ -1767,7 +1840,7 @@ This will copy the property, address, unit, line items, notes, and photos.`)) re
                             setState((prev) => ({
                               ...prev,
                               jobTypeOptions: [...new Set((prev.jobTypeOptions || []).map((name) => name === workType.name ? cleanName : name))],
-                              workItems: ((prev.workItems && prev.workItems.length ? prev.workItems : defaultWorkItems)).map((item) => item.id === workType.id ? { ...item, name: cleanName, description: nextDescription, defaultScope: nextScope, defaultNotes: nextNotes, suggestedPrice: nextPrice, defaultPriority: nextPriority } : item),
+                              workItems: ((prev.workItems && prev.workItems.length ? prev.workItems : defaultWorkItems)).map((item) => item.id === workType.id ? { ...item, name: cleanName, category: nextCategory, description: nextDescription, defaultScope: nextScope, defaultNotes: nextNotes, suggestedPrice: nextPrice, defaultPriority: nextPriority } : item),
                             }));
                           }}
                           className="darkButton !p-3"
@@ -1806,7 +1879,9 @@ This will copy the property, address, unit, line items, notes, and photos.`)) re
             </section>
           )}
 
-          {activeTab === "reports" && <Reports totals={totals} employeeTotals={employeeTotals} jobs={filteredJobs} employeesById={employeesById} onCloseWeek={closeWeekAsPaid} onExport={exportData} onCreateInvoice={createInvoiceFromWeekJobs} />}
+          {activeTab === "pdfCenter" && <PDFCenter invoices={filteredInvoices} estimates={filteredEstimates} jobs={filteredJobs} onOpenInvoice={(invoice) => printInvoiceDocument(invoice, invoice.beforePhotos || [], invoice.afterPhotos || [])} />}
+
+          {activeTab === "reports" && <Reports totals={totals} employeeTotals={employeeTotals} jobs={filteredJobs} employeesById={employeesById} invoices={state.invoices} estimates={state.estimates || []} onCloseWeek={closeWeekAsPaid} onExport={exportData} onCreateInvoice={createInvoiceFromWeekJobs} />}
 
           {activeTab === "more" && <MorePanel onExport={exportData} onImport={() => importRef.current?.click()} onReset={() => { if (confirm("Reset app data? This cannot be undone unless you exported a backup.")) setState(starterState); }} />}
         </main>
@@ -1951,7 +2026,7 @@ function DashboardActionCard({ onClick, icon, title, value, subtitle }: { onClic
 }
 
 function QuickTile({ onClick, icon, title, subtitle }: { onClick: () => void; icon: React.ReactNode; title: string; subtitle: string }) { return <button onClick={onClick} className="blackCard p-5 text-left transition active:scale-[.99]"><div className="relative z-10 flex h-12 w-12 items-center justify-center rounded-2xl border border-white/10 bg-green-500/10 text-green-400">{icon}</div><p className="relative z-10 mt-3 text-lg font-black">{title}</p><p className="relative z-10 text-xs text-zinc-500">{subtitle}</p></button>; }
-function MiniMetric({ label, value, danger = false }: { label: string; value: number; danger?: boolean }) { return <div className={`rounded-2xl border p-3 text-center ${danger ? "border-red-400/25 bg-red-500/10" : "border-white/10 bg-black/25"}`}><p className={`text-xl font-black ${danger ? "text-red-300" : "text-green-400"}`}>{value}</p><p className="text-[10px] font-black uppercase text-zinc-500">{label}</p></div>; }
+function MiniMetric({ label, value, danger = false }: { label: string; value: string | number; danger?: boolean }) { return <div className={`rounded-2xl border p-3 text-center ${danger ? "border-red-400/25 bg-red-500/10" : "border-white/10 bg-black/25"}`}><p className={`text-xl font-black ${danger ? "text-red-300" : "text-green-400"}`}>{value}</p><p className="text-[10px] font-black uppercase text-zinc-500">{label}</p></div>; }
 
 function JobMini({ job, employee, onClick }: { job: JobEntry; employee?: Employee; onClick?: () => void }) {
   return <button type="button" onClick={onClick} className="relative z-10 block w-full p-3 text-left transition active:scale-[.99]"><div className="flex items-center justify-between gap-3"><div className="min-w-0"><div className="flex items-center gap-2"><span className="h-2 w-2 shrink-0 rounded-full bg-green-400 shadow-[0_0_12px_rgba(34,197,94,0.8)]" /><p className="truncate font-black">{propertyWithUnit(job)}</p></div><p className="ml-4 text-xs text-zinc-500">{employee?.name || "Unknown Employee"} • {formatJobDate(job.date)}</p></div><div className="shrink-0 text-right"><p className="font-black text-green-400">{money(job.pay)}</p><p className="text-[10px] font-black uppercase text-zinc-500">Tap to open</p></div></div></button>;
@@ -2356,24 +2431,27 @@ Mark this job paid?
 Amount: ${money(value)}`)) return; onUpdate({ ...job, paidAmount: value, status: statusFrom(job.pay, value) }); }} placeholder="Enter Amount" /></Operations></div><Operations label="Work Item"><div className="grid grid-cols-2 gap-2">{jobTypeOptions.map((type) => <button type="button" key={type} onClick={() => toggleType(type)} className={`rounded-xl border px-3 py-2 text-left text-xs font-bold ${job.jobTypes.includes(type) ? "border-green-400/50 bg-green-500/20 text-green-300" : "border-zinc-800 bg-black/30 text-zinc-400"}`}>{job.jobTypes.includes(type) ? "✓ " : ""}{type}</button>)}</div></Operations><Operations label="Custom Work"><input className="inputElite" value={job.customWork} onChange={(e) => onUpdate({ ...job, customWork: e.target.value })} placeholder="Edit custom work description..." /></Operations><Operations label="Communication Center"><div className="rounded-2xl border border-green-400/20 bg-green-500/10 p-3"><div className="flex items-start justify-between gap-3"><div><p className="text-xs font-black uppercase text-green-400">Work Order Message</p><p className="mt-1 text-xs font-semibold text-zinc-400">View, edit, translate, print, email, text, WhatsApp, or copy from inside this Work Order.</p></div><button type="button" className="goldButton !py-2 text-xs" onClick={() => printWorkOrderDocument({ ...job, workLanguage: currentLanguage }, employee?.name || "Employee", currentWorkMessage)}>Preview PDF</button></div><div className="mt-3 grid grid-cols-3 gap-2"><button type="button" onClick={() => changeWorkMessageLanguage("english")} className={`${currentLanguage === "english" ? "goldButton" : "darkButton"} !py-2 text-xs`}>English</button><button type="button" onClick={() => changeWorkMessageLanguage("spanish")} className={`${currentLanguage === "spanish" ? "goldButton" : "darkButton"} !py-2 text-xs`}>Español</button><button type="button" onClick={() => changeWorkMessageLanguage("both")} className={`${currentLanguage === "both" ? "goldButton" : "darkButton"} !py-2 text-xs`}>Both</button></div><textarea className="inputElite mt-3 min-h-64 text-xs" value={currentWorkMessage} onChange={(e) => onUpdate({ ...job, workMessage: e.target.value })} /><div className="mt-3 grid grid-cols-2 gap-2"><button type="button" className="goldButton !py-2 text-xs" onClick={() => printWorkOrderDocument({ ...job, workLanguage: currentLanguage }, employee?.name || "Employee", currentWorkMessage)}>Print / Save PDF</button><button type="button" className="darkButton !py-2 text-xs" onClick={resetWorkMessage}>Regenerate</button><button type="button" className="darkButton !py-2 text-xs" onClick={() => copyWorkOrderMessage(currentWorkMessage)}>Copy Message</button><button type="button" className="darkButton !py-2 text-xs" onClick={() => textWorkOrderMessage(currentWorkMessage)}>Text Link</button><button type="button" className="darkButton !py-2 text-xs" onClick={() => whatsappWorkOrderMessage(currentWorkMessage)}>WhatsApp</button><button type="button" className="goldButton !py-2 text-xs" onClick={() => emailWorkOrderPdf({ ...job, workLanguage: currentLanguage }, employee?.name || "Employee", currentWorkMessage)}>Email PDF</button><button type="button" className="goldButton !py-2 text-xs" onClick={() => messageWorkOrderPdf({ ...job, workLanguage: currentLanguage }, employee?.name || "Employee", currentWorkMessage)}>Message PDF</button></div><p className="mt-3 text-[11px] font-semibold leading-relaxed text-zinc-400">PDF opens first so you can save, print, or share the clean work order file from your phone/computer.</p></div></Operations><Operations label={`Job Photos — ${(job.photos || []).length} total`}><div className="rounded-2xl border border-dashed border-zinc-800 bg-black/30 p-4"><div className="rounded-2xl border border-green-400/20 bg-green-500/10 p-3 text-xs font-semibold text-green-100"><b>Phase 26G:</b> Photos can be added after creation anytime. New photos append to this work order and never overwrite existing photos.</div><div className="mt-3 grid grid-cols-3 gap-2"><label className="goldButton w-full cursor-pointer text-xs"><Camera size={16} /> Before<input type="file" accept="image/*" multiple capture="environment" className="hidden" onChange={async (e) => { await addPhotos(e.target.files); e.currentTarget.value = ""; }} /></label><label className="darkButton w-full cursor-pointer text-xs"><Camera size={16} /> Progress<input type="file" accept="image/*" multiple capture="environment" className="hidden" onChange={async (e) => { await addPhotos(e.target.files); e.currentTarget.value = ""; }} /></label><label className="darkButton w-full cursor-pointer text-xs"><Camera size={16} /> After<input type="file" accept="image/*" multiple capture="environment" className="hidden" onChange={async (e) => { await addPhotos(e.target.files); e.currentTarget.value = ""; }} /></label></div><div className="mt-2 grid grid-cols-2 gap-2"><label className="goldButton w-full cursor-pointer"><Camera size={18} /> Take Photo<input type="file" accept="image/*" multiple capture="environment" className="hidden" onChange={async (e) => { await addPhotos(e.target.files); e.currentTarget.value = ""; }} /></label><label className="darkButton w-full cursor-pointer"><ImageIcon size={18} /> Upload<input type="file" accept="image/*" multiple className="hidden" onChange={async (e) => { await addPhotos(e.target.files); e.currentTarget.value = ""; }} /></label></div><p className="mt-3 text-center text-xs font-black uppercase text-zinc-400">📷 {(job.photos || []).length} Photo{(job.photos || []).length === 1 ? "" : "s"}</p>{(job.photos || []).length > 0 ? <div className="mt-4 grid grid-cols-2 gap-3">{(job.photos || []).map((photo, index) => <div key={`${job.id}-photo-${index}`} className="relative overflow-hidden rounded-2xl border border-white/10 bg-black/40"><button type="button" className="block w-full" onClick={() => setPhotoViewerIndex(index)}><img src={photo} alt={`Job photo ${index + 1}`} className="h-32 w-full object-cover" /></button><span className="absolute bottom-2 left-2 rounded-full border border-black/50 bg-black/75 px-2 py-1 text-[10px] font-black text-white">#{index + 1}</span><button type="button" className="absolute right-2 top-2 rounded-full border border-red-400/30 bg-black/70 p-2 text-red-200" onClick={() => { const ok = window.confirm("Remove this photo from the job?"); if (!ok) return; onUpdate({ ...job, photos: (job.photos || []).filter((_, photoIndex) => photoIndex !== index) }); }}><Trash2 size={15} /></button></div>)}</div> : <p className="mt-3 text-center text-sm font-semibold text-zinc-500">No photos attached yet.</p>}{photoViewerIndex !== null && (job.photos || [])[photoViewerIndex] && <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/95 p-4"><div className="w-full max-w-3xl"><div className="mb-3 flex items-center justify-between gap-2"><button type="button" className="darkButton" onClick={() => setPhotoViewerIndex(Math.max(0, photoViewerIndex - 1))}>Previous</button><p className="text-center text-xs font-black uppercase text-zinc-300">Photo {photoViewerIndex + 1} of {(job.photos || []).length}</p><button type="button" className="darkButton" onClick={() => setPhotoViewerIndex(Math.min((job.photos || []).length - 1, photoViewerIndex + 1))}>Next</button><button type="button" className="goldButton" onClick={() => setPhotoViewerIndex(null)}>Close</button></div><img src={(job.photos || [])[photoViewerIndex]} alt={`Full job photo ${photoViewerIndex + 1}`} className="max-h-[78vh] w-full rounded-2xl object-contain" /></div></div>}</div></Operations><Operations label="Notes"><textarea className="inputElite min-h-28" value={job.notes} onChange={(e) => onUpdate({ ...job, notes: e.target.value })} placeholder="Edit notes for this saved job..." /></Operations><div className="flex items-center justify-between gap-2"><span className={`rounded-full border px-3 py-1 text-xs font-black ${jobStatusColor(normalizedStatus, owed)}`}>{normalizedStatus.toUpperCase()}</span><button className="iconDanger" onClick={onDelete}><Trash2 size={18} /></button></div></div>}</div>;
 }
 
-function InvoicesPanel({ invoices, jobs, weekJobs, onAdd, onCreateFromWeek, onCreateFromJob, onEdit, onDelete, onUpdate, onConvertToEstimate }: { invoices: Invoice[]; jobs: JobEntry[]; weekJobs: JobEntry[]; onAdd: () => void; onCreateFromWeek: () => void; onCreateFromJob: (job: JobEntry) => void; onEdit: (invoice: Invoice) => void; onDelete: (id: string) => void; onUpdate: (invoice: Invoice) => void; onConvertToEstimate: (invoice: Invoice) => void }) {
-  const [invoiceFilter, setInvoiceFilter] = useState<"all" | "due" | "sent" | "paid" | "overdue">("all");
-  const invoiceIsPaid = (invoice: Invoice) => invoiceStatusIsPaid(invoice);
-  const invoiceIsOverdue = (invoice: Invoice) => !invoiceIsPaid(invoice) && (invoice.status === "overdue" || (!!invoice.dueDate && invoice.dueDate < todayISO()));
-  const dueInvoices = invoices.filter((invoice) => !invoiceIsPaid(invoice) && !invoiceIsOverdue(invoice) && invoice.status === "due");
-  const sentInvoices = invoices.filter((invoice) => !invoiceIsPaid(invoice) && !invoiceIsOverdue(invoice) && invoice.status === "sent");
-  const paidInvoices = invoices.filter((invoice) => invoiceIsPaid(invoice));
-  const overdueInvoices = invoices.filter((invoice) => invoiceIsOverdue(invoice));
-  const visibleInvoices = invoiceFilter === "paid" ? paidInvoices : invoiceFilter === "due" ? dueInvoices : invoiceFilter === "sent" ? sentInvoices : invoiceFilter === "overdue" ? overdueInvoices : invoices;
-  const outstandingBalance = invoices.reduce((sum, invoice) => sum + Math.max(invoiceTotal(invoice) - safeNumber(invoice.paidAmount), 0), 0);
-  const dueBalance = dueInvoices.reduce((sum, invoice) => sum + Math.max(invoiceTotal(invoice) - safeNumber(invoice.paidAmount), 0), 0);
-  const overdueBalance = overdueInvoices.reduce((sum, invoice) => sum + Math.max(invoiceTotal(invoice) - safeNumber(invoice.paidAmount), 0), 0);
+function InvoicesPanel({ invoices, jobs, weekJobs, onAdd, onCreateFromWeek, onCreateFromJob, onEdit, onDelete, onUpdate, onDuplicate, onConvertToEstimate }: { invoices: Invoice[]; jobs: JobEntry[]; weekJobs: JobEntry[]; onAdd: () => void; onCreateFromWeek: () => void; onCreateFromJob: (job: JobEntry) => void; onEdit: (invoice: Invoice) => void; onDelete: (id: string) => void; onUpdate: (invoice: Invoice) => void; onDuplicate: (invoice: Invoice) => void; onConvertToEstimate: (invoice: Invoice) => void }) {
+  const [invoiceFilter, setInvoiceFilter] = useState<"all" | "draft" | "sent" | "viewed" | "partial" | "paid" | "overdue">("all");
+  const pipelineInvoices = invoices.map((invoice) => ({ ...invoice, status: invoicePipelineStatus(invoice) }));
+  const draftInvoices = pipelineInvoices.filter((invoice) => invoice.status === "draft");
+  const sentInvoices = pipelineInvoices.filter((invoice) => invoice.status === "sent");
+  const viewedInvoices = pipelineInvoices.filter((invoice) => invoice.status === "viewed");
+  const partialInvoices = pipelineInvoices.filter((invoice) => invoice.status === "partial");
+  const paidInvoices = pipelineInvoices.filter((invoice) => invoice.status === "paid");
+  const overdueInvoices = pipelineInvoices.filter((invoice) => invoice.status === "overdue");
+  const visibleInvoices = invoiceFilter === "paid" ? paidInvoices : invoiceFilter === "draft" ? draftInvoices : invoiceFilter === "sent" ? sentInvoices : invoiceFilter === "viewed" ? viewedInvoices : invoiceFilter === "partial" ? partialInvoices : invoiceFilter === "overdue" ? overdueInvoices : pipelineInvoices;
+  const outstandingBalance = pipelineInvoices.reduce((sum, invoice) => sum + invoiceBalance(invoice), 0);
+  const dueBalance = sentInvoices.concat(viewedInvoices, partialInvoices).reduce((sum, invoice) => sum + invoiceBalance(invoice), 0);
+  const overdueBalance = overdueInvoices.reduce((sum, invoice) => sum + invoiceBalance(invoice), 0);
   const paidTotal = paidInvoices.reduce((sum, invoice) => sum + invoiceTotal(invoice), 0);
 
   const filterButtons = [
-    { id: "all" as const, label: "All", count: invoices.length },
-    { id: "due" as const, label: "Due", count: dueInvoices.length },
+    { id: "all" as const, label: "All", count: pipelineInvoices.length },
+    { id: "draft" as const, label: "Draft", count: draftInvoices.length },
     { id: "sent" as const, label: "Sent", count: sentInvoices.length },
+    { id: "viewed" as const, label: "Viewed", count: viewedInvoices.length },
+    { id: "partial" as const, label: "Partial", count: partialInvoices.length },
     { id: "paid" as const, label: "Paid", count: paidInvoices.length },
     { id: "overdue" as const, label: "Overdue", count: overdueInvoices.length },
   ];
@@ -2394,7 +2472,7 @@ function InvoicesPanel({ invoices, jobs, weekJobs, onAdd, onCreateFromWeek, onCr
       </div>
 
       <div className="grid grid-cols-3 gap-2">
-        <MiniMetric label="Due" value={dueInvoices.length} />
+        <MiniMetric label="Open" value={sentInvoices.length + viewedInvoices.length + partialInvoices.length} />
         <MiniMetric label="Sent" value={sentInvoices.length} />
         <MiniMetric label="Paid" value={paidInvoices.length} />
       </div>
@@ -2405,7 +2483,7 @@ function InvoicesPanel({ invoices, jobs, weekJobs, onAdd, onCreateFromWeek, onCr
         <div className="rounded-2xl border border-green-400/25 bg-green-500/10 p-3 text-center"><p className="text-sm font-black text-green-200">{money(paidTotal)}</p><p className="text-[10px] font-black uppercase text-zinc-500">Paid Total</p></div>
       </div>
 
-      <div className="grid grid-cols-5 gap-1 rounded-[1.2rem] border border-white/10 bg-black/30 p-1">
+      <div className="grid grid-cols-4 gap-1 rounded-[1.2rem] border border-white/10 bg-black/30 p-1">
         {filterButtons.map((button) => (
           <button
             key={button.id}
@@ -2438,28 +2516,30 @@ function InvoicesPanel({ invoices, jobs, weekJobs, onAdd, onCreateFromWeek, onCr
       )}
 
       <div className="space-y-3">
-        {visibleInvoices.map((invoice) => <InvoiceCard key={invoice.id} invoice={invoice} jobs={jobs} onEdit={() => onEdit(invoice)} onDelete={() => onDelete(invoice.id)} onUpdate={onUpdate} onConvertToEstimate={() => onConvertToEstimate(invoice)} />)}
+        {visibleInvoices.map((invoice) => <InvoiceCard key={invoice.id} invoice={invoice} jobs={jobs} onEdit={() => onEdit(invoice)} onDelete={() => onDelete(invoice.id)} onUpdate={onUpdate} onDuplicate={() => onDuplicate(invoice)} onConvertToEstimate={() => onConvertToEstimate(invoice)} />)}
         {visibleInvoices.length === 0 && <div className="blackCard p-6"><EmptyText text={invoiceFilter === "paid" ? "No paid invoices yet." : invoiceFilter === "overdue" ? "No overdue invoices right now." : invoiceFilter === "sent" ? "No sent invoices yet." : invoiceFilter === "due" ? "No due invoices right now." : "No invoices yet. Create one manually or from this week’s jobs."} /></div>}
       </div>
     </section>
   );
 }
 
-function InvoiceCard({ invoice, jobs, onEdit, onDelete, onUpdate, onConvertToEstimate }: { invoice: Invoice; jobs: JobEntry[]; onEdit: () => void; onDelete: () => void; onUpdate: (invoice: Invoice) => void; onConvertToEstimate: () => void }) {
+function InvoiceCard({ invoice, jobs, onEdit, onDelete, onUpdate, onDuplicate, onConvertToEstimate }: { invoice: Invoice; jobs: JobEntry[]; onEdit: () => void; onDelete: () => void; onUpdate: (invoice: Invoice) => void; onDuplicate: () => void; onConvertToEstimate: () => void }) {
   const [preview, setPreview] = useState(false);
   const total = invoiceTotal(invoice);
   const open = Math.max(total - invoice.paidAmount, 0);
-  const isPaid = invoice.status === "paid" && total > 0 && safeNumber(invoice.paidAmount) >= total;
+  const isPaid = invoicePipelineStatus(invoice) === "paid";
   const sourcePhotos = jobs.filter((job) => invoice.sourceJobIds?.includes(job.id)).flatMap((job) => job.photos || []);
   const beforePhotos = invoice.beforePhotos || [];
   const afterPhotos = [...(invoice.afterPhotos || []), ...sourcePhotos];
   const statusClass = isPaid
     ? "bg-emerald-500 text-black shadow-[0_0_24px_rgba(34,197,94,0.35)]"
-    : invoice.status === "overdue"
+    : invoicePipelineStatus(invoice) === "overdue"
       ? "bg-red-500/20 text-red-200"
-      : invoice.status === "sent"
+      : invoicePipelineStatus(invoice) === "sent" || invoicePipelineStatus(invoice) === "viewed"
         ? "bg-blue-500/20 text-blue-200"
-        : "bg-amber-500/20 text-amber-200";
+        : invoicePipelineStatus(invoice) === "partial"
+          ? "bg-orange-500/20 text-orange-200"
+          : "bg-amber-500/20 text-amber-200";
 
   function confirmMarkPaid() {
     if (isPaid) {
@@ -2484,7 +2564,7 @@ function InvoiceCard({ invoice, jobs, onEdit, onDelete, onUpdate, onConvertToEst
         </div>
         <div className="shrink-0 text-right">
           <p className="font-black text-green-400">{money(total)}</p>
-          <span className={`rounded-full px-3 py-1 text-[10px] font-black uppercase ${statusClass}`}>{isPaid ? "paid" : invoice.status}</span>
+          <span className={`rounded-full px-3 py-1 text-[10px] font-black uppercase ${statusClass}`}>{isPaid ? "paid" : invoiceStatusLabel(invoicePipelineStatus(invoice))}</span>
         </div>
       </div>
 
@@ -2497,6 +2577,7 @@ function InvoiceCard({ invoice, jobs, onEdit, onDelete, onUpdate, onConvertToEst
       <div className="mt-3 grid grid-cols-2 gap-2">
         <button className="darkButton" onClick={onEdit}><Pencil size={16} /> Edit</button>
         <button className="darkButton" onClick={() => setPreview(!preview)}><Eye size={16} /> {preview ? "Hide Preview" : "Preview PDF"}</button>
+        <button className="darkButton" onClick={onDuplicate}><ClipboardList size={16} /> Duplicate</button>
         <button className="darkButton" onClick={onConvertToEstimate}><FileText size={16} /> Convert To Estimate</button>
         <button className={`${isPaid ? "goldButton shadow-[0_0_28px_rgba(34,197,94,0.45)]" : "darkButton"}`} onClick={confirmMarkPaid}><Check size={16} /> {isPaid ? "Paid ✓" : "Mark Paid"}</button>
         <button className="darkButton" onClick={() => { setPreview(true); printInvoiceDocument(invoice, beforePhotos, afterPhotos); }}><Printer size={16} /> Open PDF</button>
@@ -2513,7 +2594,7 @@ function InvoiceCard({ invoice, jobs, onEdit, onDelete, onUpdate, onConvertToEst
 }
 
 function InvoicePreview({ invoice, total, open, beforePhotos, afterPhotos, onMarkPaid }: { invoice: Invoice; total: number; open: number; beforePhotos: string[]; afterPhotos: string[]; onMarkPaid: () => void }) {
-  const isPaid = invoice.status === "paid" && total > 0 && safeNumber(invoice.paidAmount) >= total;
+  const isPaid = invoicePipelineStatus(invoice) === "paid";
   return (
     <div className="printArea mt-4 overflow-hidden rounded-2xl border border-white/10 bg-white text-black shadow-2xl">
       <div className="bg-zinc-950 p-4 text-white">
@@ -2612,8 +2693,35 @@ function PhotoPrintGrid({ title, photos }: { title: string; photos: string[] }) 
   return <div className="mt-3 break-inside-avoid"><p className="mb-2 text-sm font-black uppercase tracking-wide text-zinc-700">{title}</p><div className="grid grid-cols-2 gap-2">{photos.map((photo, index) => <figure key={`${title}-${index}`} className="overflow-hidden rounded-xl border border-zinc-200 bg-zinc-50"><img src={photo} alt={`${title} ${index + 1}`} className="h-36 w-full object-cover" /><figcaption className="px-2 py-1 text-[10px] font-bold text-zinc-500">{title} #{index + 1}</figcaption></figure>)}</div></div>;
 }
 
-function Reports({ totals, employeeTotals, jobs, employeesById, onCloseWeek, onExport, onCreateInvoice }: { totals: { earned: number; paid: number; borrowed?: number; owed: number }; employeeTotals: { employee: Employee; earned: number; paid: number; borrowed: number; owed: number }[]; jobs: JobEntry[]; employeesById: Map<string, Employee>; onCloseWeek: () => void; onExport: () => void; onCreateInvoice: () => void }) {
-  return <section className="space-y-4"><SectionTop title="Reports" subtitle="Weekly summary, payroll closeout, invoice creation, and backup export."><button className="goldButton" onClick={onExport}><Download size={18} /> Export</button></SectionTop><div className="grid grid-cols-2 gap-3"><StatCard label="Earned" value={money(totals.earned)} description="Total Earned" icon={<CircleDollarSign size={20} />} variant="earned" /><StatCard label="Paid" value={money(totals.paid)} description="Total Paid" icon={<ArrowDown size={20} />} variant="paid" /><StatCard label="Borrowed" value={money(totals.borrowed || 0)} description="Total Borrowed" icon={<CreditCard size={20} />} variant="borrowed" /><StatCard label="Owed" value={money(totals.owed)} description="Still Owed" icon={<Minus size={20} />} variant="owed" /></div><div className="blackCard p-4"><div className="flex flex-col gap-3"><div><h3 className="font-black">Weekly Closeout</h3><p className="text-sm text-zinc-500">Mark every job in the selected week as paid, or create an invoice from the selected week.</p></div><div className="grid grid-cols-2 gap-2"><button className="goldButton" onClick={onCloseWeek}><ShieldCheck size={18} /> Close Paid</button><button className="darkButton" onClick={onCreateInvoice}><ReceiptText size={18} /> Invoice Week</button></div></div></div><div className="blackCard overflow-hidden p-4"><h3 className="font-black">Employee Payroll Breakdown</h3><div className="mt-3 overflow-x-auto"><table className="w-full min-w-[620px] text-left text-sm"><thead className="text-xs uppercase text-zinc-500"><tr><th className="py-2">Employee</th><th>Earned</th><th>Paid</th><th>Borrowed</th><th>Owed</th></tr></thead><tbody>{employeeTotals.map((row) => <tr key={row.employee.id} className="border-t border-zinc-800"><td className="py-3 font-bold">{row.employee.name}</td><td>{money(row.earned)}</td><td>{money(row.paid)}</td><td>{money(row.borrowed || 0)}</td><td className="font-black text-green-400">{money(row.owed)}</td></tr>)}</tbody></table></div></div><div className="blackCard p-4"><h3 className="font-black">Job Report</h3><div className="mt-3 space-y-2">{jobs.map((job) => <div key={job.id} className="rounded-2xl border border-zinc-800 bg-black/30 p-3 text-sm"><div className="flex justify-between gap-3"><b>{employeesById.get(job.employeeId)?.name || "Unknown"}</b><b className="text-green-400">{money(job.pay)}</b></div><p className="text-zinc-500">{formatJobDate(job.date)} • {propertyWithUnit(job)}</p></div>)}{jobs.length === 0 && <EmptyText text="No job report yet." />}</div></div></section>;
+function OfficeDashboardCards({ totals, workOrders, onGoWorkOrders, onGoInvoices, onGoEstimates }: { totals: any; workOrders: JobEntry[]; onGoWorkOrders: () => void; onGoInvoices: () => void; onGoEstimates: () => void }) {
+  const openWorkOrders = workOrders.filter((job) => (job.workStatus || "open") !== "completed").length;
+  return <div className="grid grid-cols-2 gap-3"><button onClick={onGoWorkOrders} className="blackCard p-4 text-left"><p className="text-[10px] font-black uppercase text-zinc-500">Open Work Orders</p><p className="mt-1 text-2xl font-black text-white">{openWorkOrders}</p></button><button onClick={onGoInvoices} className="blackCard p-4 text-left"><p className="text-[10px] font-black uppercase text-zinc-500">Outstanding Invoices</p><p className="mt-1 text-2xl font-black text-red-300">{totals.outstandingInvoices}</p></button><button onClick={onGoEstimates} className="blackCard p-4 text-left"><p className="text-[10px] font-black uppercase text-zinc-500">Draft Estimates</p><p className="mt-1 text-2xl font-black text-amber-300">{totals.draftEstimates}</p></button><button onClick={onGoInvoices} className="blackCard p-4 text-left"><p className="text-[10px] font-black uppercase text-zinc-500">Ready To Invoice</p><p className="mt-1 text-2xl font-black text-green-300">{totals.readyToInvoice}</p></button><div className="blackCard p-4"><p className="text-[10px] font-black uppercase text-zinc-500">Revenue This Week</p><p className="mt-1 text-xl font-black text-green-400">{money(totals.revenueThisWeek || 0)}</p></div><div className="blackCard p-4"><p className="text-[10px] font-black uppercase text-zinc-500">Revenue This Month</p><p className="mt-1 text-xl font-black text-green-400">{money(totals.revenueThisMonth || 0)}</p></div><div className="blackCard p-4"><p className="text-[10px] font-black uppercase text-zinc-500">Revenue This Year</p><p className="mt-1 text-xl font-black text-green-400">{money(totals.revenueThisYear || 0)}</p></div><div className="blackCard p-4"><p className="text-[10px] font-black uppercase text-zinc-500">Open Balance</p><p className="mt-1 text-xl font-black text-red-300">{money(totals.invoiceOpen || 0)}</p></div></div>;
+}
+
+function PropertyHistoryMini({ property, jobs, estimates, invoices }: { property: string; jobs: JobEntry[]; estimates: Estimate[]; invoices: Invoice[] }) {
+  const propertyJobs = jobs.filter((job) => normalizePropertyName(job.property).toLowerCase() === normalizePropertyName(property).toLowerCase());
+  const propertyEstimates = estimates.filter((estimate) => normalizePropertyName(estimate.property).toLowerCase() === normalizePropertyName(property).toLowerCase());
+  const propertyInvoices = invoices.filter((invoice) => normalizePropertyName(invoice.property).toLowerCase() === normalizePropertyName(property).toLowerCase());
+  const lifetimeRevenue = propertyInvoices.filter(isPaidInvoice).reduce((sum, invoice) => sum + invoiceTotal(invoice), 0);
+  return <div className="mt-3 grid grid-cols-4 gap-2"><MiniMetric label="Work Orders" value={propertyJobs.length} /><MiniMetric label="Estimates" value={propertyEstimates.length} /><MiniMetric label="Invoices" value={propertyInvoices.length} /><div className="rounded-2xl border border-green-400/20 bg-green-500/10 p-2 text-center"><p className="text-xs font-black text-green-200">{money(lifetimeRevenue)}</p><p className="text-[9px] font-black uppercase text-zinc-500">Revenue</p></div></div>;
+}
+
+function PDFCenter({ invoices, estimates, jobs, onOpenInvoice }: { invoices: Invoice[]; estimates: Estimate[]; jobs: JobEntry[]; onOpenInvoice: (invoice: Invoice) => void }) {
+  const docs = [
+    ...invoices.map((invoice) => ({ id: invoice.id, type: "Invoice", number: invoice.invoiceNumber, property: invoice.property, date: invoice.invoiceDate, amount: invoiceTotal(invoice), open: () => onOpenInvoice(invoice) })),
+    ...estimates.map((estimate) => ({ id: estimate.id, type: "Estimate", number: estimate.estimateNumber, property: estimate.property, date: estimate.estimateDate, amount: estimateTotal(estimate), open: () => alert("Estimate PDF preview is saved in the Estimate record. Open the estimate to review/edit before sending.") })),
+    ...jobs.map((job) => ({ id: job.id, type: "Work Order", number: job.id.slice(0, 8), property: propertyWithUnit(job), date: job.date, amount: job.pay, open: () => alert("Open this Work Order from the Work Orders tab to print/share its PDF with photos.") })),
+  ].sort((a, b) => b.date.localeCompare(a.date));
+  return <section className="space-y-4"><SectionTop title="PDF Center" subtitle="One place for invoices, estimates, and work order documents. Newest documents show first." /><div className="grid gap-3">{docs.map((doc) => <div key={`${doc.type}-${doc.id}`} className="blackCard p-4"><div className="flex items-start justify-between gap-3"><div><p className="text-[10px] font-black uppercase tracking-wide text-green-400">{doc.type}</p><h3 className="mt-1 font-black text-white">{doc.number}</h3><p className="mt-1 text-xs font-semibold text-zinc-500">{doc.date} • {doc.property}</p></div><p className="font-black text-green-300">{money(doc.amount)}</p></div><div className="mt-3 grid grid-cols-2 gap-2"><button className="goldButton" onClick={doc.open}><Eye size={16} /> View / Print</button><button className="darkButton" onClick={doc.open}><FileText size={16} /> Download PDF</button></div></div>)}{docs.length === 0 && <div className="blackCard p-6"><EmptyText text="No PDF documents yet. Create work orders, estimates, or invoices first." /></div>}</div></section>;
+}
+
+function Reports({ totals, employeeTotals, jobs, employeesById, invoices, estimates, onCloseWeek, onExport, onCreateInvoice }: { totals: any; employeeTotals: { employee: Employee; earned: number; paid: number; borrowed: number; owed: number }[]; jobs: JobEntry[]; employeesById: Map<string, Employee>; invoices: Invoice[]; estimates: Estimate[]; onCloseWeek: () => void; onExport: () => void; onCreateInvoice: () => void }) {
+  const paidInvoices = invoices.filter(isPaidInvoice);
+  const outstandingInvoices = invoices.filter((invoice) => !isPaidInvoice(invoice));
+  const approvedOrConverted = estimates.filter((estimate) => estimate.status === "approved" || estimate.status === "converted").length;
+  const conversionRate = estimates.length ? Math.round((approvedOrConverted / estimates.length) * 100) : 0;
+  const revenueByProperty = Object.entries(paidInvoices.reduce<Record<string, number>>((map, invoice) => { const key = invoice.property || "Unknown"; map[key] = (map[key] || 0) + invoiceTotal(invoice); return map; }, {})).sort((a, b) => b[1] - a[1]).slice(0, 8);
+  return <section className="space-y-4"><SectionTop title="Reports" subtitle="Revenue, payroll, outstanding invoices, paid invoices, and estimate conversion rate."><button className="goldButton" onClick={onExport}><Download size={18} /> Export</button></SectionTop><div className="grid grid-cols-2 gap-3"><StatCard label="Revenue Week" value={money(totals.revenueThisWeek || 0)} description="Paid invoices" icon={<CircleDollarSign size={20} />} variant="earned" /><StatCard label="Revenue Month" value={money(totals.revenueThisMonth || 0)} description="Paid invoices" icon={<CircleDollarSign size={20} />} variant="paid" /><StatCard label="Outstanding" value={money(totals.invoiceOpen || 0)} description="Open invoice balance" icon={<AlertTriangle size={20} />} variant="owed" /><StatCard label="Conversion" value={`${conversionRate}%`} description="Approved/converted estimates" icon={<ClipboardCheck size={20} />} variant="borrowed" /></div><div className="blackCard p-4"><div className="flex flex-col gap-3"><div><h3 className="font-black">Weekly Closeout</h3><p className="text-sm text-zinc-500">Mark every job in the selected week as paid, or create an invoice from the selected week.</p></div><div className="grid grid-cols-2 gap-2"><button className="goldButton" onClick={onCloseWeek}><ShieldCheck size={18} /> Close Paid</button><button className="darkButton" onClick={onCreateInvoice}><ReceiptText size={18} /> Invoice Week</button></div></div></div><div className="blackCard p-4"><h3 className="font-black">Revenue by Property</h3><div className="mt-3 space-y-2">{revenueByProperty.map(([property, amount]) => <div key={property} className="flex items-center justify-between rounded-2xl border border-zinc-800 bg-black/30 p-3 text-sm"><span className="font-bold">{property}</span><b className="text-green-400">{money(amount)}</b></div>)}{revenueByProperty.length === 0 && <EmptyText text="No paid invoice revenue yet." />}</div></div><div className="blackCard p-4"><h3 className="font-black">Outstanding Invoices</h3><div className="mt-3 space-y-2">{outstandingInvoices.map((invoice) => <div key={invoice.id} className="flex items-center justify-between rounded-2xl border border-zinc-800 bg-black/30 p-3 text-sm"><span><b>{invoice.invoiceNumber}</b><br /><span className="text-xs text-zinc-500">{invoice.property}</span></span><b className="text-red-300">{money(invoiceBalance(invoice))}</b></div>)}{outstandingInvoices.length === 0 && <EmptyText text="No outstanding invoices." />}</div></div><div className="blackCard overflow-hidden p-4"><h3 className="font-black">Employee Payroll Breakdown</h3><div className="mt-3 overflow-x-auto"><table className="w-full min-w-[620px] text-left text-sm"><thead className="text-xs uppercase text-zinc-500"><tr><th className="py-2">Employee</th><th>Earned</th><th>Paid</th><th>Borrowed</th><th>Owed</th></tr></thead><tbody>{employeeTotals.map((row) => <tr key={row.employee.id} className="border-t border-zinc-800"><td className="py-3 font-bold">{row.employee.name}</td><td>{money(row.earned)}</td><td>{money(row.paid)}</td><td>{money(row.borrowed || 0)}</td><td className="font-black text-green-400">{money(row.owed)}</td></tr>)}</tbody></table></div></div><div className="blackCard p-4"><h3 className="font-black">Job Report</h3><div className="mt-3 space-y-2">{jobs.map((job) => <div key={job.id} className="rounded-2xl border border-zinc-800 bg-black/30 p-3 text-sm"><div className="flex justify-between gap-3"><b>{employeesById.get(job.employeeId)?.name || "Unknown"}</b><b className="text-green-400">{money(job.pay)}</b></div><p className="text-zinc-500">{formatJobDate(job.date)} • {propertyWithUnit(job)}</p></div>)}{jobs.length === 0 && <EmptyText text="No job report yet." />}</div></div></section>;
 }
 
 function MorePanel({ onExport, onImport, onReset }: { onExport: () => void; onImport: () => void; onReset: () => void }) { return <section className="space-y-4"><SectionTop title="Control Center" subtitle="Backup, restore, and app controls." /><div className="grid gap-3"><button onClick={onExport} className="blackCard p-5 text-left"><Download className="text-green-400" /><p className="mt-3 font-black">Export Backup</p><p className="text-sm text-zinc-500">Save all data as JSON.</p></button><button onClick={onImport} className="blackCard p-5 text-left"><Upload className="text-green-400" /><p className="mt-3 font-black">Import Backup</p><p className="text-sm text-zinc-500">Restore from saved JSON.</p></button><button onClick={onReset} className="blackCard p-5 text-left"><RotateCcw className="text-red-300" /><p className="mt-3 font-black">Reset App</p><p className="text-sm text-zinc-500">Start fresh only after backup.</p></button></div></section>; }
@@ -2708,9 +2816,9 @@ function JobModal({ employees, properties, jobTypeOptions, workItems = defaultWo
 }
 
 function InvoiceModal({ invoices, properties, getProfileForProperty, initial, onClose, onSave }: { invoices: Invoice[]; properties: string[]; getProfileForProperty: (property: string) => PropertyContactProfile; initial: Invoice | null; onClose: () => void; onSave: (invoice: Invoice) => void }) {
-  const [invoice, setInvoice] = useState<Invoice>(initial || { id: uid(), invoiceNumber: nextInvoiceNumber(invoices), clientName: getProfileForProperty(properties[0] || "").billingName || "", clientEmail: getProfileForProperty(properties[0] || "").email || "", property: properties[0] || "", propertyAddress: getProfileForProperty(properties[0] || "").address || "", unitNumber: "", invoiceDate: todayISO(), dueDate: addDaysISO(todayISO(), 14), status: "due", lineItems: [{ id: uid(), description: "Labor and materials", qty: 1, rate: 0 }], notes: "Thank you for your business. God bless.", paidAmount: 0, beforePhotos: [], afterPhotos: [] });
+  const [invoice, setInvoice] = useState<Invoice>(initial || { id: uid(), invoiceNumber: nextInvoiceNumber(invoices), clientName: getProfileForProperty(properties[0] || "").billingName || "", clientEmail: getProfileForProperty(properties[0] || "").email || "", property: properties[0] || "", propertyAddress: getProfileForProperty(properties[0] || "").address || "", unitNumber: "", invoiceDate: todayISO(), dueDate: addDaysISO(todayISO(), 14), status: "draft", lineItems: [{ id: uid(), description: "Labor and materials", qty: 1, rate: 0 }], notes: "Thank you for your business. God bless.", paidAmount: 0, beforePhotos: [], afterPhotos: [] });
   const total = invoiceTotal(invoice);
-  return <Modal title={initial ? "Edit Invoice" : "New Invoice"} onClose={onClose}><div className="space-y-3"><div className="grid grid-cols-2 gap-3"><Operations label="Invoice #"><input className="inputElite" value={invoice.invoiceNumber} onChange={(e) => setInvoice({ ...invoice, invoiceNumber: e.target.value })} /></Operations><Operations label="Status"><select className="inputElite" value={invoice.status} onChange={(e) => setInvoice({ ...invoice, status: e.target.value as Invoice["status"] })}><option value="due">Due</option><option value="sent">Sent</option><option value="paid">Paid</option><option value="overdue">Overdue</option></select></Operations><Operations label="Client"><input className="inputElite" value={invoice.clientName} onChange={(e) => setInvoice({ ...invoice, clientName: e.target.value })} placeholder="Example: Wingate Companies" /></Operations><Operations label="Client Email"><input className="inputElite" type="email" value={invoice.clientEmail || ""} onChange={(e) => setInvoice({ ...invoice, clientEmail: e.target.value })} placeholder="manager@email.com" /></Operations><Operations label="Property"><select className="inputElite" value={invoice.property} onChange={(e) => { const selected = e.target.value; const profile = getProfileForProperty(selected); setInvoice({ ...invoice, property: selected, propertyAddress: profile.address || "", clientName: invoice.clientName || profile.billingName || selected, clientEmail: invoice.clientEmail || profile.email || "" }); }}>{properties.map((property) => <option key={property} value={property}>{property}</option>)}</select></Operations><Operations label="Property Address"><input className="inputElite" value={invoice.propertyAddress || ""} onChange={(e) => setInvoice({ ...invoice, propertyAddress: e.target.value })} placeholder="Property address shown under Bill To" /></Operations><Operations label="Unit #"><input className="inputElite" value={invoice.unitNumber} onChange={(e) => setInvoice({ ...invoice, unitNumber: e.target.value })} /></Operations><Operations label="Invoice Date"><input className="inputElite" type="date" value={invoice.invoiceDate} onChange={(e) => setInvoice({ ...invoice, invoiceDate: e.target.value })} /></Operations><Operations label="Due Date"><input className="inputElite" type="date" value={invoice.dueDate} onChange={(e) => setInvoice({ ...invoice, dueDate: e.target.value })} /></Operations><Operations label="Paid Amount"><MoneyInput value={invoice.paidAmount} onValueChange={(value) => { const cleanValue = safeNumber(value); if (cleanValue >= total && total > 0) { if (!confirmAction("Confirm: mark this invoice paid?")) return; setInvoice({ ...invoice, paidAmount: cleanValue, status: "paid" }); return; } setInvoice({ ...invoice, paidAmount: cleanValue, status: invoice.status === "paid" ? "sent" : invoice.status }); }} /></Operations></div><Operations label="Line Items"><div className="space-y-3">{invoice.lineItems.map((line) => <div key={line.id} className="rounded-2xl border border-zinc-800 bg-black/25 p-3"><Operations label="Description"><input className="inputElite" value={line.description} onChange={(e) => setInvoice({ ...invoice, lineItems: invoice.lineItems.map((item) => item.id === line.id ? { ...item, description: e.target.value } : item) })} /></Operations><div className="mt-2 grid grid-cols-[1fr_1fr_auto] gap-2"><Operations label="Qty"><input className="inputElite" type="number" value={line.qty} onChange={(e) => setInvoice({ ...invoice, lineItems: invoice.lineItems.map((item) => item.id === line.id ? { ...item, qty: safeNumber(e.target.value) } : item) })} /></Operations><Operations label="Amount"><MoneyInput value={line.rate} onValueChange={(value) => setInvoice({ ...invoice, lineItems: invoice.lineItems.map((item) => item.id === line.id ? { ...item, rate: value } : item) })} /></Operations><button className="iconDanger self-end" onClick={() => { if (!confirmAction("Remove this line item from the invoice?")) return; setInvoice({ ...invoice, lineItems: invoice.lineItems.filter((item) => item.id !== line.id) }); }}><Trash2 size={16} /></button></div></div>)}<button className="darkButton w-full" onClick={() => setInvoice({ ...invoice, lineItems: [...invoice.lineItems, { id: uid(), description: "New line item", qty: 1, rate: 0 }] })}><Plus size={16} /> Add Line Item</button></div></Operations><div className="rounded-2xl border border-green-400/20 bg-green-500/10 p-3 text-right"><p className="text-xs font-black uppercase text-green-400">Invoice Total</p><p className="text-2xl font-black">{money(total)}</p><p className="mt-1 text-xs font-semibold text-zinc-400">This is the customer/company charge shown on the PDF invoice.</p></div><div className="rounded-2xl border border-blue-400/20 bg-blue-500/10 p-3 text-xs font-semibold text-blue-100"><b>Invoice Center:</b> This screen is for customer/company invoices only. Add the charge amount, photos, and notes, then open the PDF before emailing, texting, WhatsApping, printing, or saving.</div><Operations label="Before Photos"><InvoicePhotoPicker photos={invoice.beforePhotos || []} label="Add Before Photos" onChange={(photos) => setInvoice({ ...invoice, beforePhotos: photos })} /></Operations><Operations label="After / Completed Job Photos"><InvoicePhotoPicker photos={invoice.afterPhotos || []} label="Add After Photos" onChange={(photos) => setInvoice({ ...invoice, afterPhotos: photos })} /></Operations><Operations label="Notes / Terms"><textarea className="inputElite min-h-24" value={invoice.notes} onChange={(e) => setInvoice({ ...invoice, notes: e.target.value })} /></Operations><div className="grid grid-cols-2 gap-2"><button className="goldButton" onClick={() => { const cleanTotal = invoiceTotal(invoice); const cleanPaid = safeNumber(invoice.paidAmount); const cleanStatus = invoice.status === "paid" && !(cleanTotal > 0 && cleanPaid >= cleanTotal) ? "sent" : invoice.status; onSave({ ...invoice, paidAmount: cleanPaid, status: cleanStatus }); }}><Check size={18} /> Save Invoice</button><button className="darkButton" onClick={() => { const cleanTotal = invoiceTotal(invoice); const cleanPaid = safeNumber(invoice.paidAmount); const cleanInvoice = { ...invoice, status: invoice.status === "paid" && !(cleanTotal > 0 && cleanPaid >= cleanTotal) ? "sent" as Invoice["status"] : invoice.status, paidAmount: cleanPaid }; setInvoice(cleanInvoice); printInvoiceDocument(cleanInvoice, cleanInvoice.beforePhotos || [], cleanInvoice.afterPhotos || []); }}><Eye size={18} /> Preview PDF</button><button className="darkButton" onClick={() => printInvoiceDocument(invoice, invoice.beforePhotos || [], invoice.afterPhotos || [])}><Printer size={18} /> Print / Save PDF</button><button className="darkButton" onClick={() => openInvoiceMessage(invoice)}><FileText size={18} /> Text Link</button><button className="darkButton" onClick={() => { openInvoiceMessage(invoice); setTimeout(() => { window.location.href = `https://wa.me/?text=${encodeURIComponent(`View Invoice PDF: Invoice ${invoice.invoiceNumber} is ready from 1 Stop Turnover Specialist LLC.`)}`; }, 900); }}><FileText size={18} /> WhatsApp PDF</button><button className="goldButton" onClick={() => openInvoiceEmail({ ...invoice, status: invoice.status === "paid" && !(invoiceTotal(invoice) > 0 && safeNumber(invoice.paidAmount) >= invoiceTotal(invoice)) ? "sent" : invoice.status })}><Mail size={18} /> Email PDF</button></div></div></Modal>;
+  return <Modal title={initial ? "Edit Invoice" : "New Invoice"} onClose={onClose}><div className="space-y-3"><div className="grid grid-cols-2 gap-3"><Operations label="Invoice #"><input className="inputElite" value={invoice.invoiceNumber} onChange={(e) => setInvoice({ ...invoice, invoiceNumber: e.target.value })} /></Operations><Operations label="Status"><select className="inputElite" value={invoice.status} onChange={(e) => setInvoice({ ...invoice, status: e.target.value as Invoice["status"] })}><option value="draft">Draft</option><option value="due">Due</option><option value="sent">Sent</option><option value="viewed">Viewed</option><option value="partial">Partial Paid</option><option value="paid">Paid</option><option value="overdue">Overdue</option></select></Operations><Operations label="Client"><input className="inputElite" value={invoice.clientName} onChange={(e) => setInvoice({ ...invoice, clientName: e.target.value })} placeholder="Example: Wingate Companies" /></Operations><Operations label="Client Email"><input className="inputElite" type="email" value={invoice.clientEmail || ""} onChange={(e) => setInvoice({ ...invoice, clientEmail: e.target.value })} placeholder="manager@email.com" /></Operations><Operations label="Property"><select className="inputElite" value={invoice.property} onChange={(e) => { const selected = e.target.value; const profile = getProfileForProperty(selected); setInvoice({ ...invoice, property: selected, propertyAddress: profile.address || "", clientName: invoice.clientName || profile.billingName || selected, clientEmail: invoice.clientEmail || profile.email || "" }); }}>{properties.map((property) => <option key={property} value={property}>{property}</option>)}</select></Operations><Operations label="Property Address"><input className="inputElite" value={invoice.propertyAddress || ""} onChange={(e) => setInvoice({ ...invoice, propertyAddress: e.target.value })} placeholder="Property address shown under Bill To" /></Operations><Operations label="Unit #"><input className="inputElite" value={invoice.unitNumber} onChange={(e) => setInvoice({ ...invoice, unitNumber: e.target.value })} /></Operations><Operations label="Invoice Date"><input className="inputElite" type="date" value={invoice.invoiceDate} onChange={(e) => setInvoice({ ...invoice, invoiceDate: e.target.value })} /></Operations><Operations label="Due Date"><input className="inputElite" type="date" value={invoice.dueDate} onChange={(e) => setInvoice({ ...invoice, dueDate: e.target.value })} /></Operations><Operations label="Paid Amount"><MoneyInput value={invoice.paidAmount} onValueChange={(value) => { const cleanValue = safeNumber(value); if (cleanValue >= total && total > 0) { if (!confirmAction("Confirm: mark this invoice paid?")) return; setInvoice({ ...invoice, paidAmount: cleanValue, status: "paid" }); return; } setInvoice({ ...invoice, paidAmount: cleanValue, status: cleanValue > 0 ? "partial" : (invoice.status === "paid" ? "sent" : invoice.status) }); }} /></Operations></div><Operations label="Line Items"><div className="space-y-3">{invoice.lineItems.map((line) => <div key={line.id} className="rounded-2xl border border-zinc-800 bg-black/25 p-3"><Operations label="Description"><input className="inputElite" value={line.description} onChange={(e) => setInvoice({ ...invoice, lineItems: invoice.lineItems.map((item) => item.id === line.id ? { ...item, description: e.target.value } : item) })} /></Operations><div className="mt-2 grid grid-cols-[1fr_1fr_auto] gap-2"><Operations label="Qty"><input className="inputElite" type="number" value={line.qty} onChange={(e) => setInvoice({ ...invoice, lineItems: invoice.lineItems.map((item) => item.id === line.id ? { ...item, qty: safeNumber(e.target.value) } : item) })} /></Operations><Operations label="Amount"><MoneyInput value={line.rate} onValueChange={(value) => setInvoice({ ...invoice, lineItems: invoice.lineItems.map((item) => item.id === line.id ? { ...item, rate: value } : item) })} /></Operations><button className="iconDanger self-end" onClick={() => { if (!confirmAction("Remove this line item from the invoice?")) return; setInvoice({ ...invoice, lineItems: invoice.lineItems.filter((item) => item.id !== line.id) }); }}><Trash2 size={16} /></button></div></div>)}<button className="darkButton w-full" onClick={() => setInvoice({ ...invoice, lineItems: [...invoice.lineItems, { id: uid(), description: "New line item", qty: 1, rate: 0 }] })}><Plus size={16} /> Add Line Item</button></div></Operations><div className="rounded-2xl border border-green-400/20 bg-green-500/10 p-3 text-right"><p className="text-xs font-black uppercase text-green-400">Invoice Total</p><p className="text-2xl font-black">{money(total)}</p><p className="mt-1 text-xs font-semibold text-zinc-400">This is the customer/company charge shown on the PDF invoice.</p></div><div className="rounded-2xl border border-blue-400/20 bg-blue-500/10 p-3 text-xs font-semibold text-blue-100"><b>Invoice Center:</b> This screen is for customer/company invoices only. Add the charge amount, photos, and notes, then open the PDF before emailing, texting, WhatsApping, printing, or saving.</div><Operations label="Before Photos"><InvoicePhotoPicker photos={invoice.beforePhotos || []} label="Add Before Photos" onChange={(photos) => setInvoice({ ...invoice, beforePhotos: photos })} /></Operations><Operations label="After / Completed Job Photos"><InvoicePhotoPicker photos={invoice.afterPhotos || []} label="Add After Photos" onChange={(photos) => setInvoice({ ...invoice, afterPhotos: photos })} /></Operations><Operations label="Notes / Terms"><textarea className="inputElite min-h-24" value={invoice.notes} onChange={(e) => setInvoice({ ...invoice, notes: e.target.value })} /></Operations><div className="grid grid-cols-2 gap-2"><button className="goldButton" onClick={() => { const cleanTotal = invoiceTotal(invoice); const cleanPaid = safeNumber(invoice.paidAmount); const cleanStatus = invoice.status === "paid" && !(cleanTotal > 0 && cleanPaid >= cleanTotal) ? "sent" : invoice.status; onSave({ ...invoice, paidAmount: cleanPaid, status: cleanStatus }); }}><Check size={18} /> Save Invoice</button><button className="darkButton" onClick={() => { const cleanTotal = invoiceTotal(invoice); const cleanPaid = safeNumber(invoice.paidAmount); const cleanInvoice = { ...invoice, status: invoice.status === "paid" && !(cleanTotal > 0 && cleanPaid >= cleanTotal) ? "sent" as Invoice["status"] : invoice.status, paidAmount: cleanPaid }; setInvoice(cleanInvoice); printInvoiceDocument(cleanInvoice, cleanInvoice.beforePhotos || [], cleanInvoice.afterPhotos || []); }}><Eye size={18} /> Preview PDF</button><button className="darkButton" onClick={() => printInvoiceDocument(invoice, invoice.beforePhotos || [], invoice.afterPhotos || [])}><Printer size={18} /> Print / Save PDF</button><button className="darkButton" onClick={() => openInvoiceMessage(invoice)}><FileText size={18} /> Text Link</button><button className="darkButton" onClick={() => { openInvoiceMessage(invoice); setTimeout(() => { window.location.href = `https://wa.me/?text=${encodeURIComponent(`View Invoice PDF: Invoice ${invoice.invoiceNumber} is ready from 1 Stop Turnover Specialist LLC.`)}`; }, 900); }}><FileText size={18} /> WhatsApp PDF</button><button className="goldButton" onClick={() => openInvoiceEmail({ ...invoice, status: invoice.status === "paid" && !(invoiceTotal(invoice) > 0 && safeNumber(invoice.paidAmount) >= invoiceTotal(invoice)) ? "sent" : invoice.status })}><Mail size={18} /> Email PDF</button></div></div></Modal>;
 }
 
 function InvoicePhotoPicker({ photos, label, onChange }: { photos: string[]; label: string; onChange: (photos: string[]) => void }) {
@@ -2740,11 +2848,11 @@ function BottomNav({ activeTab, setActiveTab }: { activeTab: ActiveTab; setActiv
     { tab: "field", label: "Work Orders", icon: <ClipboardList size={20} /> },
     { tab: "office", label: "Office", icon: <BriefcaseBusiness size={20} /> },
   ];
-  return <nav className="fixed bottom-0 left-0 right-0 z-40 border-t border-white/10 bg-[#02070a]/95 px-2 pb-3 pt-2 backdrop-blur-xl"><div className="mx-auto grid max-w-[540px] grid-cols-3 gap-1">{tabs.map((item) => { const active = activeTab === item.tab || (item.tab === "field" && (activeTab === "ops" || activeTab === "jobs")) || (item.tab === "office" && (activeTab === "invoices" || activeTab === "estimates" || activeTab === "employees" || activeTab === "properties" || activeTab === "workItems" || activeTab === "reports" || activeTab === "more")); return <button key={item.tab} onClick={() => setActiveTab(item.tab)} className={`flex flex-col items-center justify-center gap-1 rounded-2xl py-2 text-[11px] font-black transition active:scale-95 ${active ? "bg-green-500 text-black" : "text-zinc-500"}`}>{item.icon}<span>{item.label}</span></button>; })}</div></nav>;
+  return <nav className="fixed bottom-0 left-0 right-0 z-40 border-t border-white/10 bg-[#02070a]/95 px-2 pb-3 pt-2 backdrop-blur-xl"><div className="mx-auto grid max-w-[540px] grid-cols-3 gap-1">{tabs.map((item) => { const active = activeTab === item.tab || (item.tab === "field" && (activeTab === "ops" || activeTab === "jobs")) || (item.tab === "office" && (activeTab === "invoices" || activeTab === "estimates" || activeTab === "employees" || activeTab === "properties" || activeTab === "workItems" || activeTab === "reports" || activeTab === "pdfCenter" || activeTab === "more")); return <button key={item.tab} onClick={() => setActiveTab(item.tab)} className={`flex flex-col items-center justify-center gap-1 rounded-2xl py-2 text-[11px] font-black transition active:scale-95 ${active ? "bg-green-500 text-black" : "text-zinc-500"}`}>{item.icon}<span>{item.label}</span></button>; })}</div></nav>;
 }
 
 
-function EstimatesPanel({ estimates, onAdd, onEdit, onDelete, onUpdate, onConvertToInvoice }: { estimates: Estimate[]; onAdd: () => void; onEdit: (estimate: Estimate) => void; onDelete: (id: string) => void; onUpdate: (estimate: Estimate) => void; onConvertToInvoice: (estimate: Estimate) => void; }) {
+function EstimatesPanel({ estimates, onAdd, onEdit, onDelete, onUpdate, onDuplicate, onConvertToInvoice }: { estimates: Estimate[]; onAdd: () => void; onEdit: (estimate: Estimate) => void; onDelete: (id: string) => void; onUpdate: (estimate: Estimate) => void; onDuplicate: (estimate: Estimate) => void; onConvertToInvoice: (estimate: Estimate) => void; }) {
   return (
     <section className="space-y-3">
       {estimates.length === 0 ? (
@@ -2769,7 +2877,7 @@ function EstimatesPanel({ estimates, onAdd, onEdit, onDelete, onUpdate, onConver
               <div className="flex shrink-0 flex-col gap-2"><button onClick={() => onEdit(estimate)} className="darkButton !px-3 !py-2"><Pencil size={15} /></button><button onClick={() => onDelete(estimate.id)} className="iconDanger"><Trash2 size={15} /></button></div>
             </div>
             <div className="relative z-10 mt-4 grid grid-cols-2 gap-2">
-              <button onClick={() => onUpdate({ ...estimate, id: uid(), estimateNumber: `${estimate.estimateNumber}-COPY`, status: "draft" })} className="darkButton justify-center"><ClipboardList size={15} /> Duplicate</button>
+              <button onClick={() => onDuplicate(estimate)} className="darkButton justify-center"><ClipboardList size={15} /> Duplicate</button>
               <button disabled={estimateAlreadyConverted(estimate)} onClick={() => onConvertToInvoice(estimate)} className={`${estimateAlreadyConverted(estimate) ? "darkButton opacity-60" : "goldButton"} justify-center`}><ReceiptText size={15} /> {estimateAlreadyConverted(estimate) ? "Converted" : "To Invoice"}</button>
               <button onClick={() => onUpdate({ ...estimate, status: "sent" })} className="darkButton justify-center"><Mail size={15} /> Mark Sent</button>
               <button onClick={() => onUpdate({ ...estimate, status: "approved" })} className="darkButton justify-center"><Check size={15} /> Approved</button>
