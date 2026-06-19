@@ -47,6 +47,7 @@ import {
 // PHASE 26G: Photo System Fix - add photos after creation + viewer + invoice/estimate photo controls
 // PHASE 27A: Home/Office navigation cleanup - Home only shows New Work Order + Office; all admin tools live under Office
 // PHASE 27B: Invoice Simple Killer Features - invoice pipeline, property history, PDF Center, reports, duplication, and Work Items 2.0
+// PHASE 27C: Communication Center - invoice/estimate tracking, reminders, contact actions, and activity history
 
 const STORAGE_KEY = "oneStopPayrollProEliteBlackGoldX_v1";
 const PROPERTY_PROFILES_KEY = "oneStopPropertyProfiles_v1";
@@ -120,7 +121,11 @@ type Estimate = {
   propertyAddress?: string;
   unitNumber: string;
   estimateDate: string;
-  status: "draft" | "sent" | "approved" | "declined" | "converted";
+  dateSent?: string;
+  dateViewed?: string;
+  dateApproved?: string;
+  pdfLink?: string;
+  status: "draft" | "sent" | "viewed" | "approved" | "declined" | "converted";
   lineItems: InvoiceLineItem[];
   notes: string;
   clientEmail?: string;
@@ -140,6 +145,10 @@ type Invoice = {
   unitNumber: string;
   invoiceDate: string;
   dueDate: string;
+  dateSent?: string;
+  dateViewed?: string;
+  datePaid?: string;
+  pdfLink?: string;
   status: "draft" | "due" | "sent" | "viewed" | "partial" | "paid" | "overdue";
   lineItems: InvoiceLineItem[];
   notes: string;
@@ -196,7 +205,7 @@ type AppState = {
   companyName: string;
 };
 
-type ActiveTab = "dashboard" | "field" | "office" | "estimates" | "ops" | "employees" | "jobs" | "assignments" | "invoices" | "properties" | "workItems" | "reports" | "pdfCenter" | "more";
+type ActiveTab = "dashboard" | "field" | "office" | "estimates" | "ops" | "employees" | "jobs" | "assignments" | "invoices" | "properties" | "workItems" | "reports" | "pdfCenter" | "communications" | "more";
 
 const defaultProperties = [
   "Charles Place Apartments",
@@ -717,6 +726,21 @@ function dateInRange(dateISO: string, startISO: string, endISO: string) {
   return Boolean(dateISO) && dateISO >= startISO && dateISO <= endISO;
 }
 
+function formatDateTime(value?: string) {
+  if (!value) return "Not recorded yet";
+  const date = new Date(value.length <= 10 ? `${value}T12:00:00` : value);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat("en-US", { month: "2-digit", day: "2-digit", year: "2-digit", hour: "numeric", minute: "2-digit" }).format(date);
+}
+
+function generatedPdfLink(kind: "invoice" | "estimate", number: string) {
+  return `1-stop-ops-pro://${kind}/${encodeURIComponent(number || "document")}`;
+}
+
+function communicationRecipient(property: string, profile?: PropertyContactProfile) {
+  return [profile?.contactName, profile?.email, profile?.phone].filter(Boolean).join(" • ") || property || "No contact saved";
+}
+
 
 function confirmAction(message: string) {
   return typeof window === "undefined" ? true : window.confirm(message);
@@ -1029,7 +1053,7 @@ function estimateAlreadyConverted(estimate: Estimate) {
 }
 
 function estimateStatusLabel(status: Estimate["status"]) {
-  return status === "draft" ? "Draft" : status === "sent" ? "Sent" : status === "approved" ? "Approved" : status === "declined" ? "Declined" : "Converted";
+  return status === "draft" ? "Draft" : status === "sent" ? "Sent" : status === "viewed" ? "Viewed" : status === "approved" ? "Approved" : status === "declined" ? "Declined" : "Converted";
 }
 
 function estimateTotal(estimate: Pick<Estimate, "lineItems">) {
@@ -1650,7 +1674,7 @@ This will copy the property, address, unit, line items, notes, and photos.`)) re
 
         {activeTab !== "dashboard" && <WeekHero week={week} selectedWeek={selectedWeek} setSelectedWeek={setSelectedWeek} />}
 
-        {(activeTab === "office" || activeTab === "invoices" || activeTab === "estimates" || activeTab === "reports" || activeTab === "pdfCenter") && (
+        {(activeTab === "office" || activeTab === "invoices" || activeTab === "estimates" || activeTab === "reports" || activeTab === "pdfCenter" || activeTab === "communications") && (
           <>
             <div className="mt-6 flex items-center justify-between">
               <h2 className="text-sm font-black uppercase tracking-wide text-zinc-300">Office Pipeline</h2>
@@ -1738,13 +1762,14 @@ This will copy the property, address, unit, line items, notes, and photos.`)) re
                 <button type="button" onClick={() => setActiveTab("workItems")} className="officeNavCard"><ClipboardCheck size={20} /><span>Work Items</span></button>
                 <button type="button" onClick={() => setActiveTab("reports")} className="officeNavCard"><CircleDollarSign size={20} /><span>Reports</span></button>
                 <button type="button" onClick={() => setActiveTab("pdfCenter")} className="officeNavCard"><FileText size={20} /><span>PDF Center</span></button>
+                <button type="button" onClick={() => setActiveTab("communications")} className="officeNavCard"><Mail size={20} /><span>Communications</span></button>
                 <button type="button" onClick={() => setActiveTab("more")} className="officeNavCard"><MoreVertical size={20} /><span>Backup / More</span></button>
               </div>
 
               <OfficeDashboardCards totals={totals} workOrders={state.jobs} onGoWorkOrders={() => setActiveTab("field")} onGoInvoices={() => setActiveTab("office")} onGoEstimates={() => setActiveTab("estimates")} />
 
               <div className="rounded-2xl border border-green-400/20 bg-green-500/10 p-3 text-sm font-semibold text-green-200">
-                PHASE 27B: Office now includes Invoice Simple-style invoices, estimates, payment tracking, PDF Center, property history, reports, and duplication — plus your Work Order system.
+                PHASE 27C: Office now includes Communication Center, invoice/estimate tracking, reminders, contact actions, PDF Center, property history, reports, and duplication — plus your Work Order system.
               </div>
               <InvoicesPanel invoices={filteredInvoices} jobs={state.jobs} weekJobs={weekJobs} onAdd={() => { setEditingInvoice(null); setShowInvoiceForm(true); }} onCreateFromWeek={createInvoiceFromWeekJobs} onCreateFromJob={createInvoiceFromJob} onEdit={(invoice) => { setEditingInvoice(invoice); setShowInvoiceForm(true); }} onDelete={(id) => setConfirmDelete({ type: "invoice", id })} onUpdate={upsertInvoice} onDuplicate={duplicateInvoice} onConvertToEstimate={convertInvoiceToEstimate} />
             </section>
@@ -1880,6 +1905,8 @@ This will copy the property, address, unit, line items, notes, and photos.`)) re
           )}
 
           {activeTab === "pdfCenter" && <PDFCenter invoices={filteredInvoices} estimates={filteredEstimates} jobs={filteredJobs} onOpenInvoice={(invoice) => printInvoiceDocument(invoice, invoice.beforePhotos || [], invoice.afterPhotos || [])} />}
+
+          {activeTab === "communications" && <CommunicationsPanel invoices={state.invoices} estimates={state.estimates || []} properties={state.properties} getProfileForProperty={getSavedPropertyProfile} onOpenInvoice={(invoice) => { setEditingInvoice(invoice); setShowInvoiceForm(true); }} onOpenEstimate={(estimate) => { setEditingEstimate(estimate); setShowEstimateForm(true); }} />}
 
           {activeTab === "reports" && <Reports totals={totals} employeeTotals={employeeTotals} jobs={filteredJobs} employeesById={employeesById} invoices={state.invoices} estimates={state.estimates || []} onCloseWeek={closeWeekAsPaid} onExport={exportData} onCreateInvoice={createInvoiceFromWeekJobs} />}
 
@@ -2844,13 +2871,182 @@ function MoneyInput({ value, onValueChange, placeholder = "Enter Amount" }: { va
 function EmptyText({ text }: { text: string }) { return <p className="relative z-10 py-4 text-center text-sm font-semibold text-zinc-500">{text}</p>; }
 function ConfirmModal({ title, message, onCancel, onConfirm }: { title: string; message: string; onCancel: () => void; onConfirm: () => void }) { return <Modal title={title} onClose={onCancel}><div className="space-y-4"><div className="rounded-2xl border border-red-400/20 bg-red-500/10 p-4"><div className="flex gap-3"><AlertTriangle className="shrink-0 text-red-300" /><p className="text-sm text-red-100">{message}</p></div></div><div className="grid grid-cols-2 gap-2"><button className="darkButton" onClick={onCancel}>Cancel</button><button className="iconDanger justify-center" onClick={onConfirm}><Trash2 size={18} /> Delete</button></div></div></Modal>; }
 
+
+function CommunicationsPanel({
+  invoices,
+  estimates,
+  properties,
+  getProfileForProperty,
+  onOpenInvoice,
+  onOpenEstimate,
+}: {
+  invoices: Invoice[];
+  estimates: Estimate[];
+  properties: string[];
+  getProfileForProperty: (property: string) => PropertyContactProfile;
+  onOpenInvoice: (invoice: Invoice) => void;
+  onOpenEstimate: (estimate: Estimate) => void;
+}) {
+  const sortedInvoices = [...invoices].sort((a, b) => b.invoiceDate.localeCompare(a.invoiceDate));
+  const sortedEstimates = [...estimates].sort((a, b) => b.estimateDate.localeCompare(a.estimateDate));
+  const overdueInvoices = sortedInvoices.filter((invoice) => invoicePipelineStatus(invoice) === "overdue");
+  const awaitingEstimates = sortedEstimates.filter((estimate) => estimate.status === "sent" || estimate.status === "viewed");
+  const sentInvoices = sortedInvoices.filter((invoice) => invoice.status === "sent" || invoice.status === "viewed" || invoicePipelineStatus(invoice) === "partial");
+  const openBalance = sortedInvoices.reduce((sum, invoice) => sum + invoiceBalance(invoice), 0);
+  const recentActivity = [
+    ...sortedInvoices.slice(0, 8).map((invoice) => ({
+      id: `invoice-${invoice.id}`,
+      date: invoice.datePaid || invoice.dateViewed || invoice.dateSent || invoice.invoiceDate,
+      title: `Invoice ${invoice.invoiceNumber}`,
+      detail: `${invoiceStatusLabel(invoicePipelineStatus(invoice))} • ${invoice.property}${invoice.unitNumber ? ` Unit ${invoice.unitNumber}` : ""}`,
+      amount: money(invoiceBalance(invoice)),
+    })),
+    ...sortedEstimates.slice(0, 8).map((estimate) => ({
+      id: `estimate-${estimate.id}`,
+      date: estimate.dateViewed || estimate.dateSent || estimate.estimateDate,
+      title: `Estimate ${estimate.estimateNumber}`,
+      detail: `${estimateStatusLabel(estimate.status)} • ${estimate.property}${estimate.unitNumber ? ` Unit ${estimate.unitNumber}` : ""}`,
+      amount: money(estimateTotal(estimate)),
+    })),
+  ].sort((a, b) => String(b.date || "").localeCompare(String(a.date || ""))).slice(0, 12);
+
+  const reminderBody = (invoice: Invoice, reminderType: string) => {
+    const balance = invoiceBalance(invoice);
+    return encodeURIComponent([
+      `Hello,`,
+      ``,
+      `${reminderType}: Invoice ${invoice.invoiceNumber} from 1 Stop Turnover Specialist LLC has a balance of ${money(balance)}.`,
+      `Property: ${invoice.property}${invoice.unitNumber ? ` - Unit ${invoice.unitNumber}` : ""}`,
+      `Due Date: ${invoice.dueDate || "Not listed"}`,
+      ``,
+      `Thank you,`,
+      `1 Stop Turnover Specialist LLC`,
+    ].join("\n"));
+  };
+
+  return (
+    <section className="space-y-4">
+      <SectionTop title="Communications" subtitle="Track invoice sends, estimate sends, reminders, and property contact activity." />
+
+      <div className="grid grid-cols-2 gap-3">
+        <StatCard label="Sent / Viewed" value={String(sentInvoices.length)} description="Invoices touched by customers" icon={<Mail size={20} />} variant="paid" />
+        <StatCard label="Overdue" value={String(overdueInvoices.length)} description="Needs reminder" icon={<AlertTriangle size={20} />} variant="owed" />
+        <StatCard label="Awaiting Approval" value={String(awaitingEstimates.length)} description="Sent estimates open" icon={<Clock size={20} />} variant="borrowed" />
+        <StatCard label="Open Balance" value={money(openBalance)} description="All unpaid invoice balances" icon={<CircleDollarSign size={20} />} variant="earned" />
+      </div>
+
+      <div className="rounded-2xl border border-green-400/20 bg-green-500/10 p-3 text-sm font-semibold text-green-200">
+        PHASE 27C: Use this center to follow up on invoices, estimates, contacts, reminders, and recent activity without digging through every property.
+      </div>
+
+      <details className="blackCard p-4" open>
+        <summary className="cursor-pointer list-none font-black">Payment Reminders <span className="text-xs font-semibold text-zinc-500">— overdue and open invoices</span></summary>
+        <div className="mt-3 grid gap-3">
+          {sortedInvoices.filter((invoice) => !isPaidInvoice(invoice)).slice(0, 10).map((invoice) => {
+            const profile = getProfileForProperty(invoice.property);
+            const email = invoice.clientEmail || profile.email;
+            const status = invoicePipelineStatus(invoice);
+            return (
+              <div key={`reminder-${invoice.id}`} className="rounded-2xl border border-white/10 bg-black/30 p-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="font-black text-zinc-100">{invoice.invoiceNumber} • {invoice.property}</p>
+                    <p className="mt-1 text-xs font-semibold text-zinc-500">Status: {invoiceStatusLabel(status)} • Balance: {money(invoiceBalance(invoice))}</p>
+                    <p className="mt-1 text-xs font-semibold text-zinc-500">Recipient: {communicationRecipient(invoice.property, profile)}</p>
+                  </div>
+                  <button type="button" className="darkButton !p-3" onClick={() => onOpenInvoice(invoice)}><Eye size={16} /></button>
+                </div>
+                <div className="mt-3 grid grid-cols-2 gap-2">
+                  <a className="darkButton justify-center" href={`mailto:${encodeURIComponent(email || "")}?subject=${encodeURIComponent(`Reminder: Invoice ${invoice.invoiceNumber}`)}&body=${reminderBody(invoice, "Friendly reminder")}`}><Mail size={15} /> Friendly</a>
+                  <a className="darkButton justify-center" href={`mailto:${encodeURIComponent(email || "")}?subject=${encodeURIComponent(`Payment Due: Invoice ${invoice.invoiceNumber}`)}&body=${reminderBody(invoice, "Payment due reminder")}`}><Clock size={15} /> Due</a>
+                  <a className="darkButton justify-center" href={`mailto:${encodeURIComponent(email || "")}?subject=${encodeURIComponent(`Overdue Notice: Invoice ${invoice.invoiceNumber}`)}&body=${reminderBody(invoice, "Overdue notice")}`}><AlertTriangle size={15} /> Overdue</a>
+                  <a className="darkButton justify-center" href={`sms:?&body=${encodeURIComponent(`Reminder: Invoice ${invoice.invoiceNumber} has a balance of ${money(invoiceBalance(invoice))}. Thank you, 1 Stop Turnover Specialist LLC.`)}`}><Mail size={15} /> Text</a>
+                </div>
+              </div>
+            );
+          })}
+          {sortedInvoices.filter((invoice) => !isPaidInvoice(invoice)).length === 0 && <EmptyText text="No open invoice reminders right now." />}
+        </div>
+      </details>
+
+      <details className="blackCard p-4" open>
+        <summary className="cursor-pointer list-none font-black">Estimate Follow Ups <span className="text-xs font-semibold text-zinc-500">— sent, viewed, awaiting approval</span></summary>
+        <div className="mt-3 grid gap-3">
+          {awaitingEstimates.slice(0, 10).map((estimate) => {
+            const profile = getProfileForProperty(estimate.property);
+            const email = estimate.clientEmail || profile.email;
+            return (
+              <div key={`estimate-follow-${estimate.id}`} className="rounded-2xl border border-white/10 bg-black/30 p-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="font-black text-zinc-100">{estimate.estimateNumber} • {estimate.property}</p>
+                    <p className="mt-1 text-xs font-semibold text-zinc-500">Status: {estimateStatusLabel(estimate.status)} • Amount: {money(estimateTotal(estimate))}</p>
+                    <p className="mt-1 text-xs font-semibold text-zinc-500">Recipient: {communicationRecipient(estimate.property, profile)}</p>
+                  </div>
+                  <button type="button" className="darkButton !p-3" onClick={() => onOpenEstimate(estimate)}><Eye size={16} /></button>
+                </div>
+                <div className="mt-3 grid grid-cols-2 gap-2">
+                  <a className="darkButton justify-center" href={`mailto:${encodeURIComponent(email || "")}?subject=${encodeURIComponent(`Estimate Follow Up: ${estimate.estimateNumber}`)}&body=${encodeURIComponent(`Hello,\n\nI am following up on estimate ${estimate.estimateNumber} for ${estimate.property}. Please let me know if you would like us to move forward.\n\nThank you,\n1 Stop Turnover Specialist LLC`)}`}><Mail size={15} /> Email</a>
+                  <a className="darkButton justify-center" href={`sms:?&body=${encodeURIComponent(`Following up on estimate ${estimate.estimateNumber} for ${estimate.property}. Please let me know if you would like us to move forward. Thank you.`)}`}><Mail size={15} /> Text</a>
+                </div>
+              </div>
+            );
+          })}
+          {awaitingEstimates.length === 0 && <EmptyText text="No sent estimates waiting for approval." />}
+        </div>
+      </details>
+
+      <details className="blackCard p-4">
+        <summary className="cursor-pointer list-none font-black">Property Contact Cards <span className="text-xs font-semibold text-zinc-500">— call, text, email</span></summary>
+        <div className="mt-3 grid gap-3">
+          {properties.map((property) => {
+            const profile = getProfileForProperty(property);
+            return (
+              <div key={`contact-${property}`} className="rounded-2xl border border-white/10 bg-black/30 p-3">
+                <p className="font-black text-zinc-100">{property}</p>
+                <p className="mt-1 text-xs font-semibold text-zinc-500">{profile.contactName || "No contact name"} • {profile.phone || "No phone"} • {profile.email || "No email"}</p>
+                <div className="mt-3 grid grid-cols-3 gap-2">
+                  <a className="darkButton justify-center" href={profile.phone ? `tel:${profile.phone}` : "#"}>Call</a>
+                  <a className="darkButton justify-center" href={profile.phone ? `sms:${profile.phone}` : "sms:"}>Text</a>
+                  <a className="darkButton justify-center" href={`mailto:${encodeURIComponent(profile.email || "")}`}>Email</a>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </details>
+
+      <details className="blackCard p-4" open>
+        <summary className="cursor-pointer list-none font-black">Recent Activity <span className="text-xs font-semibold text-zinc-500">— newest first</span></summary>
+        <div className="mt-3 grid gap-2">
+          {recentActivity.map((item) => (
+            <div key={item.id} className="rounded-2xl border border-white/10 bg-black/30 p-3">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="font-black text-zinc-100">{item.title}</p>
+                  <p className="mt-1 text-xs font-semibold text-zinc-500">{item.detail}</p>
+                </div>
+                <div className="text-right">
+                  <p className="text-xs font-black text-green-300">{item.amount}</p>
+                  <p className="mt-1 text-[11px] font-semibold text-zinc-600">{formatDateTime(item.date)}</p>
+                </div>
+              </div>
+            </div>
+          ))}
+          {recentActivity.length === 0 && <EmptyText text="No communication activity yet." />}
+        </div>
+      </details>
+    </section>
+  );
+}
+
 function BottomNav({ activeTab, setActiveTab }: { activeTab: ActiveTab; setActiveTab: (tab: ActiveTab) => void }) {
   const tabs: { tab: ActiveTab; label: string; icon: React.ReactNode }[] = [
     { tab: "dashboard", label: "Home", icon: <Home size={20} /> },
     { tab: "field", label: "Work Orders", icon: <ClipboardList size={20} /> },
     { tab: "office", label: "Office", icon: <BriefcaseBusiness size={20} /> },
   ];
-  return <nav className="fixed bottom-0 left-0 right-0 z-40 border-t border-white/10 bg-[#02070a]/95 px-2 pb-3 pt-2 backdrop-blur-xl"><div className="mx-auto grid max-w-[540px] grid-cols-3 gap-1">{tabs.map((item) => { const active = activeTab === item.tab || (item.tab === "field" && (activeTab === "ops" || activeTab === "jobs")) || (item.tab === "office" && (activeTab === "invoices" || activeTab === "estimates" || activeTab === "employees" || activeTab === "properties" || activeTab === "workItems" || activeTab === "reports" || activeTab === "pdfCenter" || activeTab === "more")); return <button key={item.tab} onClick={() => setActiveTab(item.tab)} className={`flex flex-col items-center justify-center gap-1 rounded-2xl py-2 text-[11px] font-black transition active:scale-95 ${active ? "bg-green-500 text-black" : "text-zinc-500"}`}>{item.icon}<span>{item.label}</span></button>; })}</div></nav>;
+  return <nav className="fixed bottom-0 left-0 right-0 z-40 border-t border-white/10 bg-[#02070a]/95 px-2 pb-3 pt-2 backdrop-blur-xl"><div className="mx-auto grid max-w-[540px] grid-cols-3 gap-1">{tabs.map((item) => { const active = activeTab === item.tab || (item.tab === "field" && (activeTab === "ops" || activeTab === "jobs")) || (item.tab === "office" && (activeTab === "invoices" || activeTab === "estimates" || activeTab === "employees" || activeTab === "properties" || activeTab === "workItems" || activeTab === "reports" || activeTab === "pdfCenter" || activeTab === "communications" || activeTab === "more")); return <button key={item.tab} onClick={() => setActiveTab(item.tab)} className={`flex flex-col items-center justify-center gap-1 rounded-2xl py-2 text-[11px] font-black transition active:scale-95 ${active ? "bg-green-500 text-black" : "text-zinc-500"}`}>{item.icon}<span>{item.label}</span></button>; })}</div></nav>;
 }
 
 
