@@ -52,9 +52,11 @@ import {
 // PHASE 27E: Customer Portal - client-facing dashboard, work order/photo visibility, estimate approvals, invoices, documents, and activity feed
 // PHASE 27E REBOOT REPAIR: compile-safety pass before Phase 27F; recurring work intentionally not added yet
 // PHASE 27E-CLEANUP: debounced storage, safer photo handling, reduced runtime pressure before Phase 27F
+// PHASE 27E-DEEP CLEAN: storage pruning, duplicate cleanup, safer persistence, and maintenance-ready foundation before Phase 27F
 
 const STORAGE_KEY = "oneStopPayrollProEliteBlackGoldX_v1";
 const PROPERTY_PROFILES_KEY = "oneStopPropertyProfiles_v1";
+const STORAGE_SAVE_DELAY_MS = 900;
 
 const appShellClass =
   "min-h-screen bg-[radial-gradient(circle_at_top_left,rgba(34,197,94,0.10),transparent_34%),radial-gradient(circle_at_top_right,rgba(59,130,246,0.08),transparent_30%),linear-gradient(180deg,#02070a_0%,#030303_45%,#050505_100%)] text-zinc-100 selection:bg-green-400 selection:text-black";
@@ -628,6 +630,100 @@ const starterState: AppState = {
   workItems: defaultWorkItems,
 };
 
+function pruneText(value: unknown) {
+  return String(value ?? "").trim();
+}
+
+function cleanPhotoArray(photos?: string[]) {
+  return uniquePhotoList(photos || []);
+}
+
+function cleanStringList(items: string[] = []) {
+  return Array.from(new Set(items.map((item) => normalizePropertyName(item)).filter(Boolean)));
+}
+
+function cleanStateForStorage(appState: AppState): AppState {
+  const cleanProperties = cleanStringList(appState.properties);
+  const cleanJobTypes = cleanStringList(appState.jobTypeOptions);
+
+  return {
+    ...appState,
+    companyName: pruneText(appState.companyName) || starterState.companyName,
+    employees: (appState.employees || []).map((employee) => ({
+      ...employee,
+      name: pruneText(employee.name) || "Employee",
+      phone: pruneText(employee.phone),
+      notes: pruneText(employee.notes),
+      defaultRate: safeNumber(employee.defaultRate),
+      borrowed: safeNumber(employee.borrowed || 0),
+      borrowedByWeek: employee.borrowedByWeek || {},
+      active: employee.active !== false,
+    })),
+    jobs: (appState.jobs || []).map((job) => ({
+      ...job,
+      property: normalizePropertyName(job.property),
+      unitNumber: pruneText(job.unitNumber),
+      jobTypes: cleanStringList(job.jobTypes),
+      customWork: pruneText(job.customWork),
+      notes: pruneText(job.notes),
+      photos: cleanPhotoArray(job.photos),
+      pay: safeNumber(job.pay),
+      paidAmount: safeNumber(job.paidAmount),
+    })),
+    invoices: (appState.invoices || []).map((invoice) => ({
+      ...invoice,
+      clientName: pruneText(invoice.clientName),
+      property: normalizePropertyName(invoice.property),
+      propertyAddress: pruneText(invoice.propertyAddress),
+      unitNumber: pruneText(invoice.unitNumber),
+      notes: pruneText(invoice.notes),
+      paidAmount: safeNumber(invoice.paidAmount),
+      beforePhotos: cleanPhotoArray(invoice.beforePhotos),
+      afterPhotos: cleanPhotoArray(invoice.afterPhotos),
+      lineItems: (invoice.lineItems || []).map((item) => ({
+        ...item,
+        description: pruneText(item.description) || "Labor and materials",
+        qty: safeNumber(item.qty),
+        rate: safeNumber(item.rate),
+      })),
+    })),
+    estimates: (appState.estimates || []).map((estimate) => ({
+      ...estimate,
+      clientName: pruneText(estimate.clientName),
+      property: normalizePropertyName(estimate.property),
+      propertyAddress: pruneText(estimate.propertyAddress),
+      unitNumber: pruneText(estimate.unitNumber),
+      notes: pruneText(estimate.notes),
+      beforePhotos: cleanPhotoArray(estimate.beforePhotos),
+      afterPhotos: cleanPhotoArray(estimate.afterPhotos),
+      lineItems: (estimate.lineItems || []).map((item) => ({
+        ...item,
+        description: pruneText(item.description) || "Labor and materials",
+        qty: safeNumber(item.qty),
+        rate: safeNumber(item.rate),
+      })),
+    })),
+    assignments: (appState.assignments || []).map((assignment) => ({
+      ...assignment,
+      property: normalizePropertyName(assignment.property),
+      address: pruneText(assignment.address),
+      unitNumber: pruneText(assignment.unitNumber),
+      scope: pruneText(assignment.scope),
+      notes: pruneText(assignment.notes),
+      photos: cleanPhotoArray(assignment.photos),
+    })),
+    properties: cleanProperties.length ? cleanProperties : defaultProperties,
+    propertyProfiles: Object.fromEntries(
+      Object.entries(appState.propertyProfiles || {}).map(([name, profile]) => [
+        normalizePropertyName(name),
+        normalizePropertyProfile(name, profile),
+      ]).filter(([name]) => Boolean(name))
+    ),
+    jobTypeOptions: cleanJobTypes.length ? cleanJobTypes : defaultJobTypes,
+    workItems: (appState.workItems || []).map(normalizeWorkItem),
+  };
+}
+
 function safeNumber(value: string | number): number {
   const n = typeof value === "number" ? value : Number(value);
   return Number.isFinite(n) ? n : 0;
@@ -1188,13 +1284,14 @@ export default function PayrollProEliteOperationsX() {
 
     const saveTimer = window.setTimeout(() => {
       try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-        savePropertyProfilesToStorage(state.propertyProfiles || {});
+        const cleanState = cleanStateForStorage(state);
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(cleanState));
+        savePropertyProfilesToStorage(cleanState.propertyProfiles || {});
       } catch (error) {
         console.error("Save failed", error);
         alert("The app could not save because the phone browser storage is full. Remove a few photos or export a backup, then try again.");
       }
-    }, 900);
+    }, STORAGE_SAVE_DELAY_MS);
 
     return () => window.clearTimeout(saveTimer);
   }, [state, hydrated]);
@@ -1423,7 +1520,7 @@ export default function PayrollProEliteOperationsX() {
       status: "due",
       paidAmount: 0,
       beforePhotos: [],
-      afterPhotos: includeJobPhotos ? weekJobs.flatMap((job) => job.photos || []) : [],
+      afterPhotos: includeJobPhotos ? uniquePhotoList(weekJobs.flatMap((job) => job.photos || [])) : [],
       notes: `Thank you for your business. God bless.`,
       sourceJobIds: weekJobs.map((job) => job.id),
       lineItems: weekJobs.map((job) => ({
@@ -1464,7 +1561,7 @@ export default function PayrollProEliteOperationsX() {
       status: "due",
       paidAmount: 0,
       beforePhotos: [],
-      afterPhotos: includeJobPhotos ? (job.photos || []) : [],
+      afterPhotos: includeJobPhotos ? uniquePhotoList(job.photos || []) : [],
       notes: `Thank you for your business. God bless.`,
       sourceJobIds: [job.id],
       lineItems: [{
@@ -1500,7 +1597,7 @@ export default function PayrollProEliteOperationsX() {
       estimateDate: todayISO(),
       status: "draft",
       beforePhotos: [],
-      afterPhotos: includeJobPhotos ? (job.photos || []) : [],
+      afterPhotos: includeJobPhotos ? uniquePhotoList(job.photos || []) : [],
       notes: "Thank you for the opportunity to provide this estimate. God bless.",
       sourceJobIds: [job.id],
       lineItems: [{ id: uid(), description: `${formatJobDate(job.date)} — ${propertyWithUnit(job)} — ${[...job.jobTypes, job.customWork].filter(Boolean).join(" / ") || "Labor"}`, qty: 1, rate: 0 }],
@@ -1532,8 +1629,8 @@ This will copy the property, address, unit, line items, notes, and photos.`)) re
       dueDate: addDaysISO(todayISO(), 14),
       status: "due",
       paidAmount: 0,
-      beforePhotos: [...(estimate.beforePhotos || [])],
-      afterPhotos: [...(estimate.afterPhotos || [])],
+      beforePhotos: uniquePhotoList(estimate.beforePhotos || []),
+      afterPhotos: uniquePhotoList(estimate.afterPhotos || []),
       notes: estimate.notes || "Thank you for your business. God bless.",
       sourceJobIds: [...(estimate.sourceJobIds || [])],
       convertedFromEstimateId: estimate.id,
@@ -1566,8 +1663,8 @@ This will copy the property, address, unit, line items, notes, and photos.`)) re
       unitNumber: invoice.unitNumber || "",
       estimateDate: todayISO(),
       status: "draft",
-      beforePhotos: [...(invoice.beforePhotos || [])],
-      afterPhotos: [...(invoice.afterPhotos || [])],
+      beforePhotos: uniquePhotoList(invoice.beforePhotos || []),
+      afterPhotos: uniquePhotoList(invoice.afterPhotos || []),
       notes: invoice.notes || "Thank you for the opportunity to provide this estimate. God bless.",
       sourceJobIds: [...(invoice.sourceJobIds || [])],
       convertedFromInvoiceId: invoice.id,
@@ -1614,8 +1711,8 @@ This will copy the property, address, unit, line items, notes, and photos.`)) re
       status: "draft",
       paidAmount: 0,
       lineItems: invoice.lineItems.map((item) => ({ ...item, id: uid() })),
-      beforePhotos: [...(invoice.beforePhotos || [])],
-      afterPhotos: [...(invoice.afterPhotos || [])],
+      beforePhotos: uniquePhotoList(invoice.beforePhotos || []),
+      afterPhotos: uniquePhotoList(invoice.afterPhotos || []),
     };
     setState((prev) => ({ ...prev, invoices: [customerSafeInvoice(copy), ...prev.invoices] }));
     alert(`Invoice duplicated as ${copy.invoiceNumber}. Review it before sending.`);
@@ -1630,8 +1727,8 @@ This will copy the property, address, unit, line items, notes, and photos.`)) re
       status: "draft",
       convertedInvoiceId: undefined,
       lineItems: estimate.lineItems.map((item) => ({ ...item, id: uid() })),
-      beforePhotos: [...(estimate.beforePhotos || [])],
-      afterPhotos: [...(estimate.afterPhotos || [])],
+      beforePhotos: uniquePhotoList(estimate.beforePhotos || []),
+      afterPhotos: uniquePhotoList(estimate.afterPhotos || []),
     };
     setState((prev) => ({ ...prev, estimates: [copy, ...(prev.estimates || [])] }));
     alert(`Estimate duplicated as ${copy.estimateNumber}.`);
@@ -2933,7 +3030,7 @@ function JobModal({ employees, properties, jobTypeOptions, workItems = defaultWo
 function InvoiceModal({ invoices, properties, getProfileForProperty, initial, onClose, onSave }: { invoices: Invoice[]; properties: string[]; getProfileForProperty: (property: string) => PropertyContactProfile; initial: Invoice | null; onClose: () => void; onSave: (invoice: Invoice) => void }) {
   const [invoice, setInvoice] = useState<Invoice>(initial || { id: uid(), invoiceNumber: nextInvoiceNumber(invoices), clientName: getProfileForProperty(properties[0] || "").billingName || "", clientEmail: getProfileForProperty(properties[0] || "").email || "", property: properties[0] || "", propertyAddress: getProfileForProperty(properties[0] || "").address || "", unitNumber: "", invoiceDate: todayISO(), dueDate: addDaysISO(todayISO(), 14), status: "draft", lineItems: [{ id: uid(), description: "Labor and materials", qty: 1, rate: 0 }], notes: "Thank you for your business. God bless.", paidAmount: 0, beforePhotos: [], afterPhotos: [] });
   const total = invoiceTotal(invoice);
-  return <Modal title={initial ? "Edit Invoice" : "New Invoice"} onClose={onClose}><div className="space-y-3"><div className="grid grid-cols-2 gap-3"><Operations label="Invoice #"><input className="inputElite" value={invoice.invoiceNumber} onChange={(e) => setInvoice({ ...invoice, invoiceNumber: e.target.value })} /></Operations><Operations label="Status"><select className="inputElite" value={invoice.status} onChange={(e) => setInvoice({ ...invoice, status: e.target.value as Invoice["status"] })}><option value="draft">Draft</option><option value="due">Due</option><option value="sent">Sent</option><option value="viewed">Viewed</option><option value="partial">Partial Paid</option><option value="paid">Paid</option><option value="overdue">Overdue</option></select></Operations><Operations label="Client"><input className="inputElite" value={invoice.clientName} onChange={(e) => setInvoice({ ...invoice, clientName: e.target.value })} placeholder="Example: Wingate Companies" /></Operations><Operations label="Client Email"><input className="inputElite" type="email" value={invoice.clientEmail || ""} onChange={(e) => setInvoice({ ...invoice, clientEmail: e.target.value })} placeholder="manager@email.com" /></Operations><Operations label="Property"><select className="inputElite" value={invoice.property} onChange={(e) => { const selected = e.target.value; const profile = getProfileForProperty(selected); setInvoice({ ...invoice, property: selected, propertyAddress: profile.address || "", clientName: invoice.clientName || profile.billingName || selected, clientEmail: invoice.clientEmail || profile.email || "" }); }}>{properties.map((property) => <option key={property} value={property}>{property}</option>)}</select></Operations><Operations label="Property Address"><input className="inputElite" value={invoice.propertyAddress || ""} onChange={(e) => setInvoice({ ...invoice, propertyAddress: e.target.value })} placeholder="Property address shown under Bill To" /></Operations><Operations label="Unit #"><input className="inputElite" value={invoice.unitNumber} onChange={(e) => setInvoice({ ...invoice, unitNumber: e.target.value })} /></Operations><Operations label="Invoice Date"><input className="inputElite" type="date" value={invoice.invoiceDate} onChange={(e) => setInvoice({ ...invoice, invoiceDate: e.target.value })} /></Operations><Operations label="Due Date"><input className="inputElite" type="date" value={invoice.dueDate} onChange={(e) => setInvoice({ ...invoice, dueDate: e.target.value })} /></Operations><Operations label="Paid Amount"><MoneyInput value={invoice.paidAmount} onValueChange={(value) => { const cleanValue = safeNumber(value); if (cleanValue >= total && total > 0) { if (!confirmAction("Confirm: mark this invoice paid?")) return; setInvoice({ ...invoice, paidAmount: cleanValue, status: "paid" }); return; } setInvoice({ ...invoice, paidAmount: cleanValue, status: cleanValue > 0 ? "partial" : (invoice.status === "paid" ? "sent" : invoice.status) }); }} /></Operations></div><Operations label="Line Items"><div className="space-y-3">{invoice.lineItems.map((line) => <div key={line.id} className="rounded-2xl border border-zinc-800 bg-black/25 p-3"><Operations label="Description"><input className="inputElite" value={line.description} onChange={(e) => setInvoice({ ...invoice, lineItems: invoice.lineItems.map((item) => item.id === line.id ? { ...item, description: e.target.value } : item) })} /></Operations><div className="mt-2 grid grid-cols-[1fr_1fr_auto] gap-2"><Operations label="Qty"><input className="inputElite" type="number" value={line.qty} onChange={(e) => setInvoice({ ...invoice, lineItems: invoice.lineItems.map((item) => item.id === line.id ? { ...item, qty: safeNumber(e.target.value) } : item) })} /></Operations><Operations label="Amount"><MoneyInput value={line.rate} onValueChange={(value) => setInvoice({ ...invoice, lineItems: invoice.lineItems.map((item) => item.id === line.id ? { ...item, rate: value } : item) })} /></Operations><button className="iconDanger self-end" onClick={() => { if (!confirmAction("Remove this line item from the invoice?")) return; setInvoice({ ...invoice, lineItems: invoice.lineItems.filter((item) => item.id !== line.id) }); }}><Trash2 size={16} /></button></div></div>)}<button className="darkButton w-full" onClick={() => setInvoice({ ...invoice, lineItems: [...invoice.lineItems, { id: uid(), description: "New line item", qty: 1, rate: 0 }] })}><Plus size={16} /> Add Line Item</button></div></Operations><div className="rounded-2xl border border-green-400/20 bg-green-500/10 p-3 text-right"><p className="text-xs font-black uppercase text-green-400">Invoice Total</p><p className="text-2xl font-black">{money(total)}</p><p className="mt-1 text-xs font-semibold text-zinc-400">This is the customer/company charge shown on the PDF invoice.</p></div><div className="rounded-2xl border border-blue-400/20 bg-blue-500/10 p-3 text-xs font-semibold text-blue-100"><b>Invoice Center:</b> This screen is for customer/company invoices only. Add the charge amount, photos, and notes, then open the PDF before emailing, texting, WhatsApping, printing, or saving.</div><Operations label="Before Photos"><InvoicePhotoPicker photos={invoice.beforePhotos || []} label="Add Before Photos" onChange={(photos) => setInvoice({ ...invoice, beforePhotos: photos })} /></Operations><Operations label="After / Completed Job Photos"><InvoicePhotoPicker photos={invoice.afterPhotos || []} label="Add After Photos" onChange={(photos) => setInvoice({ ...invoice, afterPhotos: photos })} /></Operations><Operations label="Notes / Terms"><textarea className="inputElite min-h-24" value={invoice.notes} onChange={(e) => setInvoice({ ...invoice, notes: e.target.value })} /></Operations><div className="grid grid-cols-2 gap-2"><button className="goldButton" onClick={() => { const cleanTotal = invoiceTotal(invoice); const cleanPaid = safeNumber(invoice.paidAmount); const cleanStatus = invoice.status === "paid" && !(cleanTotal > 0 && cleanPaid >= cleanTotal) ? "sent" : invoice.status; onSave({ ...invoice, paidAmount: cleanPaid, status: cleanStatus }); }}><Check size={18} /> Save Invoice</button><button className="darkButton" onClick={() => { const cleanTotal = invoiceTotal(invoice); const cleanPaid = safeNumber(invoice.paidAmount); const cleanInvoice = { ...invoice, status: invoice.status === "paid" && !(cleanTotal > 0 && cleanPaid >= cleanTotal) ? "sent" as Invoice["status"] : invoice.status, paidAmount: cleanPaid }; setInvoice(cleanInvoice); printInvoiceDocument(cleanInvoice, cleanInvoice.beforePhotos || [], cleanInvoice.afterPhotos || []); }}><Eye size={18} /> Preview PDF</button><button className="darkButton" onClick={() => printInvoiceDocument(invoice, invoice.beforePhotos || [], invoice.afterPhotos || [])}><Printer size={18} /> Print / Save PDF</button><button className="darkButton" onClick={() => openInvoiceMessage(invoice)}><FileText size={18} /> Text Link</button><button className="darkButton" onClick={() => { openInvoiceMessage(invoice); setTimeout(() => { window.location.href = `https://wa.me/?text=${encodeURIComponent(`View Invoice PDF: Invoice ${invoice.invoiceNumber} is ready from 1 Stop Turnover Specialist LLC.`)}`; }, 900); }}><FileText size={18} /> WhatsApp PDF</button><button className="goldButton" onClick={() => openInvoiceEmail({ ...invoice, status: invoice.status === "paid" && !(invoiceTotal(invoice) > 0 && safeNumber(invoice.paidAmount) >= invoiceTotal(invoice)) ? "sent" : invoice.status })}><Mail size={18} /> Email PDF</button></div></div></Modal>;
+  return <Modal title={initial ? "Edit Invoice" : "New Invoice"} onClose={onClose}><div className="space-y-3"><div className="grid grid-cols-2 gap-3"><Operations label="Invoice #"><input className="inputElite" value={invoice.invoiceNumber} onChange={(e) => setInvoice({ ...invoice, invoiceNumber: e.target.value })} /></Operations><Operations label="Status"><select className="inputElite" value={invoice.status} onChange={(e) => setInvoice({ ...invoice, status: e.target.value as Invoice["status"] })}><option value="draft">Draft</option><option value="due">Due</option><option value="sent">Sent</option><option value="viewed">Viewed</option><option value="partial">Partial Paid</option><option value="paid">Paid</option><option value="overdue">Overdue</option></select></Operations><Operations label="Client"><input className="inputElite" value={invoice.clientName} onChange={(e) => setInvoice({ ...invoice, clientName: e.target.value })} placeholder="Example: Wingate Companies" /></Operations><Operations label="Client Email"><input className="inputElite" type="email" value={invoice.clientEmail || ""} onChange={(e) => setInvoice({ ...invoice, clientEmail: e.target.value })} placeholder="manager@email.com" /></Operations><Operations label="Property"><select className="inputElite" value={invoice.property} onChange={(e) => { const selected = e.target.value; const profile = getProfileForProperty(selected); setInvoice({ ...invoice, property: selected, propertyAddress: profile.address || "", clientName: invoice.clientName || profile.billingName || selected, clientEmail: invoice.clientEmail || profile.email || "" }); }}>{properties.map((property) => <option key={property} value={property}>{property}</option>)}</select></Operations><Operations label="Property Address"><input className="inputElite" value={invoice.propertyAddress || ""} onChange={(e) => setInvoice({ ...invoice, propertyAddress: e.target.value })} placeholder="Property address shown under Bill To" /></Operations><Operations label="Unit #"><input className="inputElite" value={invoice.unitNumber} onChange={(e) => setInvoice({ ...invoice, unitNumber: e.target.value })} /></Operations><Operations label="Invoice Date"><input className="inputElite" type="date" value={invoice.invoiceDate} onChange={(e) => setInvoice({ ...invoice, invoiceDate: e.target.value })} /></Operations><Operations label="Due Date"><input className="inputElite" type="date" value={invoice.dueDate} onChange={(e) => setInvoice({ ...invoice, dueDate: e.target.value })} /></Operations><Operations label="Paid Amount"><MoneyInput value={invoice.paidAmount} onValueChange={(value) => { const cleanValue = safeNumber(value); if (cleanValue >= total && total > 0) { if (!confirmAction("Confirm: mark this invoice paid?")) return; setInvoice({ ...invoice, paidAmount: cleanValue, status: "paid" }); return; } setInvoice({ ...invoice, paidAmount: cleanValue, status: cleanValue > 0 ? "partial" : (invoice.status === "paid" ? "sent" : invoice.status) }); }} /></Operations></div><Operations label="Line Items"><div className="space-y-3">{invoice.lineItems.map((line) => <div key={line.id} className="rounded-2xl border border-zinc-800 bg-black/25 p-3"><Operations label="Description"><input className="inputElite" value={line.description} onChange={(e) => setInvoice({ ...invoice, lineItems: invoice.lineItems.map((item) => item.id === line.id ? { ...item, description: e.target.value } : item) })} /></Operations><div className="mt-2 grid grid-cols-[1fr_1fr_auto] gap-2"><Operations label="Qty"><input className="inputElite" type="number" value={line.qty} onChange={(e) => setInvoice({ ...invoice, lineItems: invoice.lineItems.map((item) => item.id === line.id ? { ...item, qty: safeNumber(e.target.value) } : item) })} /></Operations><Operations label="Amount"><MoneyInput value={line.rate} onValueChange={(value) => setInvoice({ ...invoice, lineItems: invoice.lineItems.map((item) => item.id === line.id ? { ...item, rate: value } : item) })} /></Operations><button className="iconDanger self-end" onClick={() => { if (!confirmAction("Remove this line item from the invoice?")) return; setInvoice({ ...invoice, lineItems: invoice.lineItems.filter((item) => item.id !== line.id) }); }}><Trash2 size={16} /></button></div></div>)}<button className="darkButton w-full" onClick={() => setInvoice({ ...invoice, lineItems: [...invoice.lineItems, { id: uid(), description: "New line item", qty: 1, rate: 0 }] })}><Plus size={16} /> Add Line Item</button></div></Operations><div className="rounded-2xl border border-green-400/20 bg-green-500/10 p-3 text-right"><p className="text-xs font-black uppercase text-green-400">Invoice Total</p><p className="text-2xl font-black">{money(total)}</p><p className="mt-1 text-xs font-semibold text-zinc-400">This is the customer/company charge shown on the PDF invoice.</p></div><div className="rounded-2xl border border-blue-400/20 bg-blue-500/10 p-3 text-xs font-semibold text-blue-100"><b>Invoice Center:</b> This screen is for customer/company invoices only. Add the charge amount, photos, and notes, then open the PDF before emailing, texting, WhatsApping, printing, or saving.</div><Operations label="Before Photos"><InvoicePhotoPicker photos={invoice.beforePhotos || []} label="Add Before Photos" onChange={(photos) => setInvoice({ ...invoice, beforePhotos: photos })} /></Operations><Operations label="After / Completed Job Photos"><InvoicePhotoPicker photos={invoice.afterPhotos || []} label="Add After Photos" onChange={(photos) => setInvoice({ ...invoice, afterPhotos: photos })} /></Operations><Operations label="Notes / Terms"><textarea className="inputElite min-h-24" value={invoice.notes} onChange={(e) => setInvoice({ ...invoice, notes: e.target.value })} /></Operations><div className="grid grid-cols-2 gap-2"><button className="goldButton" onClick={() => { const cleanTotal = invoiceTotal(invoice); const cleanPaid = safeNumber(invoice.paidAmount); const cleanStatus = invoice.status === "paid" && !(cleanTotal > 0 && cleanPaid >= cleanTotal) ? "sent" : invoice.status; onSave({ ...invoice, paidAmount: cleanPaid, status: cleanStatus }); }}><Check size={18} /> Save Invoice</button><button className="darkButton" onClick={() => { const cleanTotal = invoiceTotal(invoice); const cleanPaid = safeNumber(invoice.paidAmount); const cleanInvoice = { ...invoice, status: invoice.status === "paid" && !(cleanTotal > 0 && cleanPaid >= cleanTotal) ? "sent" as Invoice["status"] : invoice.status, paidAmount: cleanPaid }; setInvoice(cleanInvoice); printInvoiceDocument(cleanInvoice, cleanInvoice.beforePhotos || [], cleanInvoice.afterPhotos || []); }}><Eye size={18} /> Preview PDF</button><button className="darkButton" onClick={() => printInvoiceDocument(invoice, invoice.beforePhotos || [], invoice.afterPhotos || [])}><Printer size={18} /> Print / Save PDF</button><button className="darkButton" onClick={() => openInvoiceMessage(invoice)}><FileText size={18} /> Text Link</button><button className="darkButton" onClick={() => { openInvoiceMessage(invoice); setTimeout(() => { window.location.href = `https://wa.me/?text=${encodeURIComponent(`View Invoice PDF: Invoice ${invoice.invoiceNumber} is ready from 1 Stop Turnover Specialist LLC.`)}`; }, STORAGE_SAVE_DELAY_MS); }}><FileText size={18} /> WhatsApp PDF</button><button className="goldButton" onClick={() => openInvoiceEmail({ ...invoice, status: invoice.status === "paid" && !(invoiceTotal(invoice) > 0 && safeNumber(invoice.paidAmount) >= invoiceTotal(invoice)) ? "sent" : invoice.status })}><Mail size={18} /> Email PDF</button></div></div></Modal>;
 }
 
 function InvoicePhotoPicker({ photos, label, onChange }: { photos: string[]; label: string; onChange: (photos: string[]) => void }) {
