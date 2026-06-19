@@ -51,6 +51,7 @@ import {
 // PHASE 27D: Collections Center - aging report, promise-to-pay, collection notes, follow-up queue, and revenue intelligence
 // PHASE 27E: Customer Portal - client-facing dashboard, work order/photo visibility, estimate approvals, invoices, documents, and activity feed
 // PHASE 27E REBOOT REPAIR: compile-safety pass before Phase 27F; recurring work intentionally not added yet
+// PHASE 27E-CLEANUP: debounced storage, safer photo handling, reduced runtime pressure before Phase 27F
 
 const STORAGE_KEY = "oneStopPayrollProEliteBlackGoldX_v1";
 const PROPERTY_PROFILES_KEY = "oneStopPropertyProfiles_v1";
@@ -78,6 +79,14 @@ const uid = () =>
   typeof crypto !== "undefined" && "randomUUID" in crypto
     ? crypto.randomUUID()
     : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
+const MAX_PHOTOS_PER_UPLOAD = 6;
+const MAX_PHOTO_SIDE_PX = 1280;
+const PHOTO_JPEG_QUALITY = 0.72;
+
+function uniquePhotoList(photos: string[] = []) {
+  return Array.from(new Set(photos.filter(Boolean)));
+}
 
 type Employee = {
   id: string;
@@ -1052,7 +1061,7 @@ async function compressPhotoFile(file: File): Promise<string> {
     img.src = dataUrl;
   });
 
-  const maxSide = 1280;
+  const maxSide = MAX_PHOTO_SIDE_PX;
   const ratio = Math.min(1, maxSide / Math.max(image.width, image.height));
   const width = Math.max(1, Math.round(image.width * ratio));
   const height = Math.max(1, Math.round(image.height * ratio));
@@ -1063,15 +1072,15 @@ async function compressPhotoFile(file: File): Promise<string> {
   const ctx = canvas.getContext("2d");
   if (!ctx) return dataUrl;
   ctx.drawImage(image, 0, 0, width, height);
-  return canvas.toDataURL("image/jpeg", 0.72);
+  return canvas.toDataURL("image/jpeg", PHOTO_JPEG_QUALITY);
 }
 
 async function readPhotoFiles(files: FileList | null): Promise<string[]> {
   if (!files || files.length === 0) return [];
   const fileArray = Array.from(files).filter((file) => file.type.startsWith("image/"));
-  const limitedFiles = fileArray.slice(0, 6);
+  const limitedFiles = fileArray.slice(0, MAX_PHOTOS_PER_UPLOAD);
   try {
-    return await Promise.all(limitedFiles.map((file) => compressPhotoFile(file)));
+    return uniquePhotoList(await Promise.all(limitedFiles.map((file) => compressPhotoFile(file))));
   } catch (error) {
     console.error("Photo processing failed", error);
     alert("One of the photos could not be added. Please try a smaller picture or add fewer photos at one time.");
@@ -1176,13 +1185,18 @@ export default function PayrollProEliteOperationsX() {
 
   useEffect(() => {
     if (!hydrated) return;
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-      savePropertyProfilesToStorage(state.propertyProfiles || {});
-    } catch (error) {
-      console.error("Save failed", error);
-      alert("The app could not save because the phone browser storage is full. Remove a few photos or export a backup, then try again.");
-    }
+
+    const saveTimer = window.setTimeout(() => {
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+        savePropertyProfilesToStorage(state.propertyProfiles || {});
+      } catch (error) {
+        console.error("Save failed", error);
+        alert("The app could not save because the phone browser storage is full. Remove a few photos or export a backup, then try again.");
+      }
+    }, 900);
+
+    return () => window.clearTimeout(saveTimer);
   }, [state, hydrated]);
 
   const employeesById = useMemo(() => {
