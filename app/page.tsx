@@ -49,6 +49,7 @@ import {
 // PHASE 27B: Invoice Simple Killer Features - invoice pipeline, property history, PDF Center, reports, duplication, and Work Items 2.0
 // PHASE 27C: Communication Center - invoice/estimate tracking, reminders, contact actions, and activity history
 // PHASE 27D: Collections Center - aging report, promise-to-pay, collection notes, follow-up queue, and revenue intelligence
+// PHASE 27E: Customer Portal - client-facing dashboard, work order/photo visibility, estimate approvals, invoices, documents, and activity feed
 
 const STORAGE_KEY = "oneStopPayrollProEliteBlackGoldX_v1";
 const PROPERTY_PROFILES_KEY = "oneStopPropertyProfiles_v1";
@@ -220,7 +221,7 @@ type AppState = {
   companyName: string;
 };
 
-type ActiveTab = "dashboard" | "field" | "office" | "estimates" | "ops" | "employees" | "jobs" | "assignments" | "invoices" | "properties" | "workItems" | "reports" | "pdfCenter" | "communications" | "collections" | "more";
+type ActiveTab = "dashboard" | "field" | "office" | "estimates" | "ops" | "employees" | "jobs" | "assignments" | "invoices" | "properties" | "workItems" | "reports" | "pdfCenter" | "communications" | "collections" | "customerPortal" | "more";
 
 const defaultProperties = [
   "Charles Place Apartments",
@@ -1729,7 +1730,7 @@ This will copy the property, address, unit, line items, notes, and photos.`)) re
 
         {activeTab !== "dashboard" && <WeekHero week={week} selectedWeek={selectedWeek} setSelectedWeek={setSelectedWeek} />}
 
-        {(activeTab === "office" || activeTab === "invoices" || activeTab === "estimates" || activeTab === "reports" || activeTab === "pdfCenter" || activeTab === "communications" || activeTab === "collections") && (
+        {(activeTab === "office" || activeTab === "invoices" || activeTab === "estimates" || activeTab === "reports" || activeTab === "pdfCenter" || activeTab === "communications" || activeTab === "collections" || activeTab === "customerPortal") && (
           <>
             <div className="mt-6 flex items-center justify-between">
               <h2 className="text-sm font-black uppercase tracking-wide text-zinc-300">Office Pipeline</h2>
@@ -1819,13 +1820,14 @@ This will copy the property, address, unit, line items, notes, and photos.`)) re
                 <button type="button" onClick={() => setActiveTab("pdfCenter")} className="officeNavCard"><FileText size={20} /><span>PDF Center</span></button>
                 <button type="button" onClick={() => setActiveTab("communications")} className="officeNavCard"><Mail size={20} /><span>Communications</span></button>
                 <button type="button" onClick={() => setActiveTab("collections")} className="officeNavCard"><AlertTriangle size={20} /><span>Collections</span></button>
+                <button type="button" onClick={() => setActiveTab("customerPortal")} className="officeNavCard"><ShieldCheck size={20} /><span>Customer Portal</span></button>
                 <button type="button" onClick={() => setActiveTab("more")} className="officeNavCard"><MoreVertical size={20} /><span>Backup / More</span></button>
               </div>
 
               <OfficeDashboardCards totals={totals} workOrders={state.jobs} onGoWorkOrders={() => setActiveTab("field")} onGoInvoices={() => setActiveTab("office")} onGoEstimates={() => setActiveTab("estimates")} />
 
               <div className="rounded-2xl border border-green-400/20 bg-green-500/10 p-3 text-sm font-semibold text-green-200">
-                PHASE 27D: Office now includes Collections Center with aging reports, promise-to-pay tracking, collection notes, follow-up queue, revenue intelligence, plus all 27C communications tools.
+                PHASE 27E: Customer Portal added. Clients can view their property dashboard, work orders, photos, estimates, invoices, documents, activity, and collections balance without seeing internal payroll or collection notes.
               </div>
               <InvoicesPanel invoices={filteredInvoices} jobs={state.jobs} weekJobs={weekJobs} onAdd={() => { setEditingInvoice(null); setShowInvoiceForm(true); }} onCreateFromWeek={createInvoiceFromWeekJobs} onCreateFromJob={createInvoiceFromJob} onEdit={(invoice) => { setEditingInvoice(invoice); setShowInvoiceForm(true); }} onDelete={(id) => setConfirmDelete({ type: "invoice", id })} onUpdate={upsertInvoice} onDuplicate={duplicateInvoice} onConvertToEstimate={convertInvoiceToEstimate} />
             </section>
@@ -1965,6 +1967,8 @@ This will copy the property, address, unit, line items, notes, and photos.`)) re
           {activeTab === "communications" && <CommunicationsPanel invoices={state.invoices} estimates={state.estimates || []} properties={state.properties} getProfileForProperty={getSavedPropertyProfile} onOpenInvoice={(invoice) => { setEditingInvoice(invoice); setShowInvoiceForm(true); }} onOpenEstimate={(estimate) => { setEditingEstimate(estimate); setShowEstimateForm(true); }} />}
 
           {activeTab === "collections" && <CollectionsPanel invoices={state.invoices} getProfileForProperty={getSavedPropertyProfile} onUpdateInvoice={upsertInvoice} onOpenInvoice={(invoice) => { setEditingInvoice(invoice); setShowInvoiceForm(true); }} />}
+
+          {activeTab === "customerPortal" && <CustomerPortalPanel properties={state.properties} jobs={state.jobs} invoices={state.invoices} estimates={state.estimates || []} getProfileForProperty={getSavedPropertyProfile} onOpenInvoice={(invoice) => { setEditingInvoice(invoice); setShowInvoiceForm(true); }} onOpenEstimate={(estimate) => { setEditingEstimate(estimate); setShowEstimateForm(true); }} />}
 
           {activeTab === "reports" && <Reports totals={totals} employeeTotals={employeeTotals} jobs={filteredJobs} employeesById={employeesById} invoices={state.invoices} estimates={state.estimates || []} onCloseWeek={closeWeekAsPaid} onExport={exportData} onCreateInvoice={createInvoiceFromWeekJobs} />}
 
@@ -2931,6 +2935,125 @@ function ConfirmModal({ title, message, onCancel, onConfirm }: { title: string; 
 
 
 
+
+function CustomerPortalPanel({ properties, jobs, invoices, estimates, getProfileForProperty, onOpenInvoice, onOpenEstimate }: { properties: string[]; jobs: JobEntry[]; invoices: Invoice[]; estimates: Estimate[]; getProfileForProperty: (property: string) => PropertyContactProfile; onOpenInvoice: (invoice: Invoice) => void; onOpenEstimate: (estimate: Estimate) => void }) {
+  const [selectedProperty, setSelectedProperty] = useState(properties[0] || "");
+  const property = selectedProperty || properties[0] || "";
+  const profile = getProfileForProperty(property);
+  const portalJobs = jobs.filter((job) => job.property === property).sort((a, b) => b.date.localeCompare(a.date));
+  const portalInvoices = invoices.filter((invoice) => invoice.property === property).sort((a, b) => b.invoiceDate.localeCompare(a.invoiceDate));
+  const portalEstimates = estimates.filter((estimate) => estimate.property === property).sort((a, b) => b.estimateDate.localeCompare(a.estimateDate));
+  const openWorkOrders = portalJobs.filter((job) => job.workStatus !== "completed").length;
+  const completedWorkOrders = portalJobs.filter((job) => job.workStatus === "completed" || job.status === "paid").length;
+  const pendingEstimates = portalEstimates.filter((estimate) => ["sent", "viewed", "draft"].includes(estimate.status)).length;
+  const outstandingInvoices = portalInvoices.filter((invoice) => !isPaidInvoice(invoice)).length;
+  const openBalance = portalInvoices.reduce((sum, invoice) => sum + invoiceBalance(invoice), 0);
+  const beforeAfterPhotos = portalJobs.flatMap((job) => job.photos || []);
+  const recentActivity = [
+    ...portalJobs.slice(0, 4).map((job) => ({ id: `job-${job.id}`, label: `Work order ${job.workStatus || job.status}`, detail: `${formatJobDate(job.date)} • ${job.unitNumber ? `Unit ${job.unitNumber}` : property}` })),
+    ...portalEstimates.slice(0, 3).map((estimate) => ({ id: `estimate-${estimate.id}`, label: `Estimate ${estimateStatusLabel(estimate.status)}`, detail: `${estimate.estimateNumber} • ${money(estimateTotal(estimate))}` })),
+    ...portalInvoices.slice(0, 3).map((invoice) => ({ id: `invoice-${invoice.id}`, label: `Invoice ${invoiceStatusLabel(invoicePipelineStatus(invoice))}`, detail: `${invoice.invoiceNumber} • Balance ${money(invoiceBalance(invoice))}` })),
+  ].slice(0, 8);
+
+  function approveEstimate(estimate: Estimate) {
+    onOpenEstimate({ ...estimate, status: "approved", dateApproved: todayISO() });
+  }
+
+  return (
+    <section className="space-y-4">
+      <SectionTop title="Customer Portal" subtitle="Client-facing view for property managers. It hides payroll, employee balances, and internal collection notes." />
+
+      <div className="blackCard p-4">
+        <p className="text-xs font-black uppercase tracking-[0.18em] text-green-300">Portal Login Preview</p>
+        <h2 className="mt-1 text-2xl font-black text-white">Customer Dashboard</h2>
+        <p className="mt-2 text-sm font-semibold text-zinc-400">Select a property to preview exactly what that customer would see.</p>
+        <select className="inputElite mt-4" value={property} onChange={(e) => setSelectedProperty(e.target.value)}>
+          {properties.map((item) => <option key={item} value={item}>{item}</option>)}
+        </select>
+      </div>
+
+      <div className="blackCard p-4">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="text-xs font-black uppercase tracking-wide text-green-400">Customer Account</p>
+            <h3 className="mt-1 text-xl font-black text-white">{profile.billingName || property}</h3>
+            <p className="mt-1 text-xs font-semibold text-zinc-500">{profile.address || "No address saved"}</p>
+            <p className="mt-1 text-xs font-semibold text-zinc-500">{communicationRecipient(property, profile)}</p>
+          </div>
+          <span className="rounded-full bg-green-500 px-3 py-1 text-[10px] font-black uppercase text-black">Active</span>
+        </div>
+        <div className="mt-4 grid grid-cols-2 gap-3">
+          <MiniStat label="Open Work Orders" value={String(openWorkOrders)} tone="green" />
+          <MiniStat label="Pending Estimates" value={String(pendingEstimates)} tone="amber" />
+          <MiniStat label="Outstanding Invoices" value={String(outstandingInvoices)} tone="red" />
+          <MiniStat label="Current Balance" value={money(openBalance)} tone="blue" />
+        </div>
+      </div>
+
+      <details open className="blackCard p-4">
+        <summary className="cursor-pointer list-none font-black text-white">Work Orders & Photos <span className="text-xs text-zinc-500">— customer visible</span></summary>
+        <div className="mt-3 space-y-3">
+          {portalJobs.slice(0, 8).map((job) => (
+            <div key={job.id} className="rounded-2xl border border-white/10 bg-black/30 p-3">
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <p className="font-black text-zinc-100">{job.unitNumber ? `Unit ${job.unitNumber}` : property}</p>
+                  <p className="mt-1 text-xs font-semibold text-zinc-500">{formatJobDate(job.date)} • {(job.workStatus || job.status).toUpperCase()}</p>
+                </div>
+                <span className="rounded-full border border-green-400/30 bg-green-500/10 px-2 py-1 text-[10px] font-black text-green-200">{(job.photos || []).length} photo(s)</span>
+              </div>
+              <p className="mt-2 whitespace-pre-wrap text-sm text-zinc-300">{[...job.jobTypes, job.customWork].filter(Boolean).join(" / ") || "Work order details"}</p>
+              {(job.photos || []).length > 0 && <div className="mt-3 grid grid-cols-3 gap-2">{(job.photos || []).slice(0, 6).map((photo, index) => <img key={`${job.id}-${index}`} src={photo} alt={`Customer portal work photo ${index + 1}`} className="h-20 w-full rounded-xl object-cover" />)}</div>}
+            </div>
+          ))}
+          {portalJobs.length === 0 && <EmptyText text="No work orders for this customer yet." />}
+        </div>
+      </details>
+
+      <details className="blackCard p-4">
+        <summary className="cursor-pointer list-none font-black text-white">Estimate Center <span className="text-xs text-zinc-500">— approve / decline / request changes</span></summary>
+        <div className="mt-3 space-y-3">
+          {portalEstimates.map((estimate) => (
+            <div key={estimate.id} className="rounded-2xl border border-white/10 bg-black/30 p-3">
+              <div className="flex items-start justify-between gap-2"><div><p className="font-black text-zinc-100">{estimate.estimateNumber}</p><p className="text-xs font-semibold text-zinc-500">{estimate.estimateDate} • {estimateStatusLabel(estimate.status)}</p></div><p className="font-black text-green-300">{money(estimateTotal(estimate))}</p></div>
+              <div className="mt-3 grid grid-cols-3 gap-2"><button className="goldButton justify-center !px-2 !py-2" onClick={() => approveEstimate(estimate)}><Check size={14} /> Approve</button><button className="darkButton justify-center !px-2 !py-2" onClick={() => onOpenEstimate({ ...estimate, status: "declined" })}><X size={14} /> Decline</button><button className="darkButton justify-center !px-2 !py-2" onClick={() => onOpenEstimate(estimate)}><Pencil size={14} /> Revise</button></div>
+            </div>
+          ))}
+          {portalEstimates.length === 0 && <EmptyText text="No estimates for this customer yet." />}
+        </div>
+      </details>
+
+      <details className="blackCard p-4">
+        <summary className="cursor-pointer list-none font-black text-white">Invoice Center <span className="text-xs text-zinc-500">— PDFs, status, balances</span></summary>
+        <div className="mt-3 space-y-3">
+          {portalInvoices.map((invoice) => (
+            <div key={invoice.id} className="rounded-2xl border border-white/10 bg-black/30 p-3">
+              <div className="flex items-start justify-between gap-2"><div><p className="font-black text-zinc-100">{invoice.invoiceNumber}</p><p className="text-xs font-semibold text-zinc-500">Due {invoice.dueDate} • {invoiceStatusLabel(invoicePipelineStatus(invoice))}</p></div><div className="text-right"><p className="font-black text-white">{money(invoiceTotal(invoice))}</p><p className="text-xs font-black text-red-300">Balance {money(invoiceBalance(invoice))}</p></div></div>
+              <div className="mt-3 grid grid-cols-3 gap-2"><button className="darkButton justify-center !px-2 !py-2" onClick={() => printInvoiceDocument(invoice, invoice.beforePhotos || [], invoice.afterPhotos || [])}><Printer size={14} /> PDF</button><button className="darkButton justify-center !px-2 !py-2" onClick={() => onOpenInvoice(invoice)}><Eye size={14} /> View</button><button className="darkButton justify-center !px-2 !py-2" onClick={() => navigator.clipboard?.writeText(invoice.pdfLink || generatedPdfLink("invoice", invoice.invoiceNumber))}><FileText size={14} /> Link</button></div>
+            </div>
+          ))}
+          {portalInvoices.length === 0 && <EmptyText text="No invoices for this customer yet." />}
+        </div>
+      </details>
+
+      <details className="blackCard p-4">
+        <summary className="cursor-pointer list-none font-black text-white">Document Center</summary>
+        <div className="mt-3 grid grid-cols-2 gap-2">
+          {["Insurance", "Contracts", "W9", "Lead Certificates", "Permits", "Inspection Reports"].map((doc) => <div key={doc} className="rounded-2xl border border-white/10 bg-black/30 p-3 text-sm font-black text-zinc-300"><FileText size={16} className="mb-2 text-green-300" />{doc}</div>)}
+        </div>
+      </details>
+
+      <details className="blackCard p-4">
+        <summary className="cursor-pointer list-none font-black text-white">Activity Feed</summary>
+        <div className="mt-3 space-y-2">
+          {recentActivity.map((item) => <div key={item.id} className="rounded-2xl border border-white/10 bg-black/30 p-3"><p className="text-sm font-black text-zinc-100">{item.label}</p><p className="text-xs font-semibold text-zinc-500">{item.detail}</p></div>)}
+          {recentActivity.length === 0 && <EmptyText text="No customer activity yet." />}
+        </div>
+      </details>
+    </section>
+  );
+}
+
 function CollectionsPanel({ invoices, getProfileForProperty, onUpdateInvoice, onOpenInvoice }: { invoices: Invoice[]; getProfileForProperty: (property: string) => PropertyContactProfile; onUpdateInvoice: (invoice: Invoice) => void; onOpenInvoice: (invoice: Invoice) => void }) {
   const [bucketFilter, setBucketFilter] = useState<"all" | "Current" | "1–30 Days" | "31–60 Days" | "61–90 Days" | "90+ Days" | "followUp">("all");
   const [noteInvoiceId, setNoteInvoiceId] = useState<string | null>(null);
@@ -3179,7 +3302,7 @@ function BottomNav({ activeTab, setActiveTab }: { activeTab: ActiveTab; setActiv
     { tab: "field", label: "Work Orders", icon: <ClipboardList size={20} /> },
     { tab: "office", label: "Office", icon: <BriefcaseBusiness size={20} /> },
   ];
-  return <nav className="fixed bottom-0 left-0 right-0 z-40 border-t border-white/10 bg-[#02070a]/95 px-2 pb-3 pt-2 backdrop-blur-xl"><div className="mx-auto grid max-w-[540px] grid-cols-3 gap-1">{tabs.map((item) => { const active = activeTab === item.tab || (item.tab === "field" && (activeTab === "ops" || activeTab === "jobs")) || (item.tab === "office" && (activeTab === "invoices" || activeTab === "estimates" || activeTab === "employees" || activeTab === "properties" || activeTab === "workItems" || activeTab === "reports" || activeTab === "pdfCenter" || activeTab === "communications" || activeTab === "collections" || activeTab === "more")); return <button key={item.tab} onClick={() => setActiveTab(item.tab)} className={`flex flex-col items-center justify-center gap-1 rounded-2xl py-2 text-[11px] font-black transition active:scale-95 ${active ? "bg-green-500 text-black" : "text-zinc-500"}`}>{item.icon}<span>{item.label}</span></button>; })}</div></nav>;
+  return <nav className="fixed bottom-0 left-0 right-0 z-40 border-t border-white/10 bg-[#02070a]/95 px-2 pb-3 pt-2 backdrop-blur-xl"><div className="mx-auto grid max-w-[540px] grid-cols-3 gap-1">{tabs.map((item) => { const active = activeTab === item.tab || (item.tab === "field" && (activeTab === "ops" || activeTab === "jobs")) || (item.tab === "office" && (activeTab === "invoices" || activeTab === "estimates" || activeTab === "employees" || activeTab === "properties" || activeTab === "workItems" || activeTab === "reports" || activeTab === "pdfCenter" || activeTab === "communications" || activeTab === "collections" || activeTab === "customerPortal" || activeTab === "more")); return <button key={item.tab} onClick={() => setActiveTab(item.tab)} className={`flex flex-col items-center justify-center gap-1 rounded-2xl py-2 text-[11px] font-black transition active:scale-95 ${active ? "bg-green-500 text-black" : "text-zinc-500"}`}>{item.icon}<span>{item.label}</span></button>; })}</div></nav>;
 }
 
 
