@@ -40,19 +40,11 @@ import {
   Image as ImageIcon,
 } from "lucide-react";
 
-// 1 STOP TURNOVER SPECIALIST PRO ELITE - OPERATIONS X
-// PHASE 13 single-file replacement for app/page.tsx
-// Property address persistence + assignment preset dropdown fix
-// PHASE 23: One Work Order flow only + message/PDF actions visible inside every Work Order + PDF-first invoice sharing
-// PHASE 26G: Photo System Fix - add photos after creation + viewer + invoice/estimate photo controls
-// PHASE 27A: Home/Office navigation cleanup - Home only shows New Work Order + Office; all admin tools live under Office
-// PHASE 27B: Invoice Simple Killer Features - invoice pipeline, property history, PDF Center, reports, duplication, and Work Items 2.0
-// PHASE 27C: Communication Center - invoice/estimate tracking, reminders, contact actions, and activity history
-// PHASE 27D: Collections Center - aging report, promise-to-pay, collection notes, follow-up queue, and revenue intelligence
-// PHASE 27E: Customer Portal - client-facing dashboard, work order/photo visibility, estimate approvals, invoices, documents, and activity feed
-// PHASE 27E REBOOT REPAIR: compile-safety pass before Phase 27F; recurring work intentionally not added yet
-// PHASE 27E-CLEANUP: debounced storage, safer photo handling, reduced runtime pressure before Phase 27F
-// PHASE 27E-DEEP CLEAN: storage pruning, duplicate cleanup, safer persistence, and maintenance-ready foundation before Phase 27F
+// 1 STOP OPS PRO — VERSION 2.0
+// Property Operations Platform
+// Built from Phase 27E Ultra/Deep Clean foundation.
+// Adds Executive Dashboard, Property Intelligence, Recurring Operations,
+// Turnover Templates, Damage Reports, and stronger operations visibility.
 
 const STORAGE_KEY = "oneStopPayrollProEliteBlackGoldX_v1";
 const PROPERTY_PROFILES_KEY = "oneStopPropertyProfiles_v1";
@@ -233,7 +225,7 @@ type AppState = {
   companyName: string;
 };
 
-type ActiveTab = "dashboard" | "field" | "office" | "estimates" | "ops" | "employees" | "jobs" | "assignments" | "invoices" | "properties" | "workItems" | "reports" | "pdfCenter" | "communications" | "collections" | "customerPortal" | "more";
+type ActiveTab = "dashboard" | "field" | "office" | "estimates" | "ops" | "employees" | "jobs" | "assignments" | "invoices" | "properties" | "workItems" | "reports" | "pdfCenter" | "communications" | "collections" | "customerPortal" | "executive" | "propertyIntel" | "recurringWork" | "turnoverTemplates" | "damageReports" | "more";
 
 const defaultProperties = [
   "Charles Place Apartments",
@@ -1842,7 +1834,7 @@ This will copy the property, address, unit, line items, notes, and photos.`)) re
 
         {activeTab !== "dashboard" && <WeekHero week={week} selectedWeek={selectedWeek} setSelectedWeek={setSelectedWeek} />}
 
-        {(activeTab === "office" || activeTab === "invoices" || activeTab === "estimates" || activeTab === "reports" || activeTab === "pdfCenter" || activeTab === "communications" || activeTab === "collections" || activeTab === "customerPortal") && (
+        {(activeTab === "office" || activeTab === "invoices" || activeTab === "estimates" || activeTab === "reports" || activeTab === "pdfCenter" || activeTab === "communications" || activeTab === "collections" || activeTab === "customerPortal" || activeTab === "executive" || activeTab === "propertyIntel" || activeTab === "recurringWork" || activeTab === "turnoverTemplates" || activeTab === "damageReports") && (
           <>
             <div className="mt-6 flex items-center justify-between">
               <h2 className="text-sm font-black uppercase tracking-wide text-zinc-300">Office Pipeline</h2>
@@ -1933,6 +1925,11 @@ This will copy the property, address, unit, line items, notes, and photos.`)) re
                 <button type="button" onClick={() => setActiveTab("communications")} className="officeNavCard"><Mail size={20} /><span>Communications</span></button>
                 <button type="button" onClick={() => setActiveTab("collections")} className="officeNavCard"><AlertTriangle size={20} /><span>Collections</span></button>
                 <button type="button" onClick={() => setActiveTab("customerPortal")} className="officeNavCard"><ShieldCheck size={20} /><span>Customer Portal</span></button>
+                <button type="button" onClick={() => setActiveTab("executive")} className="officeNavCard"><Sparkles size={20} /><span>Executive</span></button>
+                <button type="button" onClick={() => setActiveTab("propertyIntel")} className="officeNavCard"><Building2 size={20} /><span>Properties+</span></button>
+                <button type="button" onClick={() => setActiveTab("recurringWork")} className="officeNavCard"><CalendarDays size={20} /><span>Recurring Work</span></button>
+                <button type="button" onClick={() => setActiveTab("turnoverTemplates")} className="officeNavCard"><ClipboardList size={20} /><span>Turnover Templates</span></button>
+                <button type="button" onClick={() => setActiveTab("damageReports")} className="officeNavCard"><Camera size={20} /><span>Damage Reports</span></button>
                 <button type="button" onClick={() => setActiveTab("more")} className="officeNavCard"><MoreVertical size={20} /><span>Backup / More</span></button>
               </div>
 
@@ -2081,6 +2078,16 @@ This will copy the property, address, unit, line items, notes, and photos.`)) re
           {activeTab === "collections" && <CollectionsPanel invoices={state.invoices} getProfileForProperty={getSavedPropertyProfile} onUpdateInvoice={upsertInvoice} onOpenInvoice={(invoice) => { setEditingInvoice(invoice); setShowInvoiceForm(true); }} />}
 
           {activeTab === "customerPortal" && <CustomerPortalPanel properties={state.properties} jobs={state.jobs} invoices={state.invoices} estimates={state.estimates || []} getProfileForProperty={getSavedPropertyProfile} onOpenInvoice={(invoice) => { setEditingInvoice(invoice); setShowInvoiceForm(true); }} onOpenEstimate={(estimate) => { setEditingEstimate(estimate); setShowEstimateForm(true); }} />}
+
+          {activeTab === "executive" && <ExecutiveDashboardV2 jobs={state.jobs} invoices={state.invoices} estimates={state.estimates || []} employees={state.employees} properties={state.properties} />}
+
+          {activeTab === "propertyIntel" && <PropertyIntelligenceCenterV2 properties={state.properties} jobs={state.jobs} invoices={state.invoices} estimates={state.estimates || []} employeesById={employeesById} getProfileForProperty={getSavedPropertyProfile} onOpenInvoice={(invoice) => { setEditingInvoice(invoice); setShowInvoiceForm(true); }} onOpenEstimate={(estimate) => { setEditingEstimate(estimate); setShowEstimateForm(true); }} />}
+
+          {activeTab === "recurringWork" && <RecurringOperationsV2 properties={state.properties} jobs={state.jobs} />}
+
+          {activeTab === "turnoverTemplates" && <TurnoverTemplatesV2 onNewWorkOrder={() => setShowJobForm(true)} />}
+
+          {activeTab === "damageReports" && <DamageReportsV2 jobs={state.jobs} invoices={state.invoices} estimates={state.estimates || []} />}
 
           {activeTab === "reports" && <Reports totals={totals} employeeTotals={employeeTotals} jobs={filteredJobs} employeesById={employeesById} invoices={state.invoices} estimates={state.estimates || []} onCloseWeek={closeWeekAsPaid} onExport={exportData} onCreateInvoice={createInvoiceFromWeekJobs} />}
 
@@ -3415,13 +3422,130 @@ function CommunicationsPanel({
   );
 }
 
+
+function ExecutiveDashboardV2({ jobs, invoices, estimates, employees, properties }: { jobs: JobEntry[]; invoices: Invoice[]; estimates: Estimate[]; employees: Employee[]; properties: string[] }) {
+  const paidInvoices = invoices.filter((invoice) => isPaidInvoice(invoice));
+  const openInvoices = invoices.filter((invoice) => !isPaidInvoice(invoice));
+  const revenueYear = paidInvoices.filter((invoice) => invoice.invoiceDate >= `${todayISO().slice(0, 4)}-01-01`).reduce((sum, invoice) => sum + invoiceTotal(invoice), 0);
+  const revenueMonth = paidInvoices.filter((invoice) => invoice.invoiceDate >= `${todayISO().slice(0, 8)}01`).reduce((sum, invoice) => sum + invoiceTotal(invoice), 0);
+  const outstanding = openInvoices.reduce((sum, invoice) => sum + invoiceBalance(invoice), 0);
+  const completedJobs = jobs.filter((job) => job.workStatus === "completed" || job.status === "paid").length;
+  const propertyRevenue = properties.map((property) => ({ property, revenue: paidInvoices.filter((invoice) => invoice.property === property).reduce((sum, invoice) => sum + invoiceTotal(invoice), 0) })).sort((a, b) => b.revenue - a.revenue);
+  const employeeActivity = employees.map((employee) => ({ employee, jobs: jobs.filter((job) => job.employeeId === employee.id).length })).sort((a, b) => b.jobs - a.jobs);
+
+  return (
+    <section className="space-y-4">
+      <SectionTop title="Executive Dashboard" subtitle="Version 2.0 owner view: revenue, receivables, work volume, property winners, and employee activity." />
+      <div className="grid grid-cols-2 gap-3">
+        <MiniStat label="Revenue This Month" value={money(revenueMonth)} tone="green" />
+        <MiniStat label="Revenue This Year" value={money(revenueYear)} tone="blue" />
+        <MiniStat label="Outstanding" value={money(outstanding)} tone="red" />
+        <MiniStat label="Open Estimates" value={String(estimates.filter((estimate) => estimate.status !== "converted" && estimate.status !== "declined").length)} tone="amber" />
+        <MiniStat label="Open Work Orders" value={String(jobs.filter((job) => job.workStatus !== "completed" && job.status !== "paid").length)} tone="blue" />
+        <MiniStat label="Completed Jobs" value={String(completedJobs)} tone="green" />
+      </div>
+      <div className="grid gap-3">
+        <div className="blackCard p-4">
+          <h3 className="relative z-10 font-black text-white">Top Properties by Revenue</h3>
+          <div className="relative z-10 mt-3 grid gap-2">
+            {propertyRevenue.slice(0, 5).map((row) => <div key={row.property} className="flex items-center justify-between rounded-2xl border border-white/10 bg-black/30 p-3"><span className="text-sm font-bold text-zinc-200">{row.property}</span><span className="text-sm font-black text-green-300">{money(row.revenue)}</span></div>)}
+          </div>
+        </div>
+        <div className="blackCard p-4">
+          <h3 className="relative z-10 font-black text-white">Most Active Employees</h3>
+          <div className="relative z-10 mt-3 grid gap-2">
+            {employeeActivity.slice(0, 5).map((row) => <div key={row.employee.id} className="flex items-center justify-between rounded-2xl border border-white/10 bg-black/30 p-3"><span className="text-sm font-bold text-zinc-200">{row.employee.name}</span><span className="text-sm font-black text-blue-300">{row.jobs} jobs</span></div>)}
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function PropertyIntelligenceCenterV2({ properties, jobs, invoices, estimates, employeesById, getProfileForProperty, onOpenInvoice, onOpenEstimate }: { properties: string[]; jobs: JobEntry[]; invoices: Invoice[]; estimates: Estimate[]; employeesById: Map<string, Employee>; getProfileForProperty: (property: string) => PropertyContactProfile; onOpenInvoice: (invoice: Invoice) => void; onOpenEstimate: (estimate: Estimate) => void }) {
+  const [selectedProperty, setSelectedProperty] = useState(properties[0] || "");
+  const profile = getProfileForProperty(selectedProperty);
+  const propertyJobs = jobs.filter((job) => job.property === selectedProperty);
+  const propertyInvoices = invoices.filter((invoice) => invoice.property === selectedProperty);
+  const propertyEstimates = estimates.filter((estimate) => estimate.property === selectedProperty);
+  const openBalance = propertyInvoices.reduce((sum, invoice) => sum + invoiceBalance(invoice), 0);
+  const revenue = propertyInvoices.filter((invoice) => isPaidInvoice(invoice)).reduce((sum, invoice) => sum + invoiceTotal(invoice), 0);
+  const employeesUsed = Array.from(new Set(propertyJobs.map((job) => employeesById.get(job.employeeId)?.name).filter(Boolean)));
+  const photos = uniquePhotoList(propertyJobs.flatMap((job) => job.photos || [])).slice(0, 6);
+
+  return (
+    <section className="space-y-4">
+      <SectionTop title="Properties+ Intelligence" subtitle="One property command center: work orders, invoices, estimates, revenue, photos, employees, and history." />
+      <select value={selectedProperty} onChange={(e) => setSelectedProperty(e.target.value)} className="input">{properties.map((property) => <option key={property} value={property}>{property}</option>)}</select>
+      <div className="blackCard p-4">
+        <div className="relative z-10">
+          <p className="text-xs font-black uppercase tracking-[0.16em] text-amber-300">Property Profile</p>
+          <h2 className="mt-1 text-xl font-black text-white">{selectedProperty || "Select Property"}</h2>
+          <p className="mt-1 text-sm font-semibold text-zinc-400">{profile.address || "No address saved"}</p>
+          <p className="mt-1 text-xs font-semibold text-zinc-500">{[profile.contactName, profile.email, profile.phone].filter(Boolean).join(" • ") || "No contact saved"}</p>
+        </div>
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <MiniStat label="Open Work Orders" value={String(propertyJobs.filter((job) => job.workStatus !== "completed" && job.status !== "paid").length)} tone="blue" />
+        <MiniStat label="Completed Jobs" value={String(propertyJobs.filter((job) => job.workStatus === "completed" || job.status === "paid").length)} tone="green" />
+        <MiniStat label="Revenue" value={money(revenue)} tone="green" />
+        <MiniStat label="Open Balance" value={money(openBalance)} tone="red" />
+      </div>
+      <div className="grid gap-3">
+        <div className="blackCard p-4"><h3 className="relative z-10 font-black text-white">Employees Used</h3><p className="relative z-10 mt-2 text-sm font-semibold text-zinc-400">{employeesUsed.join(" • ") || "No employee history yet."}</p></div>
+        <div className="blackCard p-4"><h3 className="relative z-10 font-black text-white">Recent Invoices</h3><div className="relative z-10 mt-3 grid gap-2">{propertyInvoices.slice(0, 4).map((invoice) => <button key={invoice.id} onClick={() => onOpenInvoice(invoice)} className="flex items-center justify-between rounded-2xl border border-white/10 bg-black/30 p-3 text-left"><span className="text-sm font-bold text-zinc-200">{invoice.invoiceNumber}</span><span className="text-sm font-black text-green-300">{money(invoiceTotal(invoice))}</span></button>)}{propertyInvoices.length === 0 && <EmptyText text="No invoices for this property yet." />}</div></div>
+        <div className="blackCard p-4"><h3 className="relative z-10 font-black text-white">Open Estimates</h3><div className="relative z-10 mt-3 grid gap-2">{propertyEstimates.slice(0, 4).map((estimate) => <button key={estimate.id} onClick={() => onOpenEstimate(estimate)} className="flex items-center justify-between rounded-2xl border border-white/10 bg-black/30 p-3 text-left"><span className="text-sm font-bold text-zinc-200">{estimate.estimateNumber}</span><span className="text-sm font-black text-amber-300">{money(estimateTotal(estimate))}</span></button>)}{propertyEstimates.length === 0 && <EmptyText text="No estimates for this property yet." />}</div></div>
+        <div className="blackCard p-4"><h3 className="relative z-10 font-black text-white">Photo History</h3><div className="relative z-10 mt-3 grid grid-cols-3 gap-2">{photos.map((photo, index) => <img key={`${photo.slice(0, 24)}-${index}`} src={photo} alt={`Property photo ${index + 1}`} className="h-24 w-full rounded-2xl object-cover" />)}{photos.length === 0 && <p className="col-span-3 text-sm font-semibold text-zinc-500">No photos yet.</p>}</div></div>
+      </div>
+    </section>
+  );
+}
+
+function RecurringOperationsV2({ properties, jobs }: { properties: string[]; jobs: JobEntry[] }) {
+  const templates = ["Monthly Hallway Cleaning", "Quarterly Property Inspection", "Annual Fire Inspection", "Monthly Pest Control", "Smoke Detector Testing", "Common Area Cleaning"];
+  const recentByProperty = properties.map((property) => ({ property, lastJob: jobs.filter((job) => job.property === property).sort((a, b) => String(b.date).localeCompare(String(a.date)))[0] }));
+  return (
+    <section className="space-y-4">
+      <SectionTop title="Recurring Operations" subtitle="Version 2.0 planning center for scheduled maintenance and repeat work." />
+      <div className="rounded-2xl border border-amber-400/20 bg-amber-500/10 p-3 text-sm font-semibold text-amber-200">This module prepares the recurring engine before full automation. Use it to plan services, see recent property activity, and avoid missed maintenance.</div>
+      <div className="grid gap-3">{templates.map((template) => <div key={template} className="blackCard p-4"><div className="relative z-10 flex items-center justify-between"><div><h3 className="font-black text-white">{template}</h3><p className="mt-1 text-xs font-semibold text-zinc-500">Ready to convert into auto-generated work orders.</p></div><span className="rounded-full border border-blue-400/30 bg-blue-500/10 px-3 py-1 text-[11px] font-black text-blue-200">Template</span></div></div>)}</div>
+      <div className="blackCard p-4"><h3 className="relative z-10 font-black text-white">Property Service Snapshot</h3><div className="relative z-10 mt-3 grid gap-2">{recentByProperty.slice(0, 8).map((row) => <div key={row.property} className="rounded-2xl border border-white/10 bg-black/30 p-3"><p className="text-sm font-bold text-zinc-200">{row.property}</p><p className="mt-1 text-xs font-semibold text-zinc-500">Last service: {row.lastJob ? `${formatJobDate(row.lastJob.date)} — ${row.lastJob.jobTypes.join(", ") || row.lastJob.customWork || "Work Order"}` : "No service history yet"}</p></div>)}</div></div>
+    </section>
+  );
+}
+
+function TurnoverTemplatesV2({ onNewWorkOrder }: { onNewWorkOrder: () => void }) {
+  const templates = [
+    { name: "Water Leak", scope: "Remove damaged material, repair sheetrock, plaster, sand, prime, paint, and document before/after photos.", priority: "Urgent" },
+    { name: "Fire Damage", scope: "Clean smoke affected surfaces, block stains, repair damaged walls, prime, paint, and document all affected areas.", priority: "Urgent" },
+    { name: "Move Out Turnover", scope: "Trash out, patch walls, prep surfaces, paint, clean, and final inspection photos.", priority: "Normal" },
+    { name: "Occupied Repair", scope: "Protect resident belongings, complete assigned repair, clean work area, and report additional issues.", priority: "Normal" },
+    { name: "Full Paint", scope: "Prep, patch, sand, prime as needed, paint walls/ceilings, touch up, and clean.", priority: "Normal" },
+  ];
+  return <section className="space-y-4"><SectionTop title="Turnover Templates" subtitle="Your 1 Stop specialty: fast reusable scopes for apartment turns, leaks, damage, and occupied repairs."><button onClick={onNewWorkOrder} className="goldButton"><Plus size={18} /> New Work Order</button></SectionTop><div className="grid gap-3">{templates.map((template) => <div key={template.name} className="blackCard p-4"><div className="relative z-10"><div className="flex items-start justify-between gap-3"><h3 className="font-black text-white">{template.name}</h3><span className={`rounded-full px-3 py-1 text-[11px] font-black ${template.priority === "Urgent" ? "border border-red-400/30 bg-red-500/10 text-red-200" : "border border-green-400/30 bg-green-500/10 text-green-200"}`}>{template.priority}</span></div><p className="mt-2 text-sm font-semibold text-zinc-400">{template.scope}</p></div></div>)}</div></section>;
+}
+
+function DamageReportsV2({ jobs, invoices, estimates }: { jobs: JobEntry[]; invoices: Invoice[]; estimates: Estimate[] }) {
+  const photoJobs = jobs.filter((job) => (job.photos || []).length > 0);
+  const damageKeywords = /(water|leak|fire|damage|sheetrock|mold|growth|trash|repair)/i;
+  const possibleDamageJobs = jobs.filter((job) => damageKeywords.test([job.customWork, job.notes, job.jobTypes.join(" ")].join(" ")));
+  return (
+    <section className="space-y-4">
+      <SectionTop title="Damage Reports" subtitle="Create property proof packages from scopes, photos, invoices, and estimates." />
+      <div className="grid grid-cols-2 gap-3"><MiniStat label="Jobs With Photos" value={String(photoJobs.length)} tone="blue" /><MiniStat label="Possible Damage Jobs" value={String(possibleDamageJobs.length)} tone="amber" /><MiniStat label="Invoices With Photos" value={String(invoices.filter((invoice) => (invoice.beforePhotos?.length || 0) + (invoice.afterPhotos?.length || 0) > 0).length)} tone="green" /><MiniStat label="Estimates With Photos" value={String(estimates.filter((estimate) => (estimate.beforePhotos?.length || 0) + (estimate.afterPhotos?.length || 0) > 0).length)} tone="green" /></div>
+      <div className="rounded-2xl border border-blue-400/20 bg-blue-500/10 p-3 text-sm font-semibold text-blue-200">Version 2.0 prepares damage report generation. Use this view to identify photo-backed repair jobs that can become PDF damage reports for property managers or insurance documentation.</div>
+      <div className="grid gap-3">{possibleDamageJobs.slice(0, 10).map((job) => <div key={job.id} className="blackCard p-4"><div className="relative z-10"><h3 className="font-black text-white">{job.property}{job.unitNumber ? ` — Unit ${job.unitNumber}` : ""}</h3><p className="mt-1 text-xs font-semibold text-zinc-500">{formatJobDate(job.date)} • {(job.jobTypes || []).join(" / ") || "Work Order"}</p><p className="mt-2 text-sm font-semibold text-zinc-400">{job.customWork || job.notes || "Damage-related work order"}</p><p className="mt-2 text-xs font-black text-blue-300">{(job.photos || []).length} photo(s)</p></div></div>)}{possibleDamageJobs.length === 0 && <EmptyText text="No damage-related work orders found yet." />}</div>
+    </section>
+  );
+}
+
 function BottomNav({ activeTab, setActiveTab }: { activeTab: ActiveTab; setActiveTab: (tab: ActiveTab) => void }) {
   const tabs: { tab: ActiveTab; label: string; icon: React.ReactNode }[] = [
     { tab: "dashboard", label: "Home", icon: <Home size={20} /> },
     { tab: "field", label: "Work Orders", icon: <ClipboardList size={20} /> },
     { tab: "office", label: "Office", icon: <BriefcaseBusiness size={20} /> },
   ];
-  return <nav className="fixed bottom-0 left-0 right-0 z-40 border-t border-white/10 bg-[#02070a]/95 px-2 pb-3 pt-2 backdrop-blur-xl"><div className="mx-auto grid max-w-[540px] grid-cols-3 gap-1">{tabs.map((item) => { const active = activeTab === item.tab || (item.tab === "field" && (activeTab === "ops" || activeTab === "jobs")) || (item.tab === "office" && (activeTab === "invoices" || activeTab === "estimates" || activeTab === "employees" || activeTab === "properties" || activeTab === "workItems" || activeTab === "reports" || activeTab === "pdfCenter" || activeTab === "communications" || activeTab === "collections" || activeTab === "customerPortal" || activeTab === "more")); return <button key={item.tab} onClick={() => setActiveTab(item.tab)} className={`flex flex-col items-center justify-center gap-1 rounded-2xl py-2 text-[11px] font-black transition active:scale-95 ${active ? "bg-green-500 text-black" : "text-zinc-500"}`}>{item.icon}<span>{item.label}</span></button>; })}</div></nav>;
+  return <nav className="fixed bottom-0 left-0 right-0 z-40 border-t border-white/10 bg-[#02070a]/95 px-2 pb-3 pt-2 backdrop-blur-xl"><div className="mx-auto grid max-w-[540px] grid-cols-3 gap-1">{tabs.map((item) => { const active = activeTab === item.tab || (item.tab === "field" && (activeTab === "ops" || activeTab === "jobs")) || (item.tab === "office" && (activeTab === "invoices" || activeTab === "estimates" || activeTab === "employees" || activeTab === "properties" || activeTab === "workItems" || activeTab === "reports" || activeTab === "pdfCenter" || activeTab === "communications" || activeTab === "collections" || activeTab === "customerPortal" || activeTab === "executive" || activeTab === "propertyIntel" || activeTab === "recurringWork" || activeTab === "turnoverTemplates" || activeTab === "damageReports" || activeTab === "more")); return <button key={item.tab} onClick={() => setActiveTab(item.tab)} className={`flex flex-col items-center justify-center gap-1 rounded-2xl py-2 text-[11px] font-black transition active:scale-95 ${active ? "bg-green-500 text-black" : "text-zinc-500"}`}>{item.icon}<span>{item.label}</span></button>; })}</div></nav>;
 }
 
 
